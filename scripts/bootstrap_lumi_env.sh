@@ -7,6 +7,8 @@ VENV="${3:?usage: bootstrap_lumi_env.sh CONTROL_ROOT BACKEND_ROOT VENV}"
 BASE_IMAGE="${BASE_IMAGE:-/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
 BIND="/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd"
 EXPECTED_COMMIT="3f80d37042402b8363f39c9535723b0d4cb8de54"
+OLMO_ROOT="${OLMO_ROOT:-$(dirname "$BACKEND_ROOT")/olmo-core}"
+OLMO_COMMIT="002958a8f15a"
 
 test -r "$BASE_IMAGE"
 test -d "$CONTROL_ROOT/.git"
@@ -14,6 +16,15 @@ test -d "$BACKEND_ROOT/.git"
 actual="$(git -C "$BACKEND_ROOT" rev-parse HEAD)"
 [[ "$actual" == "$EXPECTED_COMMIT" ]] || {
   echo "Expected TMAX backend $EXPECTED_COMMIT, got $actual" >&2
+  exit 2
+}
+
+if [[ ! -d "$OLMO_ROOT/.git" ]]; then
+  git clone https://github.com/allenai/OLMo-core.git "$OLMO_ROOT"
+fi
+git -C "$OLMO_ROOT" checkout "$OLMO_COMMIT"
+[[ "$(git -C "$OLMO_ROOT" rev-parse --short=12 HEAD)" == "$OLMO_COMMIT" ]] || {
+  echo "Expected OLMo Core backend $OLMO_COMMIT" >&2
   exit 2
 }
 
@@ -35,13 +46,22 @@ run_python -m pip install \
   'mcp>=1.9.0' \
   'docker>=7.0.0' \
   'immutabledict==1.2.0' \
-  'antlr4-python3-runtime==4.11'
+  'antlr4-python3-runtime==4.11' \
+  'beaker-py>=2.5.7' \
+  'backoff>=2.2.1' \
+  'hf-transfer>=0.1.8' \
+  'langdetect==1.0.9' \
+  'litellm>=1.72,<1.75.2' \
+  'nvitop>=1.4.2' \
+  'multiprocess<0.70.18' \
+  'wandb==0.23.1'
+run_python -m pip install -e "$OLMO_ROOT"
 run_python -m pip install --no-deps -e "$BACKEND_ROOT"
 run_python -m pip install -e "$CONTROL_ROOT[data,math]"
 
 run_python - <<'PY'
 import importlib
-for name in ("torch", "vllm", "ray", "open_instruct", "liger_kernel", "fla"):
+for name in ("torch", "vllm", "ray", "olmo_core", "open_instruct", "liger_kernel", "fla"):
     importlib.import_module(name)
 from vllm.distributed.weight_transfer.nccl_engine import NCCLWeightTransferEngine
 print("LUMI RLVR environment imports are healthy")
