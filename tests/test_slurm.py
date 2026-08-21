@@ -10,7 +10,8 @@ def test_lumi_job_renders_ray_and_rocm_preflight() -> None:
     path = ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml"
     rendered = render_slurm(load_config(path), path)
     assert "#SBATCH --gpus-per-node=8" in rendered
-    assert "singularity exec --rocm" in rendered
+    assert "singularity exec --rocm" not in rendered
+    assert "singularity exec  -B" in rendered
     assert "scripts/ray_node.sh" in rendered
     assert "run-backend --config" in rendered
     assert "actual_commit" in rendered
