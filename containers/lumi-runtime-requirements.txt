@@ -1,0 +1,10 @@
+# Added on top of the LUMI AI Factory ROCm 7 / PyTorch 2.10 full image.
+# Never let pip replace torch, vLLM, transformers, deepspeed, or causal-conv1d.
+ray[default]==2.54.0
+liger-kernel==0.8.0
+flash-linear-attention>=0.4.2
+openenv-core>=0.2.1
+mcp>=1.9.0
+docker>=7.0.0
+immutabledict==1.2.0
+antlr4-python3-runtime==4.11

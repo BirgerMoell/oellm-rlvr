@@ -1,0 +1,6 @@
+{
+  "id": "fraction-equivalence",
+  "kind": "math",
+  "prompt": "What is one half plus one quarter?",
+  "ground_truth": "3/4"
+}

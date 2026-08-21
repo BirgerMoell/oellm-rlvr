@@ -1,0 +1,77 @@
+version: 1
+name: rlvr-code-production
+platform:
+  accelerator: rocm
+  nodes: 4
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: standard-g
+  walltime: "12:00:00"
+  cpus_per_task: 56
+  memory: 480G
+  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  network_interface: hsn0,hsn1,hsn2,hsn3
+backend:
+  repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
+model:
+  name_or_path: hamishivi/Qwen3.5-2B
+  max_prompt_tokens: 2048
+  response_tokens: 65536
+  per_turn_tokens: 16384
+  pack_length: 67584
+datasets:
+  - path: allenai/tmax-15k-open-instruct
+    weight: 1.0
+    split: train
+task:
+  kind: code
+  max_steps: 64
+  pool_size: 512
+  system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
+  sandbox:
+    backend: prepared_apptainer
+    image: /scratch/project_465002530/containers/tmax-code-sandbox.sif
+    binary: singularity
+    fakeroot: false
+    task_data_hf_repo: allenai/tmax-15k-open-instruct
+    test_timeout: 600
+    command_timeout: 120
+    cache_dir: /scratch/project_465002530/users/bmoell/apptainer-cache
+    tmp_dir: /scratch/project_465002530/users/bmoell/apptainer-tmp
+    prepared_cache_dir: /scratch/project_465002530/users/bmoell/prepared-apptainer-cache
+    prepared_scratch_root: /tmp/prepared-apptainer
+rollout:
+  engines: 16
+  tensor_parallel_size: 1
+  unique_prompts: 16
+  samples_per_prompt: 32
+  temperature: 1.0
+  gpu_memory_utilization: 0.8
+  async_steps: 4
+  active_sampling: true
+  inflight_updates: true
+training:
+  learner_gpus_per_node: [8, 8]
+  sequence_parallel_size: 4
+  learning_rate: 1.0e-6
+  total_episodes: 128000
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dppo
+  save_freq: 20
+  checkpoint_state_freq: 10
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/code-production
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/code-production
+  experiment_name: lumi_code_qwen35_2b_dppo
+  with_tracking: true
+  wandb_mode: offline
+environment:
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  SWERL_SANDBOX_TIMING_LOGS: "1"
+  SWERL_RESET_FAILURE_ZERO_REWARD: "1"

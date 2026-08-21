@@ -1,0 +1,23 @@
+id: add-two-integers
+instruction: |
+  Implement `add(a, b)` in `/workspace/solution.py`.
+  The function must return the sum of two integers without printing anything.
+image: /scratch/project_465002530/containers/python-3.12-code-sandbox.sif
+max_steps: 8
+copies: 4
+seed_files:
+  solution.py: |
+    def add(a: int, b: int) -> int:
+        raise NotImplementedError
+test_files:
+  test.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd /workspace
+    python - <<'PY'
+    from solution import add
+    assert add(2, 3) == 5
+    assert add(-3, 1) == -2
+    assert add(0, 0) == 0
+    PY
+    printf '1.0\n' > /logs/verifier/reward.txt

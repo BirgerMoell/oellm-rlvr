@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oellm-rlvr"
+version = "0.1.0"
+description = "Hardware-neutral rollout and RLVR control plane, built for LUMI first"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [{name = "OpenEuroLLM contributors"}]
+dependencies = [
+  "Jinja2>=3.1",
+  "pydantic>=2.7",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+math = ["sympy>=1.12"]
+data = ["pyarrow>=16"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+oellm-rlvr = "oellm_rlvr.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oellm_rlvr"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/oellm_rlvr/templates" = "oellm_rlvr/templates"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"

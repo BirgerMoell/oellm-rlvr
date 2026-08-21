@@ -1,0 +1,51 @@
+version: 1
+name: rlvr-code-cuda-smoke
+platform:
+  accelerator: cuda
+  nodes: 1
+  gpus_per_node: 8
+  container: /shared/containers/oellm-rlvr-cuda.sif
+  account: CHANGE_ME
+  partition: gpu
+  walltime: 00:45:00
+  cpus_per_task: 64
+  binds: [/shared, /scratch]
+backend:
+  repo_path: /shared/oellm/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /shared/oellm/venvs/oellm-rlvr/bin/python
+model:
+  name_or_path: hamishivi/Qwen3.5-2B
+  max_prompt_tokens: 2048
+  response_tokens: 8192
+  per_turn_tokens: 2048
+  pack_length: 10240
+datasets:
+  - path: /shared/oellm/data/code-smoke/train.parquet
+task:
+  kind: code
+  max_steps: 8
+  pool_size: 16
+  system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
+  sandbox:
+    backend: apptainer
+    image: /shared/containers/python-3.12-code-sandbox.sif
+    binary: apptainer
+    task_data_dir: /shared/oellm/data/code-smoke/task-data
+rollout:
+  engines: 4
+  unique_prompts: 4
+  samples_per_prompt: 4
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  enforce_eager: true
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 4
+  total_episodes: 64
+  save_freq: 0
+output:
+  directory: /shared/oellm/outputs/code-smoke
+  rollout_directory: /shared/oellm/rollouts/code-smoke
+  experiment_name: cuda_code_qwen35_2b_smoke
+  wandb_mode: offline

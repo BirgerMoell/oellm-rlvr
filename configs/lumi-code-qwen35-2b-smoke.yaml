@@ -1,0 +1,76 @@
+version: 1
+name: rlvr-code-smoke
+platform:
+  accelerator: rocm
+  nodes: 1
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: standard-g
+  walltime: 00:45:00
+  cpus_per_task: 56
+  memory: 480G
+  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  network_interface: hsn0,hsn1,hsn2,hsn3
+backend:
+  repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
+model:
+  name_or_path: hamishivi/Qwen3.5-2B
+  max_prompt_tokens: 2048
+  response_tokens: 8192
+  per_turn_tokens: 2048
+  pack_length: 10240
+datasets:
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-smoke/train.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: code
+  max_steps: 8
+  pool_size: 16
+  system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
+  sandbox:
+    backend: apptainer
+    image: /scratch/project_465002530/containers/python-3.12-code-sandbox.sif
+    binary: singularity
+    fakeroot: false
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-smoke/task-data
+    test_timeout: 600
+    command_timeout: 120
+    cache_dir: /scratch/project_465002530/users/bmoell/apptainer-cache
+    tmp_dir: /scratch/project_465002530/users/bmoell/apptainer-tmp
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  unique_prompts: 4
+  samples_per_prompt: 4
+  temperature: 1.0
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enforce_eager: true
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 4
+  learning_rate: 1.0e-6
+  total_episodes: 64
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dppo
+  save_freq: 0
+  checkpoint_state_freq: 10
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/code-smoke
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/code-smoke
+  experiment_name: lumi_code_qwen35_2b_smoke
+  with_tracking: true
+  wandb_mode: offline
+environment:
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  SWERL_SANDBOX_TIMING_LOGS: "1"
+  SWERL_RESET_FAILURE_ZERO_REWARD: "1"
