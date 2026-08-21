@@ -24,7 +24,7 @@ run_python() {
   singularity exec -B "$BIND" "$BASE_IMAGE" "$VENV/bin/python" "$@"
 }
 
-run_python -m pip install --upgrade pip setuptools wheel
+run_python -m pip install --upgrade 'pip<27' 'setuptools>=75.6,<80' wheel
 # Do not `uv sync` the TMAX checkout on ROCm: its upstream resolver contains
 # CUDA-specific torch/flash-attention sources. The LUMI image owns torch/vLLM.
 run_python -m pip install \

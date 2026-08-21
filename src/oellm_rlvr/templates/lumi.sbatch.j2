@@ -45,7 +45,10 @@ RAY_ADDRESS="${HEAD_IP}:${RAY_PORT}"
 RAY_TMP="/tmp/oellm-ray-${SLURM_JOB_ID}"
 
 export PYTHONUNBUFFERED=1
-export PYTHONPATH="${CONTROL_ROOT}/src:${BACKEND_ROOT}:${PYTHONPATH:-}"
+# Singularity inherits the host PYTHONPATH when this variable is overridden,
+# which can mask the LUMI image's /opt/venv packages. Keep that image runtime
+# explicit before adding the control plane and pinned backend sources.
+export PYTHONPATH="${CONTROL_ROOT}/src:${BACKEND_ROOT}:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 export PATH="$(dirname "$PYTHON_BIN"):$PATH"
 export RAY_ADDRESS
 export RAY_TMPDIR="$RAY_TMP"

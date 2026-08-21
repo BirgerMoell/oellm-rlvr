@@ -17,7 +17,7 @@ backend:
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
   python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
 model:
-  name_or_path: hamishivi/Qwen3.5-2B
+  name_or_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
   max_prompt_tokens: 1024
   response_tokens: 4096
   per_turn_tokens: 4096
