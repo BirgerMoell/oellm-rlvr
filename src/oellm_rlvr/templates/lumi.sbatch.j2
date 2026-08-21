@@ -60,6 +60,12 @@ export VLLM_USE_V1=1
 export NCCL_CUMEM_ENABLE=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
+# Slurm on LUMI still sets ROCR_VISIBLE_DEVICES, but current Ray rejects that
+# deprecated name. Preserve the allocation under the HIP-standard variable.
+if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
+  export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
+  unset ROCR_VISIBLE_DEVICES
+fi
 {% if config.platform.network_interface %}export NCCL_SOCKET_IFNAME={{ config.platform.network_interface | tojson }}
 {% endif %}{% for key, value in config.environment.items() %}export {{ key }}={{ value | tojson }}
 {% endfor %}
@@ -71,19 +77,19 @@ trap cleanup EXIT INT TERM
 
 echo "Preflight: ${SLURM_NNODES} nodes, ${GPUS_PER_NODE} GPUs/node, head=${RAY_ADDRESS}"
 srun --label --gpu-bind=none singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
-  env PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" "$CONTROL_ROOT/scripts/preflight_gpu.py" \
+  env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" "$CONTROL_ROOT/scripts/preflight_gpu.py" \
   --accelerator {{ config.platform.accelerator }} --gpus "$GPUS_PER_NODE"
 
 srun --label --overlap --gpu-bind=none --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" \
   singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
-  env PYTHONPATH="$PYTHONPATH" RAY_TMPDIR="$RAY_TMP" RAY_BIN="$RAY_BIN" \
+  env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" RAY_TMPDIR="$RAY_TMP" RAY_BIN="$RAY_BIN" \
   bash "$CONTROL_ROOT/scripts/ray_node.sh" "$HEAD_IP" "$RAY_PORT" "$GPUS_PER_NODE" &
 RAY_STEP_PID=$!
 
 ready=0
 for _ in $(seq 1 60); do
   if srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" singularity exec {{ accelerator_flag }} -B "$BIND" \
-    "$CONTAINER" "$RAY_BIN" status --address="$RAY_ADDRESS" >/dev/null 2>&1; then
+    "$CONTAINER" env -u ROCR_VISIBLE_DEVICES "$RAY_BIN" status --address="$RAY_ADDRESS" >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -94,5 +100,5 @@ if [[ "$ready" != 1 ]]; then echo "Ray did not become ready" >&2; exit 3; fi
 echo "Launching online {{ config.task.kind }} RLVR with native learner-to-vLLM weight transfer"
 srun --label --overlap --gpu-bind=none --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
   singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
-  env PYTHONPATH="$PYTHONPATH" RAY_ADDRESS="$RAY_ADDRESS" WANDB_MODE="$WANDB_MODE" \
+  env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" RAY_ADDRESS="$RAY_ADDRESS" WANDB_MODE="$WANDB_MODE" \
   "$PYTHON_BIN" -m oellm_rlvr.cli run-backend --config "$CONFIG"
