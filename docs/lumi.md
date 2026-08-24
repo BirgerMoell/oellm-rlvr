@@ -34,6 +34,9 @@ Remove each flag after upgrading TMAX or vLLM to a pair that implements the corr
 
 ## 3. Qualify in layers
 
+The one-node smoke profiles target LUMI's `dev-g` partition; the four-node production profile targets
+`standard-g`. Change the partition only when local allocation policy requires it.
+
 Run these in order:
 
 1. `oellm-rlvr validate` and `topology` locally.

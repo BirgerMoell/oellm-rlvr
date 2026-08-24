@@ -6,7 +6,7 @@ platform:
   gpus_per_node: 8
   container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
   account: project_465002530
-  partition: standard-g
+  partition: dev-g
   walltime: 00:30:00
   cpus_per_task: 56
   memory: 480G
