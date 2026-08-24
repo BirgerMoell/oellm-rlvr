@@ -52,3 +52,4 @@ output:
   wandb_entity: local
 environment:
   OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
