@@ -91,6 +91,7 @@ def test_published_code_sample_builds_hidden_stdio_task(tmp_path: Path) -> None:
     dataset, task_root = sample_code_dataset(source, tmp_path / "packed", "/images/python.sif", count=1)
     row = pq.read_table(dataset).to_pylist()[0]
     assert row["env_config"]["task_id"] == "c1"
+    assert row["env_config"]["max_steps"] == 12
     assert row["ground_truth"] == "value = int(input())\nprint(value * 2)\n"
     assert "Double the input" in (task_root / "c1/instruction.md").read_text()
     cases = json.loads((task_root / "c1/tests/cases.json").read_text())

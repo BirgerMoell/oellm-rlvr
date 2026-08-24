@@ -42,12 +42,12 @@ model:
   per_turn_tokens: 2048
   pack_length: 10240
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771/train.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-s12/train.parquet
     weight: 1.0
     split: train
 task:
   kind: code
-  max_steps: 8
+  max_steps: 12
   pool_size: 16
   system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
   sandbox:
@@ -55,9 +55,12 @@ task:
     image: /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
     binary: /usr/bin/singularity
     fakeroot: false
-    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771/task-data
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-s12/task-data
     test_timeout: 600
     command_timeout: 120
+    last_step_warning: true
+    append_turns_remaining: true
+    tool_call_format_error_feedback: true
     cache_dir: /scratch/project_465002530/users/bmoell/apptainer-cache
     tmp_dir: /scratch/project_465002530/users/bmoell/apptainer-tmp
 rollout:

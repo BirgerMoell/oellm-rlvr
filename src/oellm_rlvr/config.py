@@ -69,6 +69,9 @@ class SandboxConfig(StrictModel):
     task_data_dir: str | None = None
     test_timeout: int = Field(default=600, ge=1)
     command_timeout: int = Field(default=120, ge=1)
+    last_step_warning: bool = False
+    append_turns_remaining: bool = False
+    tool_call_format_error_feedback: bool = False
     cache_dir: str | None = None
     tmp_dir: str | None = None
     prepared_root: str | None = None

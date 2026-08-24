@@ -93,7 +93,7 @@ $VENV/bin/oellm-rlvr sample-math \
   --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c.parquet" --count 8
 $VENV/bin/oellm-rlvr sample-code \
   --source data/oellm-code-rlvr-train.parquet \
-  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771" \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s12" \
   --image "$ROOT/sandboxes/python-3.12-slim" \
   --count 8
 ```
@@ -103,6 +103,8 @@ and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oe
 `sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
 problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
 The committed smoke profiles point at these generated paths.
+The code smoke exposes turns remaining and a final-step submission warning; these prevent a weak base policy
+from silently exhausting the rollout before the deferred verifier runs.
 
 Build the small read-only task sandbox once before the code smoke:
 

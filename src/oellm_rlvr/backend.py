@@ -22,6 +22,9 @@ def _tool_config(config: RunConfig) -> dict[str, object]:
         "test_timeout": sandbox.test_timeout,
         "timeout": sandbox.command_timeout,
         "fakeroot": sandbox.fakeroot,
+        "last_step_warning": sandbox.last_step_warning,
+        "append_turns_remaining": sandbox.append_turns_remaining,
+        "tool_call_format_error_feedback": sandbox.tool_call_format_error_feedback,
     }
     if sandbox.backend in {"apptainer", "prepared_apptainer", "slurm_apptainer"}:
         values["apptainer_binary"] = sandbox.binary

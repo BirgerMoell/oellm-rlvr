@@ -170,7 +170,7 @@ def sample_code_dataset(
                     "test.sh": _stdio_test_script(),
                 },
                 "ground_truth": row.get("ground_truth") or row.get("reference_solution") or "",
-                "max_steps": 8,
+                "max_steps": 12,
                 "copies": copies,
             }
         )
