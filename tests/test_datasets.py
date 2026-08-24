@@ -48,6 +48,42 @@ def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> No
     assert row["oellm_source_dataset"] == "oellm-math-rlvr"
 
 
+def test_published_math_sample_can_filter_difficulty_and_subdomain(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    rows = [
+        {
+            "id": f"m{index}",
+            "dataset": "oellm-math-rlvr",
+            "messages": [{"role": "user", "content": f"Problem {index}"}],
+            "ground_truth": [str(index)],
+            "verifier_kind": "integer_exact",
+            "semantic_group_id": f"g{index}",
+            "language": "en",
+            "difficulty": difficulty,
+            "subdomain": subdomain,
+        }
+        for index, (difficulty, subdomain) in enumerate(
+            [(3, "algebra"), (5, "algebra"), (5, "geometry"), (5, "geometry")]
+        )
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    output = tmp_path / "sample.parquet"
+    sample_math_dataset(
+        source,
+        output,
+        count=2,
+        language="en",
+        min_difficulty=5,
+        diverse_by="subdomain",
+    )
+    selected = pq.read_table(output).to_pylist()
+    assert [row["subdomain"] for row in selected] == ["algebra", "geometry"]
+    assert all(row["difficulty"] >= 5 for row in selected)
+
+
 def test_code_packer_matches_tmax_environment_shape(tmp_path: Path) -> None:
     pytest.importorskip("pyarrow")
     dataset, task_root = pack_code_dataset(ROOT / "examples/code_task.yaml", tmp_path)

@@ -67,7 +67,7 @@ rollout:
   engines: 4
   tensor_parallel_size: 1
   unique_prompts: 4
-  samples_per_prompt: 4
+  samples_per_prompt: 8
   temperature: 1.0
   gpu_memory_utilization: 0.65
   async_steps: 2
@@ -78,7 +78,7 @@ training:
   learner_gpus_per_node: [4]
   sequence_parallel_size: 4
   learning_rate: 1.0e-6
-  total_episodes: 64
+  total_episodes: 32
   epochs: 1
   deepspeed_stage: 3
   loss: dppo

@@ -21,9 +21,12 @@ def _backend(tmp_path: Path, monkeypatch) -> SlurmApptainerBackend:
 def test_slurm_command_uses_host_runtime_and_isolated_binds(tmp_path: Path, monkeypatch) -> None:
     backend = _backend(tmp_path, monkeypatch)
     calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    monkeypatch.setenv("SLURM_LABELIO", "1")
 
     def fake_run(argv, **kwargs):
         calls.append(argv)
+        environments.append(kwargs["env"])
         return subprocess.CompletedProcess(argv, 0, stdout=b"ok\n", stderr=b"")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -40,6 +43,7 @@ def test_slurm_command_uses_host_runtime_and_isolated_binds(tmp_path: Path, monk
     assert "/usr/bin/singularity" in argv
     assert "--containall" in argv
     assert any(value.endswith(":/workspace") for value in argv)
+    assert environments[0]["SLURM_LABELIO"] == "0"
 
 
 def test_slurm_sandbox_file_and_archive_io(tmp_path: Path, monkeypatch) -> None:
@@ -67,4 +71,3 @@ def test_slurm_sandbox_rejects_paths_outside_mounts(tmp_path: Path, monkeypatch)
         assert "outside" in str(error)
     else:
         raise AssertionError("write outside the sandbox mounts was accepted")
-

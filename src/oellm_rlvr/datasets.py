@@ -67,7 +67,14 @@ def make_math_smoke(path: str | Path, count: int = 64) -> None:
     write_rows(rows, path)
 
 
-def _sample_parquet_rows(path: str | Path, count: int, *, language: str | None = None) -> list[dict[str, Any]]:
+def _sample_parquet_rows(
+    path: str | Path,
+    count: int,
+    *,
+    language: str | None = None,
+    min_difficulty: int | None = None,
+    diverse_by: str | None = None,
+) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be positive")
     try:
@@ -77,19 +84,35 @@ def _sample_parquet_rows(path: str | Path, count: int, *, language: str | None =
     parquet = pq.ParquetFile(path)
     selected: list[dict[str, Any]] = []
     semantic_groups: set[str] = set()
+    diversity_values: set[str] = set()
     for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
         for row in batch.to_pylist():
             if language is not None and row.get("language") != language:
                 continue
+            difficulty = row.get("difficulty")
+            if min_difficulty is not None and (difficulty is None or int(difficulty) < min_difficulty):
+                continue
             group = str(row.get("semantic_group_id", row.get("id", "")))
             if group in semantic_groups:
                 continue
+            diversity_value = str(row.get(diverse_by, "")) if diverse_by else ""
+            if diverse_by and (not diversity_value or diversity_value in diversity_values):
+                continue
             semantic_groups.add(group)
+            if diverse_by:
+                diversity_values.add(diversity_value)
             selected.append(row)
             if len(selected) == count:
                 return selected
-    suffix = f" for language={language}" if language is not None else ""
-    raise ValueError(f"dataset contains only {len(selected)} unique semantic groups{suffix}; requested {count}")
+    filters = []
+    if language is not None:
+        filters.append(f"language={language}")
+    if min_difficulty is not None:
+        filters.append(f"difficulty>={min_difficulty}")
+    if diverse_by:
+        filters.append(f"distinct {diverse_by}")
+    suffix = f" for {', '.join(filters)}" if filters else ""
+    raise ValueError(f"dataset contains only {len(selected)} matching semantic groups{suffix}; requested {count}")
 
 
 def sample_math_dataset(
@@ -97,9 +120,17 @@ def sample_math_dataset(
     output: str | Path,
     count: int = 4,
     language: str | None = None,
+    min_difficulty: int | None = None,
+    diverse_by: str | None = None,
 ) -> None:
     required = {"messages", "ground_truth", "verifier_kind"}
-    rows = _sample_parquet_rows(source, count, language=language)
+    rows = _sample_parquet_rows(
+        source,
+        count,
+        language=language,
+        min_difficulty=min_difficulty,
+        diverse_by=diverse_by,
+    )
     for index, row in enumerate(rows):
         missing = required - row.keys()
         if missing:

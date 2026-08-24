@@ -90,7 +90,8 @@ curl -L \
   -o data/oellm-code-rlvr-train.parquet
 $VENV/bin/oellm-rlvr sample-math \
   --source data/oellm-math-rlvr-train.parquet \
-  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en.parquet" --count 8 --language en
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5.parquet" \
+  --count 8 --language en --min-difficulty 5 --diverse-by subdomain
 $VENV/bin/oellm-rlvr sample-code \
   --source data/oellm-code-rlvr-train.parquet \
   --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s6" \
@@ -103,6 +104,9 @@ and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oe
 `sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
 problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
 The committed smoke profiles point at these generated paths.
+The math smoke deliberately selects eight English difficulty-5 problems from different subdomains. Both
+one-node profiles draw eight completions for each of four prompts, increasing the chance that the grouped
+verifier rewards contain useful variation, and stop after one 32-episode optimization batch.
 The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
 This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
 `--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run

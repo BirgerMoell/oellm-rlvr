@@ -120,12 +120,19 @@ class SlurmApptainerBackend:
     def run_command(self, command: str, timeout: int | None = None) -> ExecutionResult:
         self._ensure_started()
         effective_timeout = self._timeout if timeout is None else timeout
+        run_environment = os.environ.copy()
+        # The training process is launched with `srun --label`, which exports
+        # SLURM_LABELIO=1. Do not let the nested same-node step inherit it:
+        # labels such as `0: EXISTS` are command output inside the sandbox and
+        # break exact protocol responses (including the deferred-test check).
+        run_environment["SLURM_LABELIO"] = "0"
         try:
             proc = subprocess.run(
                 self._command(command),
                 capture_output=True,
                 timeout=effective_timeout + 30,
                 check=False,
+                env=run_environment,
             )
         except subprocess.TimeoutExpired as error:
             stdout = (error.stdout or b"")[: self._MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
