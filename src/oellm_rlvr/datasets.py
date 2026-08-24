@@ -67,7 +67,7 @@ def make_math_smoke(path: str | Path, count: int = 64) -> None:
     write_rows(rows, path)
 
 
-def _sample_parquet_rows(path: str | Path, count: int) -> list[dict[str, Any]]:
+def _sample_parquet_rows(path: str | Path, count: int, *, language: str | None = None) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be positive")
     try:
@@ -79,6 +79,8 @@ def _sample_parquet_rows(path: str | Path, count: int) -> list[dict[str, Any]]:
     semantic_groups: set[str] = set()
     for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
         for row in batch.to_pylist():
+            if language is not None and row.get("language") != language:
+                continue
             group = str(row.get("semantic_group_id", row.get("id", "")))
             if group in semantic_groups:
                 continue
@@ -86,12 +88,18 @@ def _sample_parquet_rows(path: str | Path, count: int) -> list[dict[str, Any]]:
             selected.append(row)
             if len(selected) == count:
                 return selected
-    raise ValueError(f"dataset contains only {len(selected)} unique semantic groups; requested {count}")
+    suffix = f" for language={language}" if language is not None else ""
+    raise ValueError(f"dataset contains only {len(selected)} unique semantic groups{suffix}; requested {count}")
 
 
-def sample_math_dataset(source: str | Path, output: str | Path, count: int = 4) -> None:
+def sample_math_dataset(
+    source: str | Path,
+    output: str | Path,
+    count: int = 4,
+    language: str | None = None,
+) -> None:
     required = {"messages", "ground_truth", "verifier_kind"}
-    rows = _sample_parquet_rows(source, count)
+    rows = _sample_parquet_rows(source, count, language=language)
     for index, row in enumerate(rows):
         missing = required - row.keys()
         if missing:

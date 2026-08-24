@@ -90,7 +90,7 @@ curl -L \
   -o data/oellm-code-rlvr-train.parquet
 $VENV/bin/oellm-rlvr sample-math \
   --source data/oellm-math-rlvr-train.parquet \
-  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c.parquet" --count 8
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en.parquet" --count 8 --language en
 $VENV/bin/oellm-rlvr sample-code \
   --source data/oellm-code-rlvr-train.parquet \
   --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s12" \

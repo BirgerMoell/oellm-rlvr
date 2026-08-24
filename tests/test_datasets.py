@@ -33,13 +33,14 @@ def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> No
                     "ground_truth": ["5"],
                     "verifier_kind": "integer_exact",
                     "semantic_group_id": "g1",
+                    "language": "en",
                 }
             ]
         ),
         source,
     )
     output = tmp_path / "sample.parquet"
-    sample_math_dataset(source, output, count=1)
+    sample_math_dataset(source, output, count=1, language="en")
     row = pq.read_table(output).to_pylist()[0]
     assert row["ground_truth"] == ["5"]
     assert row["verifier_kind"] == "integer_exact"

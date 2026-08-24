@@ -114,7 +114,7 @@ def command_pack_code(args: argparse.Namespace) -> int:
 
 
 def command_sample_math(args: argparse.Namespace) -> int:
-    sample_math_dataset(args.source, args.output, args.count)
+    sample_math_dataset(args.source, args.output, args.count, language=args.language)
     print(args.output)
     return 0
 
@@ -180,6 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
     math_sample.add_argument("--source", required=True)
     math_sample.add_argument("--output", required=True)
     math_sample.add_argument("--count", type=int, default=8)
+    math_sample.add_argument("--language", help="optional exact language-code filter, for example en")
     math_sample.set_defaults(handler=command_sample_math)
 
     code_sample = sub.add_parser("sample-code")
