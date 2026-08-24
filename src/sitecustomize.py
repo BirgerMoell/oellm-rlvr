@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import os
 
-if os.environ.get("OELLM_PATCH_VLLM_MAMBA_ENUM") == "1":
-    from oellm_rlvr.compat import patch_vllm_mamba_enum
+from oellm_rlvr.compat import install_post_import_patch
 
-    patch_vllm_mamba_enum()
+if os.environ.get("OELLM_PATCH_VLLM_MAMBA_ENUM") == "1":
+    from oellm_rlvr.compat import patch_vllm_mamba_module
+
+    install_post_import_patch(
+        "vllm.v1.attention.backends.registry",
+        patch_vllm_mamba_module,
+    )
 
 if os.environ.get("OELLM_PATCH_VLLM_WEIGHT_UPDATE") == "1":
-    from oellm_rlvr.compat import patch_vllm_weight_update
+    from oellm_rlvr.compat import patch_vllm_weight_module
 
-    patch_vllm_weight_update()
+    install_post_import_patch(
+        "vllm.v1.engine.async_llm",
+        patch_vllm_weight_module,
+    )
