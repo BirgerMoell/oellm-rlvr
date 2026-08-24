@@ -54,6 +54,11 @@ finish even when a weak base policy receives identical rewards. The four-node pr
 Do not scale a run that has all-equal rewards, zero gradients, near-total truncation, high verifier errors, or
 unbounded policy lag.
 
+The LUMI profiles currently use `sequence_parallel_size: 1`. In the pinned August 2026 container, FLA's
+context-parallel `chunk_delta_h` Triton kernel can fail AMD MLIR compilation on variable real-rollout shapes
+even though the fixed-shape dummy step passes. Raise sequence parallelism only after a real learner-step smoke
+passes in the exact replacement container/FLA/Triton combination.
+
 ## 4. Code sandbox image
 
 The trainer container and task container have different roles. The LUMI AI Factory SIF runs PyTorch, Ray,

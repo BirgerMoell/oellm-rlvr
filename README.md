@@ -151,6 +151,10 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 
 Every profile is validated before rendering. It rejects oversubscribed GPU layouts, insufficient rollout batches, invalid sequence-parallel divisibility, math runs with sandboxes, and code runs without sandboxes.
 
+The LUMI profiles intentionally keep sequence parallelism at 1 because the pinned ROCm/FLA/Triton stack's
+context-parallel GDN kernel fails AMD MLIR compilation for some variable rollout shapes. The learner GCDs are
+used as data-parallel ranks instead; see the LUMI runbook before changing this setting.
+
 ## Definition of a successful smoke
 
 The committed one-node profiles are bounded infrastructure smokes. A successful job is more than a zero

@@ -55,7 +55,7 @@ rollout:
   inflight_updates: true
 training:
   learner_gpus_per_node: [8, 8]
-  sequence_parallel_size: 4
+  sequence_parallel_size: 1
   learning_rate: 1.0e-6
   total_episodes: 128000
   epochs: 1
