@@ -32,7 +32,7 @@ def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     assert tool_config["backend"] == "slurm_apptainer"
     assert tool_config["apptainer_binary"] == "/usr/bin/singularity"
     assert tool_config["fakeroot"] is False
-    assert tool_config["task_data_dir"].endswith("/data/code-hf-e1cae771-s12/task-data")
+    assert tool_config["task_data_dir"].endswith("/data/code-hf-e1cae771-s6/task-data")
     assert tool_config["last_step_warning"] is True
     assert tool_config["append_turns_remaining"] is True
     assert tool_config["tool_call_format_error_feedback"] is True

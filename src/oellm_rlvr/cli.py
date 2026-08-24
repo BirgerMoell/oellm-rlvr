@@ -120,7 +120,9 @@ def command_sample_math(args: argparse.Namespace) -> int:
 
 
 def command_sample_code(args: argparse.Namespace) -> int:
-    dataset_path, task_root = sample_code_dataset(args.source, args.output_dir, args.image, args.count, args.copies)
+    dataset_path, task_root = sample_code_dataset(
+        args.source, args.output_dir, args.image, args.count, args.copies, args.max_steps
+    )
     _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
     return 0
 
@@ -189,6 +191,12 @@ def build_parser() -> argparse.ArgumentParser:
     code_sample.add_argument("--image", required=True)
     code_sample.add_argument("--count", type=int, default=8)
     code_sample.add_argument("--copies", type=int, default=1)
+    code_sample.add_argument(
+        "--max-steps",
+        type=int,
+        default=6,
+        help="maximum sandbox turns per trajectory (default: 6 for the smoke profile)",
+    )
     code_sample.set_defaults(handler=command_sample_code)
 
     verify = sub.add_parser("verify")

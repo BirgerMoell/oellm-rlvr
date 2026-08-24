@@ -149,8 +149,15 @@ PY
 
 
 def sample_code_dataset(
-    source: str | Path, output_dir: str | Path, image: str, count: int = 4, copies: int = 1
+    source: str | Path,
+    output_dir: str | Path,
+    image: str,
+    count: int = 4,
+    copies: int = 1,
+    max_steps: int = 6,
 ) -> tuple[Path, Path]:
+    if max_steps < 1:
+        raise ValueError("max_steps must be positive")
     rows = _sample_parquet_rows(source, count)
     manifests: list[dict[str, object]] = []
     for index, row in enumerate(rows):
@@ -178,7 +185,7 @@ def sample_code_dataset(
                     "test.sh": _stdio_test_script(),
                 },
                 "ground_truth": row.get("ground_truth") or row.get("reference_solution") or "",
-                "max_steps": 12,
+                "max_steps": max_steps,
                 "copies": copies,
             }
         )

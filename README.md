@@ -93,9 +93,9 @@ $VENV/bin/oellm-rlvr sample-math \
   --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en.parquet" --count 8 --language en
 $VENV/bin/oellm-rlvr sample-code \
   --source data/oellm-code-rlvr-train.parquet \
-  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s12" \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s6" \
   --image "$ROOT/sandboxes/python-3.12-slim" \
-  --count 8
+  --count 8 --max-steps 6
 ```
 
 The inputs are [birgermoell/oellm-math-rlvr](https://huggingface.co/datasets/birgermoell/oellm-math-rlvr)
@@ -103,8 +103,10 @@ and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oe
 `sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
 problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
 The committed smoke profiles point at these generated paths.
-The code smoke exposes turns remaining and a final-step submission warning; these prevent a weak base policy
-from silently exhausting the rollout before the deferred verifier runs.
+The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
+This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
+`--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
+configuration equal to that value.
 
 Build the small read-only task sandbox once before the code smoke:
 
