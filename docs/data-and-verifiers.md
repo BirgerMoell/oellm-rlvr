@@ -34,6 +34,9 @@ The flat per-sample environment shape is:
 }
 ```
 
+`dataset` is the Open-Instruct verifier dispatch key, not a provenance label. Math samples use `math` and
+code sandbox samples use `passthrough`; the original dataset identity is retained in `oellm_source_dataset`.
+
 At load time, the pinned backend merges this with the run-level environment config and passes `task_id`, `image`, and `max_steps` to the Ray environment actor. The code pool uses `apptainer` or `prepared_apptainer` on LUMI and Docker/Apptainer on CUDA systems.
 
 ## Test design

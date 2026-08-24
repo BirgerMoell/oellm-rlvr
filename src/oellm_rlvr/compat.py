@@ -10,6 +10,13 @@ from types import ModuleType
 from typing import Any
 
 ModulePatch = Callable[[ModuleType], object]
+PREPARED_ONLY_BACKEND_KWARGS = {
+    "prepared_root",
+    "prepared_cache_dir",
+    "prepared_state_cache_key",
+    "prepared_scratch_root",
+    "prepared_copy_method",
+}
 
 
 class _PostImportLoader(importlib.abc.Loader):
@@ -111,3 +118,20 @@ def patch_vllm_weight_update() -> bool:
     # Pinned TMAX sends one packed update per broadcast. vLLM 0.22.1 made the
     # surrounding start/finish transaction mandatory after that TMAX revision.
     return patch_vllm_weight_module(async_llm)
+
+
+def wrap_swerl_create_backend(module: ModuleType) -> bool:
+    """Keep prepared-Apptainer defaults away from the plain backend."""
+    original = module.create_backend
+    if getattr(original, "_oellm_filters_prepared_kwargs", False):
+        return False
+
+    @wraps(original)
+    def compatible_create_backend(backend_type: str, *args: Any, **kwargs: Any) -> Any:
+        if backend_type != "prepared_apptainer":
+            kwargs = {key: value for key, value in kwargs.items() if key not in PREPARED_ONLY_BACKEND_KWARGS}
+        return original(backend_type, *args, **kwargs)
+
+    compatible_create_backend._oellm_filters_prepared_kwargs = True
+    module.create_backend = compatible_create_backend
+    return True

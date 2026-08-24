@@ -9,6 +9,7 @@ from oellm_rlvr.compat import (
     patch_vllm_mamba_module,
     replace_none_enum_value,
     wrap_async_weight_update,
+    wrap_swerl_create_backend,
 )
 
 
@@ -79,3 +80,34 @@ def test_weight_update_is_wrapped_in_transaction() -> None:
     engine = FakeAsyncLLM()
     assert asyncio.run(engine.update_weights("request")) == "done"
     assert engine.calls == [("start", True), ("update", "request"), ("finish",)]
+
+
+def test_swerl_plain_apptainer_drops_prepared_kwargs() -> None:
+    module = ModuleType("fake_swerl")
+
+    def create_backend(backend_type, **kwargs):
+        return backend_type, kwargs
+
+    module.create_backend = create_backend
+    assert wrap_swerl_create_backend(module) is True
+    assert wrap_swerl_create_backend(module) is False
+    backend_type, kwargs = module.create_backend(
+        "apptainer",
+        image="python.sif",
+        prepared_root="/prepared",
+        prepared_copy_method="reflink",
+    )
+    assert backend_type == "apptainer"
+    assert kwargs == {"image": "python.sif"}
+
+
+def test_swerl_prepared_apptainer_keeps_prepared_kwargs() -> None:
+    module = ModuleType("fake_swerl")
+
+    def create_backend(backend_type, **kwargs):
+        return backend_type, kwargs
+
+    module.create_backend = create_backend
+    wrap_swerl_create_backend(module)
+    _, kwargs = module.create_backend("prepared_apptainer", prepared_root="/prepared")
+    assert kwargs == {"prepared_root": "/prepared"}

@@ -59,7 +59,8 @@ def make_math_smoke(path: str | Path, count: int = 64) -> None:
         {
             "messages": [{"role": "user", "content": f"Compute {n} + {n + 1}. Give the final answer in \\boxed{{}}."}],
             "ground_truth": str(2 * n + 1),
-            "dataset": "oellm_math_smoke",
+            "dataset": "math",
+            "oellm_source_dataset": "oellm_math_smoke",
         }
         for n in range(1, count + 1)
     ]
@@ -95,6 +96,9 @@ def sample_math_dataset(source: str | Path, output: str | Path, count: int = 4) 
         missing = required - row.keys()
         if missing:
             raise ValueError(f"math row {index} is missing columns: {sorted(missing)}")
+        row["oellm_source_dataset"] = str(row.get("dataset", ""))
+        # Open-Instruct dispatches ground-truth verifiers by this column.
+        row["dataset"] = "math"
     write_rows(rows, output)
 
 
@@ -202,7 +206,10 @@ def _pack_code_manifests(manifests: list[dict[str, object]], output_dir: str | P
                             "content": "Solve the coding task in the sandbox. Run tests, then submit when complete.",
                         }
                     ],
-                    "dataset": "oellm_code",
+                    # Environment rewards are aggregated separately; this registered
+                    # verifier intentionally contributes zero ground-truth reward.
+                    "dataset": "passthrough",
+                    "oellm_source_dataset": "oellm-code-rlvr",
                     "ground_truth": task.ground_truth,
                     "instance_id": f"{task.id}-{copy_index}",
                     "tools": ["bash"],

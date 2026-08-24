@@ -22,13 +22,15 @@ After bootstrapping, stage `hamishivi/Qwen3.5-2B` on shared storage. Keep the ca
 TMAX, Transformers, and vLLM to that local directory, so the offline compute job does not need a token or a
 complete Hugging Face cache layout.
 
-The LUMI profiles enable two guarded, lazy vLLM 0.22.1 compatibility hooks in every driver and Ray worker.
+The LUMI profiles enable guarded, lazy compatibility hooks in every driver and Ray worker.
 The hooks run only when the relevant vLLM module is imported, so Ray's generic prestarted workers remain cheap:
 
 - `OELLM_PATCH_VLLM_MAMBA_ENUM=1` normalizes the unused `CUSTOM=None` Mamba backend enum value that
   vLLM's own `msgspec` IPC decoder rejects for Qwen3.5.
 - `OELLM_PATCH_VLLM_WEIGHT_UPDATE=1` wraps TMAX's packed update in the `start_weight_update` /
   `finish_weight_update` transaction newly required by vLLM 0.22.1.
+- Code profiles use `OELLM_PATCH_SWERL_APPTAINER_KWARGS=1` to filter prepared-backend defaults before
+  pinned TMAX constructs a plain Apptainer backend.
 
 Remove each flag after upgrading TMAX or vLLM to a pair that implements the corresponding behavior natively.
 

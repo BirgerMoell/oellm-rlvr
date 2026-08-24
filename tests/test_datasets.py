@@ -14,6 +14,7 @@ def test_math_smoke_jsonl_schema(tmp_path: Path) -> None:
     rows = [json.loads(line) for line in path.read_text().splitlines()]
     assert len(rows) == 3
     assert rows[0]["ground_truth"] == "3"
+    assert rows[0]["dataset"] == "math"
     assert rows[0]["messages"][0]["role"] == "user"
 
 
@@ -27,6 +28,7 @@ def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> No
             [
                 {
                     "id": "m1",
+                    "dataset": "oellm-math-rlvr",
                     "messages": [{"role": "user", "content": "Compute 2 + 3."}],
                     "ground_truth": ["5"],
                     "verifier_kind": "integer_exact",
@@ -41,6 +43,8 @@ def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> No
     row = pq.read_table(output).to_pylist()[0]
     assert row["ground_truth"] == ["5"]
     assert row["verifier_kind"] == "integer_exact"
+    assert row["dataset"] == "math"
+    assert row["oellm_source_dataset"] == "oellm-math-rlvr"
 
 
 def test_code_packer_matches_tmax_environment_shape(tmp_path: Path) -> None:
@@ -55,6 +59,7 @@ def test_code_packer_matches_tmax_environment_shape(tmp_path: Path) -> None:
     assert env["env_name"] == "swerl_vanillux_sandbox"
     assert env["task_id"] == "add-two-integers"
     assert row["tools"] == ["bash"]
+    assert row["dataset"] == "passthrough"
     assert (task_root / "add-two-integers/tests/test.sh").is_file()
     assert (tmp_path / "task-data.tar.gz").is_file()
 
