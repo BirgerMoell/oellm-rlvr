@@ -172,7 +172,10 @@ Before scaling, run a separate signal qualification with active sampling enabled
 and policy-lag gates. The four-node training profile enables active sampling; do not scale a run with all-equal
 rewards merely because the bounded infrastructure smoke passes.
 
-The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. Actual MI250X qualification still requires submitting the two smoke jobs; cluster runtime behavior cannot be proven on a laptop.
+The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
+one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24; see
+[the qualification record](docs/qualification-2026-08-24.md) for exact jobs, versions, metrics, and the
+remaining signal-qualification work.
 
 ## Security
 
