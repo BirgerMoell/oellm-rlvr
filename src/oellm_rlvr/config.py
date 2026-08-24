@@ -61,7 +61,7 @@ class DatasetConfig(StrictModel):
 
 
 class SandboxConfig(StrictModel):
-    backend: Literal["apptainer", "prepared_apptainer", "docker"] = "apptainer"
+    backend: Literal["apptainer", "prepared_apptainer", "slurm_apptainer", "docker"] = "apptainer"
     image: str
     binary: str = "singularity"
     fakeroot: bool = False

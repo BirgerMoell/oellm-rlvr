@@ -23,7 +23,7 @@ def _tool_config(config: RunConfig) -> dict[str, object]:
         "timeout": sandbox.command_timeout,
         "fakeroot": sandbox.fakeroot,
     }
-    if sandbox.backend in {"apptainer", "prepared_apptainer"}:
+    if sandbox.backend in {"apptainer", "prepared_apptainer", "slurm_apptainer"}:
         values["apptainer_binary"] = sandbox.binary
     optional = (
         "task_data_hf_repo",

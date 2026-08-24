@@ -90,11 +90,11 @@ curl -L \
   -o data/oellm-code-rlvr-train.parquet
 $VENV/bin/oellm-rlvr sample-math \
   --source data/oellm-math-rlvr-train.parquet \
-  --output "$ROOT/oellm-rlvr/data/math-hf-sample.parquet" --count 8
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c.parquet" --count 8
 $VENV/bin/oellm-rlvr sample-code \
   --source data/oellm-code-rlvr-train.parquet \
-  --output-dir "$ROOT/oellm-rlvr/data/code-hf-sample" \
-  --image /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771" \
+  --image "$ROOT/sandboxes/python-3.12-slim" \
   --count 8
 ```
 
@@ -103,6 +103,16 @@ and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oe
 `sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
 problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
 The committed smoke profiles point at these generated paths.
+
+Build the small read-only task sandbox once before the code smoke:
+
+```bash
+bash "$ROOT/oellm-rlvr-src/scripts/build_lumi_task_sandbox.sh" \
+  "$ROOT/sandboxes/python-3.12-slim"
+```
+
+Use revision-labelled output paths when changing a sampled dataset. Hugging Face Datasets caches prepared
+Arrow data by builder inputs and can otherwise reuse an older local Parquet build at the same pathname.
 
 Prepare the included code smoke task:
 
@@ -125,7 +135,7 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | Profile | Purpose | GPU split |
 |---|---|---|
 | `lumi-math-qwen35-2b-smoke.yaml` | One-node math signal and weight-sync smoke | 4 learner + 4 rollout GCDs |
-| `lumi-code-qwen35-2b-smoke.yaml` | One-node Apptainer agent/test smoke | 4 learner + 4 rollout GCDs |
+| `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
 

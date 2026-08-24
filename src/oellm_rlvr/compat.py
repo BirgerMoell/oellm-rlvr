@@ -128,6 +128,10 @@ def wrap_swerl_create_backend(module: ModuleType) -> bool:
 
     @wraps(original)
     def compatible_create_backend(backend_type: str, *args: Any, **kwargs: Any) -> Any:
+        if backend_type == "slurm_apptainer":
+            from oellm_rlvr.slurm_sandbox import SlurmApptainerBackend
+
+            return SlurmApptainerBackend(*args, **kwargs)
         if backend_type != "prepared_apptainer":
             kwargs = {key: value for key, value in kwargs.items() if key not in PREPARED_ONLY_BACKEND_KWARGS}
         return original(backend_type, *args, **kwargs)

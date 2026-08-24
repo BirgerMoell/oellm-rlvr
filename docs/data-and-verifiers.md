@@ -37,7 +37,10 @@ The flat per-sample environment shape is:
 `dataset` is the Open-Instruct verifier dispatch key, not a provenance label. Math samples use `math` and
 code sandbox samples use `passthrough`; the original dataset identity is retained in `oellm_source_dataset`.
 
-At load time, the pinned backend merges this with the run-level environment config and passes `task_id`, `image`, and `max_steps` to the Ray environment actor. The code pool uses `apptainer` or `prepared_apptainer` on LUMI and Docker/Apptainer on CUDA systems.
+At load time, the pinned backend merges this with the run-level environment config and passes `task_id`,
+`image`, and `max_steps` to the Ray environment actor. LUMI smoke profiles use `slurm_apptainer`, which asks
+slurmd to launch host Singularity from the containerized Ray actor. Prepared Apptainer remains available for
+prebuilt production task states, and CUDA systems can use Docker or Apptainer.
 
 ## Test design
 

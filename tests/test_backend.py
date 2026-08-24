@@ -24,12 +24,12 @@ def test_math_backend_has_online_rollout_and_active_sampling_flags() -> None:
     assert "--tools" not in argv
 
 
-def test_code_backend_uses_apptainer_swerl_environment() -> None:
+def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)
     assert _value(argv, "--tools") == "swerl_vanillux_sandbox"
     tool_config = json.loads(_value(argv, "--tool_configs"))
-    assert tool_config["backend"] == "apptainer"
-    assert tool_config["apptainer_binary"] == "singularity"
+    assert tool_config["backend"] == "slurm_apptainer"
+    assert tool_config["apptainer_binary"] == "/usr/bin/singularity"
     assert tool_config["fakeroot"] is False
-    assert tool_config["task_data_dir"].endswith("/data/code-hf-sample/task-data")
+    assert tool_config["task_data_dir"].endswith("/data/code-hf-e1cae771/task-data")

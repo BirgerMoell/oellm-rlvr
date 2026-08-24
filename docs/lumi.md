@@ -29,8 +29,8 @@ The hooks run only when the relevant vLLM module is imported, so Ray's generic p
   vLLM's own `msgspec` IPC decoder rejects for Qwen3.5.
 - `OELLM_PATCH_VLLM_WEIGHT_UPDATE=1` wraps TMAX's packed update in the `start_weight_update` /
   `finish_weight_update` transaction newly required by vLLM 0.22.1.
-- Code profiles use `OELLM_PATCH_SWERL_APPTAINER_KWARGS=1` to filter prepared-backend defaults before
-  pinned TMAX constructs a plain Apptainer backend.
+- Code profiles use `OELLM_PATCH_SWERL_APPTAINER_KWARGS=1` to register the LUMI `slurm_apptainer`
+  backend and filter prepared-backend defaults before pinned TMAX constructs a plain Apptainer backend.
 
 Remove each flag after upgrading TMAX or vLLM to a pair that implements the corresponding behavior natively.
 
@@ -53,9 +53,20 @@ Do not scale a run that has all-equal rewards, zero gradients, near-total trunca
 ## 4. Code sandbox image
 
 The trainer container and task container have different roles. The LUMI AI Factory SIF runs PyTorch, Ray,
-and vLLM. The smoke profile reuses that readable system SIF as the nested Apptainer task image so it works
-on a stock LUMI project allocation. Before production, build a smaller task SIF containing only the language
-runtimes and test dependencies, then update `task.sandbox.image`; generated code does not need the training
+and vLLM. Nested setuid Apptainer is unavailable inside that SIF, while unprivileged nested execution depends
+on user namespaces that may be exhausted or disabled. The `slurm_apptainer` backend therefore launches the
+host Singularity runtime in a same-node overlapping Slurm step. It binds only an isolated per-episode
+workspace, output, logs, tests, root, and temporary directory into the read-only task image.
+
+Build the smoke task sandbox once on a login node:
+
+```bash
+bash scripts/build_lumi_task_sandbox.sh \
+  /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
+```
+
+The smoke image contains only Python 3.12 and its standard library. Build a task-specific image with the
+required runtimes and test dependencies for broader code training; generated code does not need the training
 stack.
 
 Each task directory contains:

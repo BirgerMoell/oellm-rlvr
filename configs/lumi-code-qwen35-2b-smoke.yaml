@@ -10,7 +10,25 @@ platform:
   walltime: 00:45:00
   cpus_per_task: 56
   memory: 480G
-  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  binds:
+    - /pfs
+    - /scratch
+    - /flash
+    - /project
+    - /projappl
+    - /appl
+    - /opt/cray
+    - /var/spool/slurmd
+    - /usr/bin/srun:/usr/bin/srun
+    - /lib64:/hostlib64
+    - /usr/lib64:/hostusr/lib64
+    - /usr/lib64/slurm:/usr/lib64/slurm
+    - /usr/share/lua:/usr/share/lua
+    - /usr/lib64/lua:/usr/lib64/lua
+    - /etc/slurm:/etc/slurm
+    - /etc/passwd:/etc/passwd
+    - /etc/group:/etc/group
+    - /run/munge:/run/munge
   network_interface: hsn0,hsn1,hsn2,hsn3
 backend:
   repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
@@ -24,7 +42,7 @@ model:
   per_turn_tokens: 2048
   pack_length: 10240
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-sample/train.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771/train.parquet
     weight: 1.0
     split: train
 task:
@@ -33,11 +51,11 @@ task:
   pool_size: 16
   system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
   sandbox:
-    backend: apptainer
-    image: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
-    binary: singularity
+    backend: slurm_apptainer
+    image: /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
+    binary: /usr/bin/singularity
     fakeroot: false
-    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-sample/task-data
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771/task-data
     test_timeout: 600
     command_timeout: 120
     cache_dir: /scratch/project_465002530/users/bmoell/apptainer-cache
