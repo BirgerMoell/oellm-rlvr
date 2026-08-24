@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tarfile
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -16,6 +17,7 @@ class CodeTaskManifest(BaseModel):
     image: str
     seed_files: dict[str, str] = Field(default_factory=dict)
     test_files: dict[str, str]
+    ground_truth: str | list[str] = ""
     max_steps: int = Field(default=32, ge=1)
     copies: int = Field(default=1, ge=1)
 
@@ -64,9 +66,120 @@ def make_math_smoke(path: str | Path, count: int = 64) -> None:
     write_rows(rows, path)
 
 
+def _sample_parquet_rows(path: str | Path, count: int) -> list[dict[str, Any]]:
+    if count < 1:
+        raise ValueError("count must be positive")
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as error:
+        raise RuntimeError("Parquet input requires pyarrow (install oellm-rlvr[data])") from error
+    parquet = pq.ParquetFile(path)
+    selected: list[dict[str, Any]] = []
+    semantic_groups: set[str] = set()
+    for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
+        for row in batch.to_pylist():
+            group = str(row.get("semantic_group_id", row.get("id", "")))
+            if group in semantic_groups:
+                continue
+            semantic_groups.add(group)
+            selected.append(row)
+            if len(selected) == count:
+                return selected
+    raise ValueError(f"dataset contains only {len(selected)} unique semantic groups; requested {count}")
+
+
+def sample_math_dataset(source: str | Path, output: str | Path, count: int = 4) -> None:
+    required = {"messages", "ground_truth", "verifier_kind"}
+    rows = _sample_parquet_rows(source, count)
+    for index, row in enumerate(rows):
+        missing = required - row.keys()
+        if missing:
+            raise ValueError(f"math row {index} is missing columns: {sorted(missing)}")
+    write_rows(rows, output)
+
+
+def _stdio_test_script() -> str:
+    return """#!/usr/bin/env bash
+set -euo pipefail
+python - <<'PY'
+import json
+import pathlib
+import subprocess
+
+cases = json.loads(pathlib.Path("/tests/cases.json").read_text())
+solution = pathlib.Path("/workspace/solution.py")
+passed = solution.is_file()
+failure = "missing /workspace/solution.py" if not passed else ""
+if passed:
+    for index, case in enumerate(cases):
+        try:
+            result = subprocess.run(
+                ["python", str(solution)],
+                input=case["input"],
+                text=True,
+                capture_output=True,
+                timeout=float(case["timeout_seconds"]),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            passed = False
+            failure = f"case {index}: timeout"
+            break
+        if result.returncode != 0 or result.stdout != case["output"]:
+            passed = False
+            failure = f"case {index}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+            break
+pathlib.Path("/logs/verifier/reward.txt").write_text("1.0\n" if passed else "0.0\n")
+if not passed:
+    raise SystemExit(failure)
+PY
+"""
+
+
+def sample_code_dataset(
+    source: str | Path, output_dir: str | Path, image: str, count: int = 4, copies: int = 1
+) -> tuple[Path, Path]:
+    rows = _sample_parquet_rows(source, count)
+    manifests: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
+        verification = row.get("verification_info")
+        if not isinstance(verification, dict) or verification.get("language") != "python":
+            raise ValueError(f"code row {index} does not contain Python verification_info")
+        cases = verification.get("test_cases")
+        if not isinstance(cases, list) or not cases:
+            raise ValueError(f"code row {index} has no hidden test cases")
+        if any(case.get("type") != "stdin_stdout" for case in cases):
+            raise ValueError(f"code row {index} contains a non-stdio test")
+        timeout = int(row.get("time_limit_seconds", 2))
+        hidden_cases = [
+            {"input": case["input"], "output": case["output"], "timeout_seconds": timeout} for case in cases
+        ]
+        problem = str(row.get("problem") or row["messages"][0]["content"])
+        manifests.append(
+            {
+                "id": str(row["id"]),
+                "instruction": problem + "\n\nWrite the complete program to `/workspace/solution.py`.",
+                "image": image,
+                "seed_files": {"solution.py": "# Write the complete Python 3 solution here.\n"},
+                "test_files": {
+                    "cases.json": json.dumps(hidden_cases, ensure_ascii=False, separators=(",", ":")),
+                    "test.sh": _stdio_test_script(),
+                },
+                "ground_truth": row.get("ground_truth") or row.get("reference_solution") or "",
+                "max_steps": 8,
+                "copies": copies,
+            }
+        )
+    return _pack_code_manifests(manifests, output_dir)
+
+
 def pack_code_dataset(manifest_path: str | Path, output_dir: str | Path) -> tuple[Path, Path]:
     raw = yaml.safe_load(Path(manifest_path).read_text())
     manifests = raw if isinstance(raw, list) else [raw]
+    return _pack_code_manifests(manifests, output_dir)
+
+
+def _pack_code_manifests(manifests: list[dict[str, object]], output_dir: str | Path) -> tuple[Path, Path]:
     tasks = [CodeTaskManifest.model_validate(item) for item in manifests]
     output = Path(output_dir)
     task_root = output / "task-data"
@@ -90,6 +203,7 @@ def pack_code_dataset(manifest_path: str | Path, output_dir: str | Path) -> tupl
                         }
                     ],
                     "dataset": "oellm_code",
+                    "ground_truth": task.ground_truth,
                     "instance_id": f"{task.id}-{copy_index}",
                     "tools": ["bash"],
                     "env_config": {

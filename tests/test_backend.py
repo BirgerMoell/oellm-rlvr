@@ -14,12 +14,13 @@ def _value(argv: list[str], flag: str) -> str:
 def test_math_backend_has_online_rollout_and_active_sampling_flags() -> None:
     config = load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)
-    assert argv[:3] == [config.backend.python, "-u", "open_instruct/grpo_fast.py"]
+    assert argv[:5] == [config.backend.python, "-u", "-m", "oellm_rlvr.tmax_launcher", config.backend.script]
     assert _value(argv, "--vllm_num_engines") == "4"
     assert _value(argv, "--num_learners_per_node") == "4"
     assert "--active_sampling" in argv
     assert "--inflight_updates" in argv
     assert _value(argv, "--vllm_gdn_prefill_backend") == "triton"
+    assert _value(argv, "--wandb_entity") == "local"
     assert "--tools" not in argv
 
 
@@ -31,4 +32,4 @@ def test_code_backend_uses_apptainer_swerl_environment() -> None:
     assert tool_config["backend"] == "apptainer"
     assert tool_config["apptainer_binary"] == "singularity"
     assert tool_config["fakeroot"] is False
-    assert tool_config["task_data_dir"].endswith("/data/code-smoke/task-data")
+    assert tool_config["task_data_dir"].endswith("/data/code-hf-sample/task-data")

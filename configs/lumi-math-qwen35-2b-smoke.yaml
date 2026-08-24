@@ -17,13 +17,14 @@ backend:
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
   python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
 model:
-  name_or_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
+  name_or_path: hamishivi/Qwen3.5-2B
+  local_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
   max_prompt_tokens: 1024
   response_tokens: 4096
   per_turn_tokens: 4096
   pack_length: 5120
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-smoke.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-hf-sample.parquet
     weight: 1.0
     split: train
 task:
@@ -37,7 +38,7 @@ rollout:
   samples_per_prompt: 4
   temperature: 1.0
   gpu_memory_utilization: 0.65
-  async_steps: 1
+  async_steps: 2
   active_sampling: true
   inflight_updates: true
   enforce_eager: true
@@ -57,7 +58,10 @@ output:
   experiment_name: lumi_math_qwen35_2b_smoke
   with_tracking: true
   wandb_mode: offline
+  wandb_entity: local
 environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"

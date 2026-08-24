@@ -17,7 +17,15 @@ It provides PyTorch 2.10 ROCm 7, gfx90a vLLM 0.22.1 with native weight transfer,
 
 Run `scripts/bootstrap_lumi_env.sh` on a login node with network access. Do not use the backend's CUDA-oriented `uv sync`. Re-run bootstrap when the base SIF or pinned backend commit changes; do not mutate a venv used by an active run.
 
-After bootstrapping, cache `hamishivi/Qwen3.5-2B` or change `model.name_or_path` to a local snapshot. If authentication is required, download on a login/data-transfer node and ensure the final compute job receives no token it does not need.
+After bootstrapping, stage `hamishivi/Qwen3.5-2B` on shared storage. Keep the canonical repository ID in
+`model.name_or_path` and set `model.local_path` to the staged snapshot. The control-plane launcher resolves
+TMAX, Transformers, and vLLM to that local directory, so the offline compute job does not need a token or a
+complete Hugging Face cache layout.
+
+The LUMI profiles enable `OELLM_PATCH_VLLM_MAMBA_ENUM=1`. vLLM 0.22.1 mixes string and `None` values in
+its Mamba backend enum, which its own `msgspec` IPC decoder rejects for Qwen3.5. The guarded Python startup
+compatibility hook normalizes the unused `CUSTOM` value in every driver and Ray worker. Remove the flag
+after upgrading to a vLLM release that fixes the enum.
 
 ## 3. Qualify in layers
 
@@ -34,7 +42,11 @@ Do not scale a run that has all-equal rewards, zero gradients, near-total trunca
 
 ## 4. Code sandbox image
 
-The trainer container and task container have different roles. The LUMI AI Factory SIF runs PyTorch, Ray, and vLLM. A smaller task SIF runs untrusted code and its tests. The example expects `/scratch/project_465002530/containers/python-3.12-code-sandbox.sif`.
+The trainer container and task container have different roles. The LUMI AI Factory SIF runs PyTorch, Ray,
+and vLLM. The smoke profile reuses that readable system SIF as the nested Apptainer task image so it works
+on a stock LUMI project allocation. Before production, build a smaller task SIF containing only the language
+runtimes and test dependencies, then update `task.sandbox.image`; generated code does not need the training
+stack.
 
 Each task directory contains:
 

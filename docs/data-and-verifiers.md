@@ -10,6 +10,9 @@ The backend-compatible minimum row is:
 
 `make-math-smoke` emits JSONL or Parquet based on the output suffix. Production math data should preserve source/license/provenance outside the training columns, pin a revision, remove evaluation contamination, and test every verifier on adversarial completions before training.
 
+`sample-math` selects distinct semantic groups from the published OpenEuroLLM Math RLVR Parquet shard
+and preserves all provenance and verifier columns. The policy still receives only `messages`.
+
 The lightweight `MathVerifier` extracts the last `\\boxed{...}`, then `<final>...</final>`, then an explicit answer line, then the last nonempty line. It supports normalized exact strings and bounded rational arithmetic without calling `eval`. The online backend uses its own pinned ground-truth verifier implementation; the lightweight verifier is for dataset QA and regression tests.
 
 ## Code
@@ -38,6 +41,11 @@ At load time, the pinned backend merges this with the run-level environment conf
 Tests must be deterministic, bounded, and resistant to hard-coded answers. Use multiple public/hidden cases, property checks where practical, isolated temporary state, and explicit timeouts. Do not use network access or external services. Treat syntax/test failures as valid reward zero; label sandbox launch, missing image, missing test file, timeout, OOM, and parser failures as infrastructure errors as well as reward zero.
 
 Binary reward is the safest initial contract. Introduce partial reward only when every component has a precise interpretation and cannot be farmed without solving the task. Version verifier code and store the version with every trajectory.
+
+`sample-code` accepts the published OpenEuroLLM Code RLVR Parquet shard. It converts each Python
+`stdin_stdout` hidden test into `cases.json` plus a bounded sandbox runner. The generated training row
+contains only the policy-visible messages and TMAX environment configuration; hidden tests never enter
+the model context.
 
 ## Local verifier QA
 

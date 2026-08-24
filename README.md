@@ -77,6 +77,33 @@ $VENV/bin/oellm-rlvr render-slurm \
 sbatch "$ROOT/oellm-rlvr/math-smoke.sbatch"
 ```
 
+To reproduce the live Hugging Face sample smokes, download the pinned train shards and select eight
+different semantic groups (enough to fill two asynchronous steps across four rollout engines):
+
+```bash
+mkdir -p data
+curl -L \
+  https://huggingface.co/datasets/birgermoell/oellm-math-rlvr/resolve/0ffc9d6dc82717c25733b3172f4dbd63e48bab68/data/train-00000-of-00001.parquet \
+  -o data/oellm-math-rlvr-train.parquet
+curl -L \
+  https://huggingface.co/datasets/birgermoell/oellm-code-rlvr/resolve/e1cae7711049e3b5ff021fb3e9c752424882998c/data/train-00000-of-00001.parquet \
+  -o data/oellm-code-rlvr-train.parquet
+$VENV/bin/oellm-rlvr sample-math \
+  --source data/oellm-math-rlvr-train.parquet \
+  --output "$ROOT/oellm-rlvr/data/math-hf-sample.parquet" --count 8
+$VENV/bin/oellm-rlvr sample-code \
+  --source data/oellm-code-rlvr-train.parquet \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-sample" \
+  --image /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif \
+  --count 8
+```
+
+The inputs are [birgermoell/oellm-math-rlvr](https://huggingface.co/datasets/birgermoell/oellm-math-rlvr)
+and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oellm-code-rlvr).
+`sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
+problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
+The committed smoke profiles point at these generated paths.
+
 Prepare the included code smoke task:
 
 ```bash

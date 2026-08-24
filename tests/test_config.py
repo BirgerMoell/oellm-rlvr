@@ -37,3 +37,17 @@ def test_code_requires_sandbox() -> None:
     config["task"]["sandbox"] = None
     with pytest.raises(ValidationError, match="code tasks require"):
         type(load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")).model_validate(config)
+
+
+def test_active_sampling_requires_two_async_steps() -> None:
+    config = load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml").model_dump()
+    config["rollout"]["async_steps"] = 1
+    with pytest.raises(ValidationError, match="active_sampling requires async_steps > 1"):
+        type(load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml")).model_validate(config)
+
+
+def test_tracked_runs_require_wandb_entity() -> None:
+    config = load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml").model_dump()
+    config["output"]["wandb_entity"] = None
+    with pytest.raises(ValidationError, match="tracked runs require output.wandb_entity"):
+        type(load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml")).model_validate(config)

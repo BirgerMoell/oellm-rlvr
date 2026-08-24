@@ -18,12 +18,13 @@ backend:
   python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
 model:
   name_or_path: hamishivi/Qwen3.5-2B
+  local_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
   max_prompt_tokens: 2048
   response_tokens: 8192
   per_turn_tokens: 2048
   pack_length: 10240
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-smoke/train.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-sample/train.parquet
     weight: 1.0
     split: train
 task:
@@ -33,10 +34,10 @@ task:
   system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
   sandbox:
     backend: apptainer
-    image: /scratch/project_465002530/containers/python-3.12-code-sandbox.sif
+    image: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
     binary: singularity
     fakeroot: false
-    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-smoke/task-data
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-sample/task-data
     test_timeout: 600
     command_timeout: 120
     cache_dir: /scratch/project_465002530/users/bmoell/apptainer-cache
@@ -68,9 +69,12 @@ output:
   experiment_name: lumi_code_qwen35_2b_smoke
   with_tracking: true
   wandb_mode: offline
+  wandb_entity: local
 environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
   SWERL_SANDBOX_TIMING_LOGS: "1"
   SWERL_RESET_FAILURE_ZERO_REWARD: "1"

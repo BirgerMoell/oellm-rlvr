@@ -69,9 +69,11 @@ output:
   experiment_name: lumi_code_qwen35_2b_dppo
   with_tracking: true
   wandb_mode: offline
+  wandb_entity: local
 environment:
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
   SWERL_SANDBOX_TIMING_LOGS: "1"
   SWERL_RESET_FAILURE_ZERO_REWARD: "1"

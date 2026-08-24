@@ -43,7 +43,10 @@ def _tool_config(config: RunConfig) -> dict[str, object]:
 
 def build_backend_argv(config: RunConfig) -> list[str]:
     """Build argv for the pinned Open-Instruct/TMAX GRPO entry point."""
-    argv = [config.backend.python, "-u", config.backend.script]
+    if config.model.local_path:
+        argv = [config.backend.python, "-u", "-m", "oellm_rlvr.tmax_launcher", config.backend.script]
+    else:
+        argv = [config.backend.python, "-u", config.backend.script]
     argv.append("--dataset_mixer_list")
     for dataset in config.datasets:
         argv.extend([dataset.path, str(dataset.weight)])
@@ -136,8 +139,9 @@ def build_backend_argv(config: RunConfig) -> list[str]:
         argv.extend(["--vllm_gdn_prefill_backend", config.rollout.gdn_prefill_backend])
     if config.rollout.inflight_updates:
         argv.extend(["--inflight_updates", "true"])
-    if config.output.with_tracking:
+    if config.output.with_tracking and config.output.wandb_mode != "disabled":
         argv.append("--with_tracking")
+        argv.extend(["--wandb_entity", config.output.wandb_entity])
     if config.training.use_liger_loss:
         argv.extend(["--lm_head_fp32", "true", "--use_liger_grpo_loss", "--liger_grpo_loss_chunk_size", "8"])
     if config.training.loss == "dppo":
