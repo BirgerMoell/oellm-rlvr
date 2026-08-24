@@ -74,7 +74,9 @@ def command_doctor(args: argparse.Namespace) -> int:
         checks["backend_commit"] = actual
         checks["backend_commit_matches"] = actual.startswith(config.backend.commit)
     if config.task.sandbox:
-        checks["sandbox_image"] = Path(config.task.sandbox.image).is_file()
+        # Singularity/Apptainer accepts both immutable SIF files and unpacked
+        # sandbox directories as execution images.
+        checks["sandbox_image"] = Path(config.task.sandbox.image).exists()
     ok = all(value for key, value in checks.items() if isinstance(value, bool))
     _json({"ok": ok, "checks": checks})
     return 0 if ok else 1
