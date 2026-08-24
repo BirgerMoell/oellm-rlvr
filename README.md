@@ -107,6 +107,8 @@ The committed smoke profiles point at these generated paths.
 The math smoke deliberately selects eight English difficulty-5 problems from different subdomains. Both
 one-node profiles draw eight completions for each of four prompts, increasing the chance that the grouped
 verifier rewards contain useful variation, and stop after one 32-episode optimization batch.
+Active sampling and zero-standard-deviation filtering are disabled in these bounded smoke profiles so an
+all-equal base-policy batch still exercises the learner and weight-sync path instead of resampling forever.
 The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
 This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
 `--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
@@ -151,15 +153,20 @@ Every profile is validated before rendering. It rejects oversubscribed GPU layou
 
 ## Definition of a successful smoke
 
-A successful job is more than a zero exit status:
+The committed one-node profiles are bounded infrastructure smokes. A successful job is more than a zero
+exit status:
 
 1. every node passes the GPU/import/native-weight-transfer preflight;
 2. all Ray nodes join and learner/vLLM placement groups are created;
-3. at least one weight broadcast completes;
-4. rollouts include both reward 0 and reward 1 groups;
-5. gradients are nonzero and a learner step completes;
-6. code runs show a sandbox reset, tool call, deferred test upload, and parsed reward;
-7. response truncation, environment errors, zero-standard-deviation groups, and policy lag remain inside the configured gates.
+3. rollouts and a learner step complete;
+4. the initial and post-step weight broadcasts complete;
+5. code runs show a sandbox reset, tool call, deferred test upload, and parsed reward;
+6. response truncation, environment errors, and policy lag remain inside the configured gates.
+
+Before scaling, run a separate signal qualification with active sampling enabled. It must contain both reward
+0 and reward 1 within prompt groups, produce nonzero gradients, and remain inside the zero-standard-deviation
+and policy-lag gates. The four-node training profile enables active sampling; do not scale a run with all-equal
+rewards merely because the bounded infrastructure smoke passes.
 
 The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. Actual MI250X qualification still requires submitting the two smoke jobs; cluster runtime behavior cannot be proven on a laptop.
 

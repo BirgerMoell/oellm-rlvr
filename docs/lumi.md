@@ -44,11 +44,15 @@ Run these in order:
 1. `oellm-rlvr validate` and `topology` locally.
 2. `doctor` on LUMI to resolve paths and the pinned Git commit.
 3. A one-node preflight allocation that imports torch/Ray/vLLM/Open-Instruct and sees eight GCDs.
-4. The math smoke, proving rollout → reward → gradient → weight broadcast.
+4. The bounded math smoke, proving rollout → verifier → learner step → weight broadcast.
 5. The code smoke, additionally proving Apptainer reset, bash interaction, deferred tests, and reward parsing.
-6. A two-node weight-sync run before the four-node production profile.
+6. A signal-qualification run with active sampling and nonzero within-group reward variance.
+7. A two-node weight-sync run before the four-node production profile.
 
-Do not scale a run that has all-equal rewards, zero gradients, near-total truncation, high verifier errors, or unbounded policy lag.
+The committed one-node smoke profiles disable active sampling and zero-standard-deviation filtering so they
+finish even when a weak base policy receives identical rewards. The four-node profile enables active sampling.
+Do not scale a run that has all-equal rewards, zero gradients, near-total truncation, high verifier errors, or
+unbounded policy lag.
 
 ## 4. Code sandbox image
 

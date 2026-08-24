@@ -57,7 +57,7 @@ task:
     fakeroot: false
     task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-s6/task-data
     test_timeout: 600
-    command_timeout: 120
+    command_timeout: 30
     last_step_warning: true
     append_turns_remaining: true
     tool_call_format_error_feedback: true
@@ -71,7 +71,7 @@ rollout:
   temperature: 1.0
   gpu_memory_utilization: 0.65
   async_steps: 2
-  active_sampling: true
+  active_sampling: false
   inflight_updates: true
   enforce_eager: true
 training:

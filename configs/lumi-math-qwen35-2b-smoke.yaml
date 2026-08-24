@@ -39,7 +39,7 @@ rollout:
   temperature: 1.0
   gpu_memory_utilization: 0.65
   async_steps: 2
-  active_sampling: true
+  active_sampling: false
   inflight_updates: true
   enforce_eager: true
 training:

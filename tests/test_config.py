@@ -40,10 +40,11 @@ def test_code_requires_sandbox() -> None:
 
 
 def test_active_sampling_requires_two_async_steps() -> None:
-    config = load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml").model_dump()
+    profile = ROOT / "configs/lumi-code-qwen35-2b-4node.yaml"
+    config = load_config(profile).model_dump()
     config["rollout"]["async_steps"] = 1
     with pytest.raises(ValidationError, match="active_sampling requires async_steps > 1"):
-        type(load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml")).model_validate(config)
+        type(load_config(profile)).model_validate(config)
 
 
 def test_tracked_runs_require_wandb_entity() -> None:
