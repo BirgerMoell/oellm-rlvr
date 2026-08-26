@@ -122,6 +122,7 @@ def command_sample_math(args: argparse.Namespace) -> int:
         args.count,
         language=args.language,
         min_difficulty=args.min_difficulty,
+        max_difficulty=args.max_difficulty,
         diverse_by=args.diverse_by,
     )
     print(args.output)
@@ -130,7 +131,16 @@ def command_sample_math(args: argparse.Namespace) -> int:
 
 def command_sample_code(args: argparse.Namespace) -> int:
     dataset_path, task_root = sample_code_dataset(
-        args.source, args.output_dir, args.image, args.count, args.copies, args.max_steps
+        args.source,
+        args.output_dir,
+        args.image,
+        args.count,
+        args.copies,
+        args.max_steps,
+        language=args.language,
+        min_difficulty=args.min_difficulty,
+        max_difficulty=args.max_difficulty,
+        diverse_by=args.diverse_by,
     )
     _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
     return 0
@@ -193,6 +203,7 @@ def build_parser() -> argparse.ArgumentParser:
     math_sample.add_argument("--count", type=int, default=8)
     math_sample.add_argument("--language", help="optional exact language-code filter, for example en")
     math_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
+    math_sample.add_argument("--max-difficulty", type=int, help="optional inclusive difficulty ceiling")
     math_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
     math_sample.set_defaults(handler=command_sample_math)
 
@@ -202,6 +213,10 @@ def build_parser() -> argparse.ArgumentParser:
     code_sample.add_argument("--image", required=True)
     code_sample.add_argument("--count", type=int, default=8)
     code_sample.add_argument("--copies", type=int, default=1)
+    code_sample.add_argument("--language", help="optional exact language-code filter, for example en")
+    code_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
+    code_sample.add_argument("--max-difficulty", type=int, help="optional inclusive difficulty ceiling")
+    code_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
     code_sample.add_argument(
         "--max-steps",
         type=int,

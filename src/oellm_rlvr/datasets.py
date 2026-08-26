@@ -73,10 +73,13 @@ def _sample_parquet_rows(
     *,
     language: str | None = None,
     min_difficulty: int | None = None,
+    max_difficulty: int | None = None,
     diverse_by: str | None = None,
 ) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be positive")
+    if min_difficulty is not None and max_difficulty is not None and min_difficulty > max_difficulty:
+        raise ValueError("min_difficulty cannot exceed max_difficulty")
     try:
         import pyarrow.parquet as pq
     except ImportError as error:
@@ -87,10 +90,13 @@ def _sample_parquet_rows(
     diversity_values: set[str] = set()
     for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
         for row in batch.to_pylist():
-            if language is not None and row.get("language") != language:
+            row_language = row.get("language") or row.get("prompt_language")
+            if language is not None and row_language != language:
                 continue
             difficulty = row.get("difficulty")
             if min_difficulty is not None and (difficulty is None or int(difficulty) < min_difficulty):
+                continue
+            if max_difficulty is not None and (difficulty is None or int(difficulty) > max_difficulty):
                 continue
             group = str(row.get("semantic_group_id", row.get("id", "")))
             if group in semantic_groups:
@@ -109,6 +115,8 @@ def _sample_parquet_rows(
         filters.append(f"language={language}")
     if min_difficulty is not None:
         filters.append(f"difficulty>={min_difficulty}")
+    if max_difficulty is not None:
+        filters.append(f"difficulty<={max_difficulty}")
     if diverse_by:
         filters.append(f"distinct {diverse_by}")
     suffix = f" for {', '.join(filters)}" if filters else ""
@@ -121,6 +129,7 @@ def sample_math_dataset(
     count: int = 4,
     language: str | None = None,
     min_difficulty: int | None = None,
+    max_difficulty: int | None = None,
     diverse_by: str | None = None,
 ) -> None:
     required = {"messages", "ground_truth", "verifier_kind"}
@@ -129,6 +138,7 @@ def sample_math_dataset(
         count,
         language=language,
         min_difficulty=min_difficulty,
+        max_difficulty=max_difficulty,
         diverse_by=diverse_by,
     )
     for index, row in enumerate(rows):
@@ -172,7 +182,7 @@ if passed:
             passed = False
             failure = f"case {index}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
             break
-pathlib.Path("/logs/verifier/reward.txt").write_text("1.0\n" if passed else "0.0\n")
+pathlib.Path("/logs/verifier/reward.txt").write_text("1.0\\n" if passed else "0.0\\n")
 if not passed:
     raise SystemExit(failure)
 PY
@@ -186,10 +196,21 @@ def sample_code_dataset(
     count: int = 4,
     copies: int = 1,
     max_steps: int = 6,
+    language: str | None = None,
+    min_difficulty: int | None = None,
+    max_difficulty: int | None = None,
+    diverse_by: str | None = None,
 ) -> tuple[Path, Path]:
     if max_steps < 1:
         raise ValueError("max_steps must be positive")
-    rows = _sample_parquet_rows(source, count)
+    rows = _sample_parquet_rows(
+        source,
+        count,
+        language=language,
+        min_difficulty=min_difficulty,
+        max_difficulty=max_difficulty,
+        diverse_by=diverse_by,
+    )
     manifests: list[dict[str, object]] = []
     for index, row in enumerate(rows):
         verification = row.get("verification_info")

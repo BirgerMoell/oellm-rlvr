@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from oellm_rlvr.datasets import make_math_smoke, pack_code_dataset, sample_code_dataset, sample_math_dataset
+from oellm_rlvr.datasets import (
+    _stdio_test_script,
+    make_math_smoke,
+    pack_code_dataset,
+    sample_code_dataset,
+    sample_math_dataset,
+)
 
 ROOT = Path(__file__).parents[1]
 
@@ -66,7 +72,7 @@ def test_published_math_sample_can_filter_difficulty_and_subdomain(tmp_path: Pat
             "subdomain": subdomain,
         }
         for index, (difficulty, subdomain) in enumerate(
-            [(3, "algebra"), (5, "algebra"), (5, "geometry"), (5, "geometry")]
+            [(3, "algebra"), (4, "number_theory"), (5, "algebra"), (5, "geometry")]
         )
     ]
     pq.write_table(pa.Table.from_pylist(rows), source)
@@ -76,12 +82,20 @@ def test_published_math_sample_can_filter_difficulty_and_subdomain(tmp_path: Pat
         output,
         count=2,
         language="en",
-        min_difficulty=5,
+        min_difficulty=4,
+        max_difficulty=5,
         diverse_by="subdomain",
     )
     selected = pq.read_table(output).to_pylist()
-    assert [row["subdomain"] for row in selected] == ["algebra", "geometry"]
-    assert all(row["difficulty"] >= 5 for row in selected)
+    assert [row["subdomain"] for row in selected] == ["number_theory", "algebra"]
+    assert all(4 <= row["difficulty"] <= 5 for row in selected)
+
+
+def test_stdio_test_script_contains_valid_python() -> None:
+    script = _stdio_test_script()
+    python_source = script.split("python - <<'PY'\n", 1)[1].rsplit("\nPY\n", 1)[0]
+    compile(python_source, "generated-test.sh", "exec")
+    assert 'write_text("1.0\\n" if passed else "0.0\\n")' in python_source
 
 
 def test_code_packer_matches_tmax_environment_shape(tmp_path: Path) -> None:
@@ -133,3 +147,41 @@ def test_published_code_sample_builds_hidden_stdio_task(tmp_path: Path) -> None:
     assert "Double the input" in (task_root / "c1/instruction.md").read_text()
     cases = json.loads((task_root / "c1/tests/cases.json").read_text())
     assert cases == [{"input": "2\n", "output": "4\n", "timeout_seconds": 2}]
+
+
+def test_published_code_sample_can_select_easy_diverse_tasks(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "code.parquet"
+    rows = []
+    for index, (difficulty, family) in enumerate([(1, "grid"), (1, "strings"), (2, "graph"), (3, "dp")]):
+        rows.append(
+            {
+                "id": f"c{index}",
+                "messages": [{"role": "user", "content": f"Problem {index}"}],
+                "problem": f"Problem {index}",
+                "verification_info": {
+                    "language": "python",
+                    "test_cases": [{"input": "1\n", "output": "1\n", "type": "stdin_stdout"}],
+                },
+                "time_limit_seconds": 2,
+                "reference_solution": "print(input())\n",
+                "semantic_group_id": f"g{index}",
+                "prompt_language": "en",
+                "difficulty": difficulty,
+                "generator_family": family,
+            }
+        )
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    dataset, _ = sample_code_dataset(
+        source,
+        tmp_path / "packed",
+        "/images/python.sif",
+        count=2,
+        language="en",
+        max_difficulty=1,
+        diverse_by="generator_family",
+    )
+    selected = pq.read_table(dataset).to_pylist()
+    assert [row["env_config"]["task_id"] for row in selected] == ["c0", "c1"]
