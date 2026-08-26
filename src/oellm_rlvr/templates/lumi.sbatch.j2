@@ -59,6 +59,7 @@ export TOKENIZERS_PARALLELISM=false
 export VLLM_ALLOW_INSECURE_SERIALIZATION=1
 export VLLM_DISABLE_COMPILE_CACHE=1
 export VLLM_USE_V1=1
+export OELLM_WEIGHT_TRANSFER={{ config.rollout.weight_transfer | tojson }}
 export NCCL_CUMEM_ENABLE=0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True

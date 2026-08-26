@@ -205,6 +205,7 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-qwen35-2b-active-sampling.yaml` | Two-update active-sampling qualification on the calibrated math canary | 4 learner + 4 rollout GCDs |
 | `lumi-math-oellm9b-256k-sft-active-2node.yaml` | Two-node active-sampling qualification of the published OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
 | `lumi-math-oellm9b-256k-sft-ladder-2node.yaml` | Bounded two-update arithmetic calibration for the OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
+| `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml` | Eight-engine hierarchical-transfer qualification of the OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
@@ -216,6 +217,11 @@ The real OELLM 9B ladder qualification completed on LUMI as job `21540106`: 128 
 The revision-pinned difficulty-5 sample was uniformly reward-zero for this checkpoint, so use the bounded
 ladder before turning on active sampling for a new model/data pairing. Exact evidence and resource accounting
 are in [the qualification record](docs/qualification-2026-08-24.md).
+
+For the full two-node topology, first submit `scripts/lumi_hierarchical_weight_transfer_probe.sbatch`, then
+render and submit `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml`. Hierarchical mode sends every packed
+weight tensor once across nodes to a rollout relay, which fans it out through seven pairwise local RCCL links.
+It is currently limited to eight TP=1 rollout engines on one node.
 
 The LUMI profiles intentionally keep sequence parallelism at 1 because the pinned ROCm/FLA/Triton stack's
 context-parallel GDN kernel fails AMD MLIR compilation for some variable rollout shapes. The learner GCDs are

@@ -98,6 +98,7 @@ class TaskConfig(StrictModel):
 class RolloutConfig(StrictModel):
     engines: int = Field(ge=1)
     tensor_parallel_size: int = Field(default=1, ge=1)
+    weight_transfer: Literal["broadcast", "hierarchical"] = "broadcast"
     unique_prompts: int = Field(default=8, ge=1)
     samples_per_prompt: int = Field(default=16, ge=2)
     temperature: float = Field(default=1.0, gt=0)
@@ -187,6 +188,11 @@ class RunConfig(StrictModel):
             raise ValueError("rollout samples per step must be >= learner data-parallel ranks")
         if self.rollout.unique_prompts < self.rollout.engines:
             raise ValueError("unique_prompts must be >= rollout engines to avoid idle engines")
+        if self.rollout.weight_transfer == "hierarchical":
+            if self.rollout.engines < 2:
+                raise ValueError("hierarchical weight transfer requires at least two rollout engines")
+            if self.rollout.tensor_parallel_size != 1:
+                raise ValueError("hierarchical weight transfer currently requires tensor_parallel_size=1")
         if self.rollout.active_sampling and self.rollout.async_steps <= 1:
             raise ValueError("active_sampling requires async_steps > 1")
         if self.task.kind == "code" and self.rollout.async_steps < 1:

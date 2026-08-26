@@ -17,6 +17,7 @@ ROOT = Path(__file__).parents[1]
         ("lumi-math-qwen35-2b-signal-probe.yaml", 0),
         ("lumi-math-qwen35-2b-active-sampling.yaml", 0),
         ("lumi-math-oellm9b-256k-sft-active-2node.yaml", 7),
+        ("lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml", 0),
         ("lumi-code-qwen35-2b-signal-probe.yaml", 0),
         ("lumi-code-qwen35-2b-4node.yaml", 0),
         ("cuda-code-qwen35-2b-smoke.yaml", 0),
@@ -56,3 +57,18 @@ def test_tracked_runs_require_wandb_entity() -> None:
     config["output"]["wandb_entity"] = None
     with pytest.raises(ValidationError, match="tracked runs require output.wandb_entity"):
         type(load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml")).model_validate(config)
+
+
+def test_hierarchical_transfer_requires_multiple_tp1_engines() -> None:
+    profile = ROOT / "configs/lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml"
+    config_type = type(load_config(profile))
+    one_engine = load_config(profile).model_dump()
+    one_engine["rollout"]["engines"] = 1
+    with pytest.raises(ValidationError, match="at least two rollout engines"):
+        config_type.model_validate(one_engine)
+
+    tensor_parallel = load_config(profile).model_dump()
+    tensor_parallel["rollout"]["engines"] = 4
+    tensor_parallel["rollout"]["tensor_parallel_size"] = 2
+    with pytest.raises(ValidationError, match="requires tensor_parallel_size=1"):
+        config_type.model_validate(tensor_parallel)

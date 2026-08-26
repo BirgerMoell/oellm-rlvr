@@ -21,3 +21,9 @@ def test_cuda_job_uses_nv_flag() -> None:
     path = ROOT / "configs/cuda-code-qwen35-2b-smoke.yaml"
     rendered = render_slurm(load_config(path), path)
     assert "singularity exec --nv" in rendered
+
+
+def test_hierarchical_job_exports_weight_transfer_mode() -> None:
+    path = ROOT / "configs/lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml"
+    rendered = render_slurm(load_config(path), path)
+    assert 'export OELLM_WEIGHT_TRANSFER="hierarchical"' in rendered

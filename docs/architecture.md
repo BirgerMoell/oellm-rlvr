@@ -24,10 +24,28 @@ For the one-node smoke, Ray schedules four learner GCDs and four TP=1 vLLM engin
 3. Math verifiers compare extracted answers with ground truth. Code actors execute multi-turn bash calls in task sandboxes and run hidden tests on submission.
 4. Active sampling removes all-equal groups that carry no relative-policy signal.
 5. The learner computes centered advantages and a DPPO/GRPO update.
-6. Native vLLM weight transfer broadcasts the new learner weights without serializing a checkpoint.
+6. Native vLLM weight transfer sends the new learner weights without serializing a checkpoint.
 7. New rollouts record their model step, making policy lag observable.
 
 `async_steps` and `inflight_updates` overlap generation/verification with learning. They improve utilization but make policy-lag limits essential.
+
+## Hierarchical rollout weight transfer
+
+`rollout.weight_transfer: hierarchical` replaces the single trainer-plus-all-engines communicator with a
+two-level tree for TP=1 rollout fleets:
+
+```mermaid
+flowchart LR
+    T["Learner rank 0"] -->|"one cross-node NCCL/RCCL link"| R["Rollout relay on GPU 0"]
+    R -->|"seven independent local two-rank links"| E["Rollout engines on GPUs 1–7"]
+```
+
+The trainer still uses vLLM's packed native sender. Every engine receives the same update request, but the
+relay receives each packed tensor once from the trainer and broadcasts it over one pairwise communicator per
+leaf before loading its own copy. This avoids the LUMI nine-rank P2P/IPC initialization failure and avoids
+sending eight model copies over Slingshot. The implementation uses NCCL APIs on NVIDIA and their RCCL
+implementation on AMD. It currently requires all rollout engines on one node and tensor parallel size one;
+configuration validation rejects unsupported layouts.
 
 ## Failure domains
 

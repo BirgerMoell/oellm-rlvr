@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Probe one cross-node trainer→relay link plus seven pairwise local relay→leaf links.
+# Submit this file from the oellm-rlvr repository root.
+#SBATCH --job-name=rlvr-hierarchical-probe
+#SBATCH --account=project_465002530
+#SBATCH --partition=dev-g
+#SBATCH --nodes=2
+#SBATCH --gpus-per-node=8
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=00:10:00
+#SBATCH --output=logs/%j.%x.out
+#SBATCH --error=logs/%j.%x.err
+
+set -euo pipefail
+module purge
+module load Local-LAIF
+module load lumi-aif-singularity-bindings
+
+CONTAINER=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+CONTROL_ROOT="$SLURM_SUBMIT_DIR"
+BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd,/boot
+
+mapfile -t PROBE_NODES < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
+RELAY_NODE="${PROBE_NODES[0]}"
+TRAINER_NODE="${PROBE_NODES[1]}"
+RELAY_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$RELAY_NODE" getent hosts "$RELAY_NODE" | awk 'NR==1 {print $1}')"
+TRAINER_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$TRAINER_NODE" getent hosts "$TRAINER_NODE" | awk 'NR==1 {print $1}')"
+MASTER_PORT="$((20000 + SLURM_JOB_ID % 19000))"
+
+export NCCL_SOCKET_IFNAME=hsn
+export NCCL_CUMEM_ENABLE=0
+export NCCL_DEBUG=INFO
+export NCCL_DEBUG_SUBSYS=INIT,NET
+export PYTHONUNBUFFERED=1
+
+echo "Hierarchical transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, relay=${RELAY_NODE}/${RELAY_IP}, port=${MASTER_PORT}"
+srun --label --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpu-bind=none \
+  singularity exec -B "$BIND" "$CONTAINER" \
+  env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_hierarchical_weight_transfer.py" \
+  --trainer-address "$TRAINER_IP" \
+  --relay-address "$RELAY_IP" \
+  --master-port "$MASTER_PORT" \
+  --trainer-host "$TRAINER_NODE" \
+  --leaf-count 7 \
+  --timeout 180

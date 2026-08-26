@@ -3,12 +3,15 @@ import importlib
 import sys
 import threading
 from enum import Enum
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 from oellm_rlvr.compat import (
     install_post_import_patch,
     patch_math_equivalence_module,
+    patch_open_instruct_grpo_module,
+    patch_open_instruct_vllm_module,
     patch_vllm_mamba_module,
+    patch_vllm_weight_transfer_factory,
     replace_none_enum_value,
     wrap_async_weight_update,
     wrap_swerl_create_backend,
@@ -141,3 +144,155 @@ def test_swerl_prepared_apptainer_keeps_prepared_kwargs() -> None:
     wrap_swerl_create_backend(module)
     _, kwargs = module.create_backend("prepared_apptainer", prepared_root="/prepared")
     assert kwargs == {"prepared_root": "/prepared"}
+
+
+def test_hierarchical_factory_replaces_nccl_receiver(monkeypatch) -> None:
+    class FakeHierarchicalEngine:
+        pass
+
+    hierarchical_module = ModuleType("oellm_rlvr.hierarchical_weight_transfer")
+    hierarchical_module.HierarchicalNCCLWeightTransferEngine = FakeHierarchicalEngine
+    monkeypatch.setitem(sys.modules, hierarchical_module.__name__, hierarchical_module)
+
+    class FakeFactory:
+        pass
+
+    FakeFactory._registry = {"nccl": lambda: object}
+
+    module = ModuleType("fake_vllm_factory")
+    module.WeightTransferEngineFactory = FakeFactory
+    assert patch_vllm_weight_transfer_factory(module) is True
+    assert patch_vllm_weight_transfer_factory(module) is False
+    assert FakeFactory._registry["nccl"]() is FakeHierarchicalEngine
+
+
+def test_rollout_actor_gets_hierarchical_endpoint_methods(monkeypatch) -> None:
+    class FakeActor:
+        pass
+
+    module = ModuleType("fake_vllm_utils")
+    module.LLMRayActor = FakeActor
+    module.ray = SimpleNamespace(
+        _private=SimpleNamespace(services=SimpleNamespace(get_node_ip_address=lambda: "[10.0.0.8]"))
+    )
+    monkeypatch.setattr("oellm_rlvr.compat._reserve_local_ports", lambda count: list(range(24000, 24000 + count)))
+    assert patch_open_instruct_vllm_module(module) is True
+    assert patch_open_instruct_vllm_module(module) is False
+    actor = FakeActor()
+    endpoint = actor.oellm_hierarchical_endpoint(3)
+    assert endpoint["address"] == "10.0.0.8"
+    assert len(endpoint["ports"]) == 3
+    assert len(set(endpoint["ports"])) == 3
+
+
+def test_nonzero_trainer_rank_joins_hierarchical_barrier() -> None:
+    class FakePolicyActor:
+        def setup_model_update_group(self, vllm_engines):
+            raise AssertionError("native setup should not run")
+
+    barrier_calls: list[bool] = []
+    module = ModuleType("fake_grpo_fast")
+    module.PolicyTrainerRayProcess = FakePolicyActor
+    module.torch = SimpleNamespace(distributed=SimpleNamespace(barrier=lambda: barrier_calls.append(True)))
+    assert patch_open_instruct_grpo_module(module) is True
+    assert patch_open_instruct_grpo_module(module) is False
+
+    actor = FakePolicyActor()
+    actor.args = SimpleNamespace(single_gpu_mode=False)
+    actor.vllm_config = SimpleNamespace(vllm_tensor_parallel_size=1)
+    actor.rank = 1
+    actor.vllm_engines = None
+    actor.model_update_group = "unset"
+    actor.setup_model_update_group([object(), object()])
+    assert actor.vllm_engines is not None
+    assert actor.model_update_group is None
+    assert barrier_calls == [True]
+
+
+def test_rank_zero_builds_one_trainer_relay_group_and_leaf_links() -> None:
+    class FakeRef:
+        def __init__(self, value):
+            self.value = value
+
+    class RemoteMethod:
+        def __init__(self, fn):
+            self.fn = fn
+
+        def remote(self, *args):
+            return FakeRef(self.fn(*args))
+
+    init_requests: list[dict[str, object]] = []
+
+    class FakeEngine:
+        def __init__(self, index: int):
+            self.oellm_node_ip = RemoteMethod(lambda: "10.0.0.8")
+            self.oellm_hierarchical_endpoint = RemoteMethod(
+                lambda count: {"address": "10.0.0.8", "ports": list(range(25001, 25001 + count))}
+            )
+            self.init_weight_transfer_engine = RemoteMethod(lambda request: init_requests.append(request.init_info))
+
+    class FakePolicyActor:
+        def setup_model_update_group(self, vllm_engines):
+            raise AssertionError("native setup should not run")
+
+        @staticmethod
+        def get_current_node_ip():
+            return "10.0.0.9"
+
+    class FakeRequest:
+        def __init__(self, init_info):
+            self.init_info = init_info
+
+    trainer_inits: list[dict[str, object]] = []
+    progress_refs: list[object] = []
+    barrier_calls: list[bool] = []
+    module = ModuleType("fake_grpo_fast")
+    module.PolicyTrainerRayProcess = FakePolicyActor
+    module.WeightTransferInitRequest = FakeRequest
+    module.ray = SimpleNamespace(
+        get=lambda refs: [ref.value for ref in refs] if isinstance(refs, list) else refs.value
+    )
+    module.utils = SimpleNamespace(find_free_port=lambda: 25000)
+    module.logger = SimpleNamespace(info=lambda *_args: None)
+    module.NCCLWeightTransferEngine = SimpleNamespace(
+        trainer_init=lambda info: trainer_inits.append(info) or "trainer-group"
+    )
+    module.ray_get_with_progress = lambda refs, **_kwargs: progress_refs.extend(refs)
+    module.torch = SimpleNamespace(
+        cuda=SimpleNamespace(set_device=lambda _device: None),
+        distributed=SimpleNamespace(barrier=lambda: barrier_calls.append(True)),
+    )
+    patch_open_instruct_grpo_module(module)
+
+    actor = FakePolicyActor()
+    actor.args = SimpleNamespace(single_gpu_mode=False)
+    actor.vllm_config = SimpleNamespace(vllm_tensor_parallel_size=1)
+    actor.rank = 0
+    actor.local_rank = 0
+    engines = [FakeEngine(index) for index in range(3)]
+    actor.setup_model_update_group(engines)
+
+    assert trainer_inits == [{"master_address": "10.0.0.9", "master_port": 25000, "world_size": 2}]
+    assert init_requests == [
+        {
+            "role": "relay",
+            "upstream": {"master_address": "10.0.0.9", "master_port": 25000},
+            "downstream": [
+                {"master_address": "10.0.0.8", "master_port": 25001},
+                {"master_address": "10.0.0.8", "master_port": 25002},
+            ],
+        },
+        {
+            "role": "leaf",
+            "upstream": {"master_address": "10.0.0.8", "master_port": 25001},
+            "downstream": [],
+        },
+        {
+            "role": "leaf",
+            "upstream": {"master_address": "10.0.0.8", "master_port": 25002},
+            "downstream": [],
+        },
+    ]
+    assert actor.model_update_group == "trainer-group"
+    assert len(progress_refs) == 3
+    assert barrier_calls == [True]

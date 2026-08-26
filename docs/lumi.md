@@ -110,9 +110,27 @@ sbatch --export=ALL,PROBE_WORLD_SIZE=2 scripts/lumi_weight_transfer_probe.sbatch
 
 # Intended scale-up: trainer rank 0 plus eight independently masked engines.
 sbatch --export=ALL,PROBE_WORLD_SIZE=9 scripts/lumi_weight_transfer_probe.sbatch
+
+# Preferred scale-up: one cross-node pair plus seven local relay pairs.
+sbatch scripts/lumi_hierarchical_weight_transfer_probe.sbatch
 ```
 
-The probe uses vLLM's production `NCCLWeightTransferEngine`, initializes the same stateless communicator, and broadcasts a sentinel GPU tensor. It emits one JSON record per rank and fails after three minutes. On 2026-08-26 the two-rank topology completed over `NET/Libfabric` in about 5.5 seconds, while the nine-rank topology stalled while building local `P2P/IPC` links among the eight engine processes. The real-checkpoint qualification therefore uses one rollout engine until a wider probe completes. Do not scale the engine count merely because model loading succeeds.
+The probes use vLLM's production stateless NCCL/RCCL communicator and broadcast a sentinel GPU tensor. They
+emit one JSON record per role/rank and fail after three minutes. On 2026-08-26 the two-rank topology completed
+over `NET/Libfabric` in about 5.5 seconds, while the nine-rank topology stalled while building local `P2P/IPC`
+links among the eight engine processes. The hierarchical probe tests the replacement topology without loading
+the 9B checkpoint: trainer→relay is one cross-node pair, while relay→leaf links are seven independent local
+pairs. Run it before the eight-engine profile below.
+
+```bash
+oellm-rlvr render-slurm \
+  --config configs/lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml \
+  --output oellm9b-hierarchical.sbatch
+sbatch oellm9b-hierarchical.sbatch
+```
+
+The profile occupies all 16 allocated GCDs. Success requires all eight engine initialization messages, the
+initial and post-update syncs, two nonzero-gradient updates, 128 complete rollouts, and `COMPLETED 0:0`.
 
 If Ray fails to join, check name/IP resolution and Slurm step overlap before changing training code. If native weight transfer fails, verify that the LUMI vLLM is still the system build and that pip did not replace torch or vLLM.
 
