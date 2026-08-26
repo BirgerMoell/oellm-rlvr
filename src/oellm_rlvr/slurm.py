@@ -18,7 +18,10 @@ def render_slurm(config: RunConfig, config_path: str | Path) -> str:
         config=config,
         config_path=str(Path(config_path).resolve()),
         control_root=str(control_root),
-        accelerator_flag="--rocm" if config.platform.accelerator == "rocm" else "--nv",
+        # LUMI AI Factory images ship their matching ROCm userspace. Passing
+        # Singularity's --rocm replaces it with host libraries and can create
+        # an HSA/ROCm ABI mismatch. NVIDIA images still require --nv.
+        accelerator_flag="" if config.platform.accelerator == "rocm" else "--nv",
         module_lines="\n".join(f"module load {module}" for module in config.platform.modules),
         bind_value=",".join(config.platform.binds),
     )

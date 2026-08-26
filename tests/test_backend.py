@@ -11,24 +11,36 @@ def _value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1]
 
 
-def test_math_backend_has_online_rollout_and_active_sampling_flags() -> None:
+def test_math_smoke_is_bounded_and_keeps_online_weight_updates() -> None:
     config = load_config(ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)
-    assert argv[:3] == [config.backend.python, "-u", "open_instruct/grpo_fast.py"]
+    assert argv[:5] == [config.backend.python, "-u", "-m", "oellm_rlvr.tmax_launcher", config.backend.script]
     assert _value(argv, "--vllm_num_engines") == "4"
     assert _value(argv, "--num_learners_per_node") == "4"
-    assert "--active_sampling" in argv
+    assert "--active_sampling" not in argv
+    assert _value(argv, "--filter_zero_std_samples") == "false"
     assert "--inflight_updates" in argv
     assert _value(argv, "--vllm_gdn_prefill_backend") == "triton"
+    assert _value(argv, "--wandb_entity") == "local"
     assert "--tools" not in argv
 
 
-def test_code_backend_uses_apptainer_swerl_environment() -> None:
+def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)
     assert _value(argv, "--tools") == "swerl_vanillux_sandbox"
     tool_config = json.loads(_value(argv, "--tool_configs"))
-    assert tool_config["backend"] == "apptainer"
-    assert tool_config["apptainer_binary"] == "singularity"
+    assert tool_config["backend"] == "slurm_apptainer"
+    assert tool_config["apptainer_binary"] == "/usr/bin/singularity"
     assert tool_config["fakeroot"] is False
-    assert tool_config["task_data_dir"].endswith("/data/code-smoke/task-data")
+    assert tool_config["task_data_dir"].endswith("/data/code-hf-e1cae771-s6/task-data")
+    assert tool_config["last_step_warning"] is True
+    assert tool_config["append_turns_remaining"] is True
+    assert tool_config["tool_call_format_error_feedback"] is True
+    assert tool_config["timeout"] == 30
+
+
+def test_production_profile_enables_active_sampling() -> None:
+    config = load_config(ROOT / "configs/lumi-code-qwen35-2b-4node.yaml")
+    argv = build_backend_argv(config)
+    assert "--active_sampling" in argv

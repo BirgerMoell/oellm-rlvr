@@ -49,3 +49,8 @@ output:
   rollout_directory: /shared/oellm/rollouts/code-smoke
   experiment_name: cuda_code_qwen35_2b_smoke
   wandb_mode: offline
+  wandb_entity: local
+environment:
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_SWERL_APPTAINER_KWARGS: "1"

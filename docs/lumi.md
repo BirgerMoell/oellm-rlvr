@@ -17,24 +17,66 @@ It provides PyTorch 2.10 ROCm 7, gfx90a vLLM 0.22.1 with native weight transfer,
 
 Run `scripts/bootstrap_lumi_env.sh` on a login node with network access. Do not use the backend's CUDA-oriented `uv sync`. Re-run bootstrap when the base SIF or pinned backend commit changes; do not mutate a venv used by an active run.
 
-After bootstrapping, cache `hamishivi/Qwen3.5-2B` or change `model.name_or_path` to a local snapshot. If authentication is required, download on a login/data-transfer node and ensure the final compute job receives no token it does not need.
+After bootstrapping, stage `hamishivi/Qwen3.5-2B` on shared storage. Keep the canonical repository ID in
+`model.name_or_path` and set `model.local_path` to the staged snapshot. The control-plane launcher resolves
+TMAX, Transformers, and vLLM to that local directory, so the offline compute job does not need a token or a
+complete Hugging Face cache layout.
+
+The LUMI profiles enable guarded, lazy compatibility hooks in every driver and Ray worker.
+The hooks run only when the relevant vLLM module is imported, so Ray's generic prestarted workers remain cheap:
+
+- `OELLM_PATCH_VLLM_MAMBA_ENUM=1` normalizes the unused `CUSTOM=None` Mamba backend enum value that
+  vLLM's own `msgspec` IPC decoder rejects for Qwen3.5.
+- `OELLM_PATCH_VLLM_WEIGHT_UPDATE=1` wraps TMAX's packed update in the `start_weight_update` /
+  `finish_weight_update` transaction newly required by vLLM 0.22.1.
+- Code profiles use `OELLM_PATCH_SWERL_APPTAINER_KWARGS=1` to register the LUMI `slurm_apptainer`
+  backend and filter prepared-backend defaults before pinned TMAX constructs a plain Apptainer backend.
+
+Remove each flag after upgrading TMAX or vLLM to a pair that implements the corresponding behavior natively.
 
 ## 3. Qualify in layers
+
+The one-node smoke profiles target LUMI's `dev-g` partition; the four-node production profile targets
+`standard-g`. Change the partition only when local allocation policy requires it.
 
 Run these in order:
 
 1. `oellm-rlvr validate` and `topology` locally.
 2. `doctor` on LUMI to resolve paths and the pinned Git commit.
 3. A one-node preflight allocation that imports torch/Ray/vLLM/Open-Instruct and sees eight GCDs.
-4. The math smoke, proving rollout → reward → gradient → weight broadcast.
+4. The bounded math smoke, proving rollout → verifier → learner step → weight broadcast.
 5. The code smoke, additionally proving Apptainer reset, bash interaction, deferred tests, and reward parsing.
-6. A two-node weight-sync run before the four-node production profile.
+6. A signal-qualification run with active sampling and nonzero within-group reward variance.
+7. A two-node weight-sync run before the four-node production profile.
 
-Do not scale a run that has all-equal rewards, zero gradients, near-total truncation, high verifier errors, or unbounded policy lag.
+The committed one-node smoke profiles disable active sampling and zero-standard-deviation filtering so they
+finish even when a weak base policy receives identical rewards. The four-node profile enables active sampling.
+Do not scale a run that has all-equal rewards, zero gradients, near-total truncation, high verifier errors, or
+unbounded policy lag.
+
+The LUMI profiles currently use `sequence_parallel_size: 1`. In the pinned August 2026 container, FLA's
+context-parallel `chunk_delta_h` Triton kernel can fail AMD MLIR compilation on variable real-rollout shapes
+even though the fixed-shape dummy step passes. Raise sequence parallelism only after a real learner-step smoke
+passes in the exact replacement container/FLA/Triton combination.
 
 ## 4. Code sandbox image
 
-The trainer container and task container have different roles. The LUMI AI Factory SIF runs PyTorch, Ray, and vLLM. A smaller task SIF runs untrusted code and its tests. The example expects `/scratch/project_465002530/containers/python-3.12-code-sandbox.sif`.
+The trainer container and task container have different roles. The LUMI AI Factory SIF runs PyTorch, Ray,
+and vLLM. Nested setuid Apptainer is unavailable inside that SIF, while unprivileged nested execution depends
+on user namespaces that may be exhausted or disabled. The `slurm_apptainer` backend therefore launches the
+host Singularity runtime in a same-node overlapping Slurm step. It binds only an isolated per-episode
+workspace, output, logs, tests, root, and temporary directory into the read-only task image.
+
+Build the smoke task sandbox once on a login node:
+
+```bash
+bash scripts/build_lumi_task_sandbox.sh \
+  /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
+```
+
+The smoke image contains only Python 3.12 and its standard library. Build a task-specific image with the
+required runtimes and test dependencies for broader code training; generated code does not need the training
+stack.
 
 Each task directory contains:
 

@@ -39,6 +39,7 @@ class BackendConfig(StrictModel):
 
 class ModelConfig(StrictModel):
     name_or_path: str
+    local_path: str | None = None
     max_prompt_tokens: int = Field(default=2048, ge=1)
     response_tokens: int = Field(default=8192, ge=1)
     per_turn_tokens: int = Field(default=4096, ge=1)
@@ -60,7 +61,7 @@ class DatasetConfig(StrictModel):
 
 
 class SandboxConfig(StrictModel):
-    backend: Literal["apptainer", "prepared_apptainer", "docker"] = "apptainer"
+    backend: Literal["apptainer", "prepared_apptainer", "slurm_apptainer", "docker"] = "apptainer"
     image: str
     binary: str = "singularity"
     fakeroot: bool = False
@@ -68,6 +69,9 @@ class SandboxConfig(StrictModel):
     task_data_dir: str | None = None
     test_timeout: int = Field(default=600, ge=1)
     command_timeout: int = Field(default=120, ge=1)
+    last_step_warning: bool = False
+    append_turns_remaining: bool = False
+    tool_call_format_error_feedback: bool = False
     cache_dir: str | None = None
     tmp_dir: str | None = None
     prepared_root: str | None = None
@@ -130,6 +134,13 @@ class OutputConfig(StrictModel):
     experiment_name: str
     with_tracking: bool = True
     wandb_mode: Literal["online", "offline", "disabled"] = "offline"
+    wandb_entity: str | None = None
+
+    @model_validator(mode="after")
+    def tracking_needs_entity(self) -> OutputConfig:
+        if self.with_tracking and self.wandb_mode != "disabled" and not self.wandb_entity:
+            raise ValueError("tracked runs require output.wandb_entity; use 'local' for offline runs")
+        return self
 
 
 class GateConfig(StrictModel):
@@ -176,6 +187,8 @@ class RunConfig(StrictModel):
             raise ValueError("rollout samples per step must be >= learner data-parallel ranks")
         if self.rollout.unique_prompts < self.rollout.engines:
             raise ValueError("unique_prompts must be >= rollout engines to avoid idle engines")
+        if self.rollout.active_sampling and self.rollout.async_steps <= 1:
+            raise ValueError("active_sampling requires async_steps > 1")
         if self.task.kind == "code" and self.rollout.async_steps < 1:
             raise ValueError("code rollouts should use at least one async step to hide verifier latency")
         return self

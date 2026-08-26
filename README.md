@@ -77,6 +77,53 @@ $VENV/bin/oellm-rlvr render-slurm \
 sbatch "$ROOT/oellm-rlvr/math-smoke.sbatch"
 ```
 
+To reproduce the live Hugging Face sample smokes, download the pinned train shards and select eight
+different semantic groups (enough to fill two asynchronous steps across four rollout engines):
+
+```bash
+mkdir -p data
+curl -L \
+  https://huggingface.co/datasets/birgermoell/oellm-math-rlvr/resolve/0ffc9d6dc82717c25733b3172f4dbd63e48bab68/data/train-00000-of-00001.parquet \
+  -o data/oellm-math-rlvr-train.parquet
+curl -L \
+  https://huggingface.co/datasets/birgermoell/oellm-code-rlvr/resolve/e1cae7711049e3b5ff021fb3e9c752424882998c/data/train-00000-of-00001.parquet \
+  -o data/oellm-code-rlvr-train.parquet
+$VENV/bin/oellm-rlvr sample-math \
+  --source data/oellm-math-rlvr-train.parquet \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5.parquet" \
+  --count 8 --language en --min-difficulty 5 --diverse-by subdomain
+$VENV/bin/oellm-rlvr sample-code \
+  --source data/oellm-code-rlvr-train.parquet \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s6" \
+  --image "$ROOT/sandboxes/python-3.12-slim" \
+  --count 8 --max-steps 6
+```
+
+The inputs are [birgermoell/oellm-math-rlvr](https://huggingface.co/datasets/birgermoell/oellm-math-rlvr)
+and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oellm-code-rlvr).
+`sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
+problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
+The committed smoke profiles point at these generated paths.
+The math smoke deliberately selects eight English difficulty-5 problems from different subdomains. Both
+one-node profiles draw eight completions for each of four prompts, increasing the chance that the grouped
+verifier rewards contain useful variation, and stop after one 32-episode optimization batch.
+Active sampling and zero-standard-deviation filtering are disabled in these bounded smoke profiles so an
+all-equal base-policy batch still exercises the learner and weight-sync path instead of resampling forever.
+The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
+This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
+`--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
+configuration equal to that value.
+
+Build the small read-only task sandbox once before the code smoke:
+
+```bash
+bash "$ROOT/oellm-rlvr-src/scripts/build_lumi_task_sandbox.sh" \
+  "$ROOT/sandboxes/python-3.12-slim"
+```
+
+Use revision-labelled output paths when changing a sampled dataset. Hugging Face Datasets caches prepared
+Arrow data by builder inputs and can otherwise reuse an older local Parquet build at the same pathname.
+
 Prepare the included code smoke task:
 
 ```bash
@@ -98,25 +145,37 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | Profile | Purpose | GPU split |
 |---|---|---|
 | `lumi-math-qwen35-2b-smoke.yaml` | One-node math signal and weight-sync smoke | 4 learner + 4 rollout GCDs |
-| `lumi-code-qwen35-2b-smoke.yaml` | One-node Apptainer agent/test smoke | 4 learner + 4 rollout GCDs |
+| `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
 
 Every profile is validated before rendering. It rejects oversubscribed GPU layouts, insufficient rollout batches, invalid sequence-parallel divisibility, math runs with sandboxes, and code runs without sandboxes.
 
+The LUMI profiles intentionally keep sequence parallelism at 1 because the pinned ROCm/FLA/Triton stack's
+context-parallel GDN kernel fails AMD MLIR compilation for some variable rollout shapes. The learner GCDs are
+used as data-parallel ranks instead; see the LUMI runbook before changing this setting.
+
 ## Definition of a successful smoke
 
-A successful job is more than a zero exit status:
+The committed one-node profiles are bounded infrastructure smokes. A successful job is more than a zero
+exit status:
 
 1. every node passes the GPU/import/native-weight-transfer preflight;
 2. all Ray nodes join and learner/vLLM placement groups are created;
-3. at least one weight broadcast completes;
-4. rollouts include both reward 0 and reward 1 groups;
-5. gradients are nonzero and a learner step completes;
-6. code runs show a sandbox reset, tool call, deferred test upload, and parsed reward;
-7. response truncation, environment errors, zero-standard-deviation groups, and policy lag remain inside the configured gates.
+3. rollouts and a learner step complete;
+4. the initial and post-step weight broadcasts complete;
+5. code runs show a sandbox reset, tool call, deferred test upload, and parsed reward;
+6. response truncation, environment errors, and policy lag remain inside the configured gates.
 
-The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. Actual MI250X qualification still requires submitting the two smoke jobs; cluster runtime behavior cannot be proven on a laptop.
+Before scaling, run a separate signal qualification with active sampling enabled. It must contain both reward
+0 and reward 1 within prompt groups, produce nonzero gradients, and remain inside the zero-standard-deviation
+and policy-lag gates. The four-node training profile enables active sampling; do not scale a run with all-equal
+rewards merely because the bounded infrastructure smoke passes.
+
+The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
+one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24; see
+[the qualification record](docs/qualification-2026-08-24.md) for exact jobs, versions, metrics, and the
+remaining signal-qualification work.
 
 ## Security
 

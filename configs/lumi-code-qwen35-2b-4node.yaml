@@ -55,7 +55,7 @@ rollout:
   inflight_updates: true
 training:
   learner_gpus_per_node: [8, 8]
-  sequence_parallel_size: 4
+  sequence_parallel_size: 1
   learning_rate: 1.0e-6
   total_episodes: 128000
   epochs: 1
@@ -69,9 +69,13 @@ output:
   experiment_name: lumi_code_qwen35_2b_dppo
   with_tracking: true
   wandb_mode: offline
+  wandb_entity: local
 environment:
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_SWERL_APPTAINER_KWARGS: "1"
   SWERL_SANDBOX_TIMING_LOGS: "1"
   SWERL_RESET_FAILURE_ZERO_REWARD: "1"

@@ -11,7 +11,7 @@ import yaml
 
 from .backend import build_backend_argv, shell_command
 from .config import load_config
-from .datasets import make_math_smoke, pack_code_dataset
+from .datasets import make_math_smoke, pack_code_dataset, sample_code_dataset, sample_math_dataset
 from .gates import evaluate_gates
 from .schemas import TaskSpec
 from .slurm import render_slurm
@@ -74,7 +74,9 @@ def command_doctor(args: argparse.Namespace) -> int:
         checks["backend_commit"] = actual
         checks["backend_commit_matches"] = actual.startswith(config.backend.commit)
     if config.task.sandbox:
-        checks["sandbox_image"] = Path(config.task.sandbox.image).is_file()
+        # Singularity/Apptainer accepts both immutable SIF files and unpacked
+        # sandbox directories as execution images.
+        checks["sandbox_image"] = Path(config.task.sandbox.image).exists()
     ok = all(value for key, value in checks.items() if isinstance(value, bool))
     _json({"ok": ok, "checks": checks})
     return 0 if ok else 1
@@ -93,7 +95,11 @@ def command_run_backend(args: argparse.Namespace) -> int:
         raise RuntimeError(f"backend revision mismatch: expected {config.backend.commit}, got {actual}")
     os.chdir(backend)
     argv = build_backend_argv(config)
-    os.execvpe(argv[0], argv, os.environ.copy())
+    environment = os.environ.copy()
+    if config.model.local_path:
+        environment["OELLM_MODEL_ID"] = config.model.name_or_path
+        environment["OELLM_MODEL_PATH"] = config.model.local_path
+    os.execvpe(argv[0], argv, environment)
     return 127
 
 
@@ -105,6 +111,27 @@ def command_make_math_smoke(args: argparse.Namespace) -> int:
 
 def command_pack_code(args: argparse.Namespace) -> int:
     dataset_path, task_root = pack_code_dataset(args.manifest, args.output_dir)
+    _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
+    return 0
+
+
+def command_sample_math(args: argparse.Namespace) -> int:
+    sample_math_dataset(
+        args.source,
+        args.output,
+        args.count,
+        language=args.language,
+        min_difficulty=args.min_difficulty,
+        diverse_by=args.diverse_by,
+    )
+    print(args.output)
+    return 0
+
+
+def command_sample_code(args: argparse.Namespace) -> int:
+    dataset_path, task_root = sample_code_dataset(
+        args.source, args.output_dir, args.image, args.count, args.copies, args.max_steps
+    )
     _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
     return 0
 
@@ -159,6 +186,29 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--manifest", required=True)
     pack.add_argument("--output-dir", required=True)
     pack.set_defaults(handler=command_pack_code)
+
+    math_sample = sub.add_parser("sample-math")
+    math_sample.add_argument("--source", required=True)
+    math_sample.add_argument("--output", required=True)
+    math_sample.add_argument("--count", type=int, default=8)
+    math_sample.add_argument("--language", help="optional exact language-code filter, for example en")
+    math_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
+    math_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
+    math_sample.set_defaults(handler=command_sample_math)
+
+    code_sample = sub.add_parser("sample-code")
+    code_sample.add_argument("--source", required=True)
+    code_sample.add_argument("--output-dir", required=True)
+    code_sample.add_argument("--image", required=True)
+    code_sample.add_argument("--count", type=int, default=8)
+    code_sample.add_argument("--copies", type=int, default=1)
+    code_sample.add_argument(
+        "--max-steps",
+        type=int,
+        default=6,
+        help="maximum sandbox turns per trajectory (default: 6 for the smoke profile)",
+    )
+    code_sample.set_defaults(handler=command_sample_code)
 
     verify = sub.add_parser("verify")
     verify.add_argument("--task", required=True)
