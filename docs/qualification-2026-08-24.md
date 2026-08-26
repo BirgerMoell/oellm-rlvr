@@ -62,9 +62,23 @@ Job `21536744` replayed the fixed scalar-answer contract on English difficulty-2
 6m44s. The verifier now behaved correctly and accepted 16 of 32 trajectories. The gradient was still zero:
 the four eight-sample groups were internally constant (`8/8`, `0/8`, `8/8`, `0/8`), so grouped DPPO correctly
 assigned every trajectory advantage zero. This demonstrates why an aggregate 50% accuracy is not enough for
-RLVR; variation must occur among samples for the same prompt. The follow-up math canary repeats the calibrated
-fraction prompt `7/20 - 8/2`, whose saved rollouts contained both exact and incorrect answers, with 16 samples
-per group.
+RLVR; variation must occur among samples for the same prompt.
+
+The first one-row fraction canary attempt (`21537331`) failed before model initialization because TMAX requires
+eight dataset rows to fill four prompt slots across two asynchronous steps. The v4 sampler therefore repeats
+the one calibrated row eight times with explicit copy indices. Job `21537536` then completed all 64 rollouts,
+but incorrectly assigned reward zero to every one. Decoding and replaying the exact artifact through the
+pinned verifier showed 56 equivalent answers and eight wrong answers. The root cause was the verifier's
+symbolic-equivalence timeout: `MathVerifier` runs in an executor thread, while `signal.signal` only works on
+the main thread; the caught exception silently became a false negative. Commit `b238d5a` makes that timeout
+thread-aware and rejects extracted expressions over 512 characters before un-timed worker-thread parsing.
+
+Job `21537886` reran the same v4 fraction canary at commit `b238d5a` and completed `0:0` in 6m35s. Every
+16-sample prompt group contained 14 rewards of 1 and two rewards of 0. The artifact reports mean reward
+`0.875`, zero-std fraction `0`, and advantages from `-0.875` to `0.125`; the learner reports
+`grad_norm=1.24`, no truncations, and a 0.24s post-update weight sync. This qualifies the math reward-to-update
+path and confirms that the earlier zero gradient was a verifier/threading failure, not a lack of correct
+model responses.
 
 Job `21536745` used regenerated English difficulty-1 code tasks with the actual problem in the model-visible
 message. It completed `0:0` in 23m14s and produced the first verified code learning signal: two of 32
@@ -76,13 +90,11 @@ concise system prompt naming the editable path and submission marker and reduces
 per-turn budget from 2,048 to 1,024 tokens. This last change targets rollout efficiency; it is not needed to
 interpret the already successful gradient-path result.
 
-Before scaling, build a curriculum that gives the starting policy nonzero within-prompt reward variance. The
-difficulty-1 code probe now passes that narrow signal test; math still requires the calibrated canary result.
-Next experiments should combine calibrated strata, an SFT checkpoint with stronger tool-submission behavior,
-and a small active-sampling qualification. Require reward-0 and reward-1 completions inside prompt groups,
-nonzero gradient norm, bounded resampling, and a second successful weight update before using the four-node
-profile. Difficulty should only be changed after verifier schema and policy-visible task contracts have been
-replayed against saved trajectories.
+Both the difficulty-1 code probe and calibrated difficulty-2 math canary now pass the narrow grouped-signal
+test. Before scaling, combine calibrated strata, an SFT checkpoint with stronger tool-submission behavior,
+and a small active-sampling qualification. Require bounded resampling and a second successful weight update
+before using the four-node profile. Difficulty should only be changed after verifier schema and policy-visible
+task contracts have been replayed against saved trajectories.
 
 ## LUMI-specific findings
 

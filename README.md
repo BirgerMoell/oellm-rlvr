@@ -141,10 +141,9 @@ twice in the backend, and code rows do not put the actual problem in the policy-
 tests now enforce scalar math answers, visible code instructions, and compilable generated verifier Python.
 
 The math signal profile repeats that revision-pinned fraction canary into the eight rows required for four
-prompt groups and two asynchronous steps, then draws 16 samples per group. Earlier decoded trajectories for
-this exact prompt contained both exact fraction answers and genuine wrong answers. This is a gradient-path
-qualification, not a representative training mixture; after it passes, use active sampling over a diverse
-curriculum to retain mixed groups.
+prompt groups and two asynchronous steps, then draws 16 samples per group. LUMI job `21537886` produced mixed
+rewards in all four groups and `grad_norm=1.24`. This is a gradient-path qualification, not a representative
+training mixture; use active sampling over a diverse curriculum to retain mixed groups.
 
 Build the small read-only task sandbox once before the code smoke:
 
@@ -216,9 +215,10 @@ oellm-rlvr inspect-rollouts --rollouts rollouts_000000.jsonl
 internally constant. The same report counts submissions, truncations, timeouts, and tool-format errors.
 
 The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
-one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24; see
+one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24, and the math/code grouped-signal probes
+completed on 2026-08-26; see
 [the qualification record](docs/qualification-2026-08-24.md) for exact jobs, versions, metrics, and the
-remaining signal-qualification work.
+remaining production-qualification work.
 
 ## Security
 
