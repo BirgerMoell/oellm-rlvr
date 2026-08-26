@@ -38,6 +38,10 @@ def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     assert tool_config["append_turns_remaining"] is True
     assert tool_config["tool_call_format_error_feedback"] is True
     assert tool_config["timeout"] == 30
+    system_prompt = Path(_value(argv, "--system_prompt_override_file"))
+    assert system_prompt == ROOT / "prompts/code-agent-system.txt"
+    assert system_prompt.is_file()
+    assert "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT" in system_prompt.read_text()
 
 
 def test_production_profile_enables_active_sampling() -> None:

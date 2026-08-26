@@ -68,6 +68,14 @@ The complete problem statement and output contract are part of the policy-visibl
 copies environment seeds to `/workspace` but deliberately does not expose `instruction.md` or hidden tests;
 storing the problem only in the task-data archive leaves the agent with no task to solve.
 
+The committed code profiles also override the backend's generic agent prompt with
+`prompts/code-agent-system.txt`. It tells the policy the editable path and submission marker, bounds the
+thought and shell-command size, and discourages unproductive filesystem and package exploration. Relative
+`task.system_prompt_file` values are resolved against the configuration file, so rendered Slurm commands keep
+working regardless of the caller's current directory. The signal profile uses a 1,024-token per-turn budget:
+this is long enough for a compact implementation but short enough to reduce malformed, truncated JSON tool
+calls and make a six-turn rollout practical on LUMI.
+
 ## Local verifier QA
 
 The standalone `CodeVerifier` can execute a `TaskSpec` against an Apptainer image. A local subprocess runner exists only for trusted repository tests and requires an explicit unsafe flag. This verifier does not replace the online SWERL environment; it allows fast validation of candidate extraction, task files, commands, timeouts, and result schemas before consuming GPU allocation time.

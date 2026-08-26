@@ -112,7 +112,9 @@ all-equal base-policy batch still exercises the learner and weight-sync path ins
 The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
 This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
 `--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
-configuration equal to that value.
+configuration equal to that value. All code profiles use the concise
+`prompts/code-agent-system.txt` override, which names `/workspace/solution.py` and the exact submission marker.
+The path is resolved relative to the YAML file, not the shell's current directory.
 
 For a starting-checkpoint signal probe, select a fixed easier stratum. The math command below intentionally
 selects a narrow calibration prompt; the code command retains family diversity:

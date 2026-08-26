@@ -26,7 +26,7 @@ task:
   kind: code
   max_steps: 8
   pool_size: 16
-  system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
+  system_prompt_file: ../prompts/code-agent-system.txt
   sandbox:
     backend: apptainer
     image: /shared/containers/python-3.12-code-sandbox.sif

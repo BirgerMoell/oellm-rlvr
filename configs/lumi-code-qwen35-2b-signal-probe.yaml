@@ -38,9 +38,9 @@ model:
   name_or_path: hamishivi/Qwen3.5-2B
   local_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
   max_prompt_tokens: 2048
-  response_tokens: 8192
-  per_turn_tokens: 2048
-  pack_length: 10240
+  response_tokens: 6144
+  per_turn_tokens: 1024
+  pack_length: 8192
 datasets:
   - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3/train.parquet
     weight: 1.0
@@ -49,7 +49,7 @@ task:
   kind: code
   max_steps: 6
   pool_size: 16
-  system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
+  system_prompt_file: ../prompts/code-agent-system.txt
   sandbox:
     backend: slurm_apptainer
     image: /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
