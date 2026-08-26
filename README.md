@@ -112,7 +112,38 @@ all-equal base-policy batch still exercises the learner and weight-sync path ins
 The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
 This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
 `--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
-configuration equal to that value.
+configuration equal to that value. All code profiles use the concise
+`prompts/code-agent-system.txt` override, which names `/workspace/solution.py` and the exact submission marker.
+The path is resolved relative to the YAML file, not the shell's current directory.
+
+For a starting-checkpoint signal probe, select a fixed easier stratum. The math command below intentionally
+selects a narrow calibration prompt; the code command retains family diversity:
+
+```bash
+$VENV/bin/oellm-rlvr sample-math \
+  --source data/oellm-math-rlvr-train.parquet \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v4-20260826.parquet" \
+  --count 1 --language en --min-difficulty 2 --max-difficulty 2 \
+  --subdomain fraction_operations --copies 8
+$VENV/bin/oellm-rlvr sample-code \
+  --source data/oellm-code-rlvr-train.parquet \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3" \
+  --image "$ROOT/sandboxes/python-3.12-slim" \
+  --count 8 --max-steps 6 --language en \
+  --min-difficulty 1 --max-difficulty 1 --diverse-by generator_family
+```
+
+Always regenerate sampled task data with this repository revision or later. Code task data generated before
+commit `ac9bcc2` contains an incorrectly escaped newline in the generated verifier heredoc; submitted
+solutions then receive reward zero because the verifier cannot be parsed. Data generated before commit
+`99613f0` also has two signal-breaking contract errors: published math singleton answer lists become nested
+twice in the backend, and code rows do not put the actual problem in the policy-visible message. Regression
+tests now enforce scalar math answers, visible code instructions, and compilable generated verifier Python.
+
+The math signal profile repeats that revision-pinned fraction canary into the eight rows required for four
+prompt groups and two asynchronous steps, then draws 16 samples per group. LUMI job `21537886` produced mixed
+rewards in all four groups and `grad_norm=1.24`. This is a gradient-path qualification, not a representative
+training mixture; use active sampling over a diverse curriculum to retain mixed groups.
 
 Build the small read-only task sandbox once before the code smoke:
 
@@ -146,6 +177,8 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 |---|---|---|
 | `lumi-math-qwen35-2b-smoke.yaml` | One-node math signal and weight-sync smoke | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
+| `lumi-math-qwen35-2b-signal-probe.yaml` | One-batch calibrated difficulty-2 fraction gradient canary | 4 learner + 4 rollout GCDs |
+| `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
 
@@ -172,10 +205,20 @@ Before scaling, run a separate signal qualification with active sampling enabled
 and policy-lag gates. The four-node training profile enables active sampling; do not scale a run with all-equal
 rewards merely because the bounded infrastructure smoke passes.
 
+Inspect the backend artifact directly after each probe:
+
+```bash
+oellm-rlvr inspect-rollouts --rollouts rollouts_000000.jsonl
+```
+
+`has_grouped_reward_signal` is false when aggregate accuracy looks healthy but every prompt group is
+internally constant. The same report counts submissions, truncations, timeouts, and tool-format errors.
+
 The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
-one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24; see
+one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24, and the math/code grouped-signal probes
+completed on 2026-08-26; see
 [the qualification record](docs/qualification-2026-08-24.md) for exact jobs, versions, metrics, and the
-remaining signal-qualification work.
+remaining production-qualification work.
 
 ## Security
 

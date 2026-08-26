@@ -11,9 +11,26 @@ The backend-compatible minimum row is:
 `make-math-smoke` emits JSONL or Parquet based on the output suffix. Production math data should preserve source/license/provenance outside the training columns, pin a revision, remove evaluation contamination, and test every verifier on adversarial completions before training.
 
 `sample-math` selects distinct semantic groups from the published OpenEuroLLM Math RLVR Parquet shard
-and preserves all provenance and verifier columns. The policy still receives only `messages`.
+and preserves all provenance and verifier columns. The policy still receives only `messages`. Use
+`--min-difficulty` and `--max-difficulty` to select an inclusive curriculum band, and `--diverse-by` to
+avoid filling a probe with one subdomain. Use `--subdomain` for an exact subdomain match when replaying a
+known calibration prompt; do not mistake that narrow canary for a production data mixture.
+`--copies` can repeat each selected row to meet the backend's prefill/async minimum for a controlled canary;
+it must not be used to manufacture diversity in a production curriculum.
+
+The online transform supports several verifiers per row by wrapping a scalar `ground_truth` and scalar
+`dataset` into aligned lists. A published singleton such as `["5"]` must therefore be flattened to `"5"`
+before training; otherwise the transform produces `[["5"]]` and sends a list, rather than a string, to
+`MathVerifier`. `sample-math` performs this normalization and rejects multi-answer rows until they have an
+explicit aligned multi-verifier contract.
 
 The lightweight `MathVerifier` extracts the last `\\boxed{...}`, then `<final>...</final>`, then an explicit answer line, then the last nonempty line. It supports normalized exact strings and bounded rational arithmetic without calling `eval`. The online backend uses its own pinned ground-truth verifier implementation; the lightweight verifier is for dataset QA and regression tests.
+
+The pinned online `MathVerifier` performs symbolic comparison from an executor thread. Its original timeout
+uses `signal.signal`, which is legal only on the main thread; the caught exception otherwise turns equivalent
+forms such as `-\\frac{73}{20}` and `-73/20` into reward zero. LUMI math profiles enable the guarded
+`OELLM_PATCH_MATH_EQUIV_THREADS` compatibility hook and cap extracted expressions at 512 characters before
+allowing thread-safe symbolic comparison.
 
 ## Code
 
@@ -51,7 +68,21 @@ Binary reward is the safest initial contract. Introduce partial reward only when
 `sample-code` accepts the published OpenEuroLLM Code RLVR Parquet shard. It converts each Python
 `stdin_stdout` hidden test into `cases.json` plus a bounded sandbox runner. The generated training row
 contains only the policy-visible messages and TMAX environment configuration; hidden tests never enter
-the model context.
+the model context. Code sampling supports the same inclusive difficulty band and can diversify by
+`generator_family`. The generated verifier is compiled in the unit tests; this specifically guards the
+shell-heredoc escaping boundary, where Python string escapes must survive one generation layer.
+
+The complete problem statement and output contract are part of the policy-visible message. The backend
+copies environment seeds to `/workspace` but deliberately does not expose `instruction.md` or hidden tests;
+storing the problem only in the task-data archive leaves the agent with no task to solve.
+
+The committed code profiles also override the backend's generic agent prompt with
+`prompts/code-agent-system.txt`. It tells the policy the editable path and submission marker, bounds the
+thought and shell-command size, and discourages unproductive filesystem and package exploration. Relative
+`task.system_prompt_file` values are resolved against the configuration file, so rendered Slurm commands keep
+working regardless of the caller's current directory. The signal profile uses a 1,024-token per-turn budget:
+this is long enough for a compact implementation but short enough to reduce malformed, truncated JSON tool
+calls and make a six-turn rollout practical on LUMI.
 
 ## Local verifier QA
 

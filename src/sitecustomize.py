@@ -20,6 +20,14 @@ if os.environ.get("OELLM_PATCH_VLLM_WEIGHT_UPDATE") == "1":
         patch_vllm_weight_module,
     )
 
+if os.environ.get("OELLM_PATCH_MATH_EQUIV_THREADS") == "1":
+    from oellm_rlvr.compat import patch_math_equivalence_module
+
+    install_post_import_patch(
+        "open_instruct.math_utils",
+        patch_math_equivalence_module,
+    )
+
 if os.environ.get("OELLM_PATCH_SWERL_APPTAINER_KWARGS") == "1":
     from oellm_rlvr.compat import wrap_swerl_create_backend
 

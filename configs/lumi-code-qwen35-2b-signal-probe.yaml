@@ -1,5 +1,5 @@
 version: 1
-name: rlvr-code-smoke
+name: rlvr-code-signal-probe
 platform:
   accelerator: rocm
   nodes: 1
@@ -38,11 +38,11 @@ model:
   name_or_path: hamishivi/Qwen3.5-2B
   local_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
   max_prompt_tokens: 2048
-  response_tokens: 8192
-  per_turn_tokens: 2048
-  pack_length: 10240
+  response_tokens: 6144
+  per_turn_tokens: 1024
+  pack_length: 8192
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-s6/train.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3/train.parquet
     weight: 1.0
     split: train
 task:
@@ -55,7 +55,7 @@ task:
     image: /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
     binary: /usr/bin/singularity
     fakeroot: false
-    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-s6/task-data
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3/task-data
     test_timeout: 600
     command_timeout: 30
     last_step_warning: true
@@ -85,9 +85,9 @@ training:
   save_freq: 0
   checkpoint_state_freq: 10
 output:
-  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/code-smoke
-  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/code-smoke
-  experiment_name: lumi_code_qwen35_2b_smoke
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/code-signal-probe
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/code-signal-probe
+  experiment_name: lumi_code_qwen35_2b_signal_probe
   with_tracking: true
   wandb_mode: offline
   wandb_entity: local

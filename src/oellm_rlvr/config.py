@@ -200,4 +200,8 @@ class RunConfig(StrictModel):
 def load_config(path: str | Path) -> RunConfig:
     config_path = Path(path)
     raw: Any = yaml.safe_load(config_path.read_text())
-    return RunConfig.model_validate(raw)
+    config = RunConfig.model_validate(raw)
+    system_prompt = config.task.system_prompt_file
+    if system_prompt and not Path(system_prompt).is_absolute():
+        config.task.system_prompt_file = str((config_path.parent / system_prompt).resolve())
+    return config

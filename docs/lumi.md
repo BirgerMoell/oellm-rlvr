@@ -29,6 +29,10 @@ The hooks run only when the relevant vLLM module is imported, so Ray's generic p
   vLLM's own `msgspec` IPC decoder rejects for Qwen3.5.
 - `OELLM_PATCH_VLLM_WEIGHT_UPDATE=1` wraps TMAX's packed update in the `start_weight_update` /
   `finish_weight_update` transaction newly required by vLLM 0.22.1.
+- Math profiles use `OELLM_PATCH_MATH_EQUIV_THREADS=1` because the pinned verifier invokes symbolic LaTeX
+  comparison in an executor thread while its timeout tries to install a main-thread-only `SIGALRM` handler.
+  The hook skips that signal operation off the main thread and rejects extracted expressions over 512
+  characters before symbolic parsing.
 - Code profiles use `OELLM_PATCH_SWERL_APPTAINER_KWARGS=1` to register the LUMI `slurm_apptainer`
   backend and filter prepared-backend defaults before pinned TMAX constructs a plain Apptainer backend.
 

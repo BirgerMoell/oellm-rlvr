@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from .backend import build_backend_argv, shell_command
+from .backend_rollouts import inspect_backend_rollouts
 from .config import load_config
 from .datasets import make_math_smoke, pack_code_dataset, sample_code_dataset, sample_math_dataset
 from .gates import evaluate_gates
@@ -122,7 +123,10 @@ def command_sample_math(args: argparse.Namespace) -> int:
         args.count,
         language=args.language,
         min_difficulty=args.min_difficulty,
+        max_difficulty=args.max_difficulty,
         diverse_by=args.diverse_by,
+        subdomain=args.subdomain,
+        copies=args.copies,
     )
     print(args.output)
     return 0
@@ -130,7 +134,16 @@ def command_sample_math(args: argparse.Namespace) -> int:
 
 def command_sample_code(args: argparse.Namespace) -> int:
     dataset_path, task_root = sample_code_dataset(
-        args.source, args.output_dir, args.image, args.count, args.copies, args.max_steps
+        args.source,
+        args.output_dir,
+        args.image,
+        args.count,
+        args.copies,
+        args.max_steps,
+        language=args.language,
+        min_difficulty=args.min_difficulty,
+        max_difficulty=args.max_difficulty,
+        diverse_by=args.diverse_by,
     )
     _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
     return 0
@@ -157,6 +170,11 @@ def command_gate(args: argparse.Namespace) -> int:
     report = evaluate_gates(JsonlTrajectoryStore(args.trajectories), config.gates)
     _json(report.as_dict())
     return 0 if report.passed else 1
+
+
+def command_inspect_rollouts(args: argparse.Namespace) -> int:
+    _json(inspect_backend_rollouts(args.rollouts).as_dict())
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -193,7 +211,10 @@ def build_parser() -> argparse.ArgumentParser:
     math_sample.add_argument("--count", type=int, default=8)
     math_sample.add_argument("--language", help="optional exact language-code filter, for example en")
     math_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
+    math_sample.add_argument("--max-difficulty", type=int, help="optional inclusive difficulty ceiling")
     math_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
+    math_sample.add_argument("--subdomain", help="optional exact math subdomain filter")
+    math_sample.add_argument("--copies", type=int, default=1, help="repeat each selected row (calibration only)")
     math_sample.set_defaults(handler=command_sample_math)
 
     code_sample = sub.add_parser("sample-code")
@@ -202,6 +223,10 @@ def build_parser() -> argparse.ArgumentParser:
     code_sample.add_argument("--image", required=True)
     code_sample.add_argument("--count", type=int, default=8)
     code_sample.add_argument("--copies", type=int, default=1)
+    code_sample.add_argument("--language", help="optional exact language-code filter, for example en")
+    code_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
+    code_sample.add_argument("--max-difficulty", type=int, help="optional inclusive difficulty ceiling")
+    code_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
     code_sample.add_argument(
         "--max-steps",
         type=int,
@@ -224,6 +249,10 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--config", required=True)
     gate.add_argument("--trajectories", required=True)
     gate.set_defaults(handler=command_gate)
+
+    inspect_rollouts = sub.add_parser("inspect-rollouts")
+    inspect_rollouts.add_argument("--rollouts", required=True, help="backend rollouts_*.jsonl artifact")
+    inspect_rollouts.set_defaults(handler=command_inspect_rollouts)
     return parser
 
 

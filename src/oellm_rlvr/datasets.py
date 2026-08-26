@@ -73,10 +73,14 @@ def _sample_parquet_rows(
     *,
     language: str | None = None,
     min_difficulty: int | None = None,
+    max_difficulty: int | None = None,
     diverse_by: str | None = None,
+    exact_filters: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be positive")
+    if min_difficulty is not None and max_difficulty is not None and min_difficulty > max_difficulty:
+        raise ValueError("min_difficulty cannot exceed max_difficulty")
     try:
         import pyarrow.parquet as pq
     except ImportError as error:
@@ -87,10 +91,15 @@ def _sample_parquet_rows(
     diversity_values: set[str] = set()
     for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
         for row in batch.to_pylist():
-            if language is not None and row.get("language") != language:
+            if exact_filters and any(str(row.get(column, "")) != value for column, value in exact_filters.items()):
+                continue
+            row_language = row.get("language") or row.get("prompt_language")
+            if language is not None and row_language != language:
                 continue
             difficulty = row.get("difficulty")
             if min_difficulty is not None and (difficulty is None or int(difficulty) < min_difficulty):
+                continue
+            if max_difficulty is not None and (difficulty is None or int(difficulty) > max_difficulty):
                 continue
             group = str(row.get("semantic_group_id", row.get("id", "")))
             if group in semantic_groups:
@@ -109,8 +118,12 @@ def _sample_parquet_rows(
         filters.append(f"language={language}")
     if min_difficulty is not None:
         filters.append(f"difficulty>={min_difficulty}")
+    if max_difficulty is not None:
+        filters.append(f"difficulty<={max_difficulty}")
     if diverse_by:
         filters.append(f"distinct {diverse_by}")
+    if exact_filters:
+        filters.extend(f"{column}={value}" for column, value in exact_filters.items())
     suffix = f" for {', '.join(filters)}" if filters else ""
     raise ValueError(f"dataset contains only {len(selected)} matching semantic groups{suffix}; requested {count}")
 
@@ -121,23 +134,46 @@ def sample_math_dataset(
     count: int = 4,
     language: str | None = None,
     min_difficulty: int | None = None,
+    max_difficulty: int | None = None,
     diverse_by: str | None = None,
+    subdomain: str | None = None,
+    copies: int = 1,
 ) -> None:
+    if copies < 1:
+        raise ValueError("copies must be positive")
     required = {"messages", "ground_truth", "verifier_kind"}
     rows = _sample_parquet_rows(
         source,
         count,
         language=language,
         min_difficulty=min_difficulty,
+        max_difficulty=max_difficulty,
         diverse_by=diverse_by,
+        exact_filters={"subdomain": subdomain} if subdomain else None,
     )
     for index, row in enumerate(rows):
         missing = required - row.keys()
         if missing:
             raise ValueError(f"math row {index} is missing columns: {sorted(missing)}")
+        ground_truth = row["ground_truth"]
+        if isinstance(ground_truth, list):
+            if len(ground_truth) != 1:
+                raise ValueError(
+                    f"math row {index} must contain exactly one ground truth for the math verifier; "
+                    f"found {len(ground_truth)}"
+                )
+            ground_truth = ground_truth[0]
+        if not isinstance(ground_truth, str) or not ground_truth.strip():
+            raise ValueError(f"math row {index} has an empty or non-string ground truth")
+        # rlvr_tokenize_v2 wraps scalar ground truths once to align them with the
+        # scalar verifier dispatch key. Keeping the source's singleton list here
+        # would therefore produce [[answer]], which MathVerifier cannot compare.
+        row["ground_truth"] = ground_truth
         row["oellm_source_dataset"] = str(row.get("dataset", ""))
         # Open-Instruct dispatches ground-truth verifiers by this column.
         row["dataset"] = "math"
+    if copies > 1:
+        rows = [dict(row, oellm_canary_copy=copy_index) for row in rows for copy_index in range(copies)]
     write_rows(rows, output)
 
 
@@ -172,7 +208,7 @@ if passed:
             passed = False
             failure = f"case {index}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
             break
-pathlib.Path("/logs/verifier/reward.txt").write_text("1.0\n" if passed else "0.0\n")
+pathlib.Path("/logs/verifier/reward.txt").write_text("1.0\\n" if passed else "0.0\\n")
 if not passed:
     raise SystemExit(failure)
 PY
@@ -186,10 +222,21 @@ def sample_code_dataset(
     count: int = 4,
     copies: int = 1,
     max_steps: int = 6,
+    language: str | None = None,
+    min_difficulty: int | None = None,
+    max_difficulty: int | None = None,
+    diverse_by: str | None = None,
 ) -> tuple[Path, Path]:
     if max_steps < 1:
         raise ValueError("max_steps must be positive")
-    rows = _sample_parquet_rows(source, count)
+    rows = _sample_parquet_rows(
+        source,
+        count,
+        language=language,
+        min_difficulty=min_difficulty,
+        max_difficulty=max_difficulty,
+        diverse_by=diverse_by,
+    )
     manifests: list[dict[str, object]] = []
     for index, row in enumerate(rows):
         verification = row.get("verification_info")
@@ -249,7 +296,10 @@ def _pack_code_manifests(manifests: list[dict[str, object]], output_dir: str | P
                     "messages": [
                         {
                             "role": "user",
-                            "content": "Solve the coding task in the sandbox. Run tests, then submit when complete.",
+                            # The backend copies environment seeds into the sandbox,
+                            # but it does not expose instruction.md to the policy.
+                            # The actual problem must therefore be in the model prompt.
+                            "content": task.instruction.strip(),
                         }
                     ],
                     # Environment rewards are aggregated separately; this registered

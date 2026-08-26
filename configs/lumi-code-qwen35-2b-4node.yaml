@@ -30,7 +30,7 @@ task:
   kind: code
   max_steps: 64
   pool_size: 512
-  system_prompt_file: scripts/train/debug/envs/swerl_vanillux_sandbox_system_prompt.txt
+  system_prompt_file: ../prompts/code-agent-system.txt
   sandbox:
     backend: prepared_apptainer
     image: /scratch/project_465002530/containers/tmax-code-sandbox.sif
