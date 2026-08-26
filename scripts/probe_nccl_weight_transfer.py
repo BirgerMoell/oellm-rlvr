@@ -48,6 +48,20 @@ def run_rank(args: argparse.Namespace) -> int:
     if torch.cuda.device_count() != 1:
         raise RuntimeError(f"rank {args.rank}: expected one visible device, found {torch.cuda.device_count()}")
     torch.cuda.set_device(0)
+    print(
+        json.dumps(
+            {
+                "event": "weight_transfer_probe_rank_start",
+                "rank": args.rank,
+                "world_size": args.world_size,
+                "hostname": socket.gethostname(),
+                "hip_visible_devices": os.environ.get("HIP_VISIBLE_DEVICES"),
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
     started = time.perf_counter()
     group = NCCLWeightTransferEngine._stateless_init_process_group(
         args.master_address,

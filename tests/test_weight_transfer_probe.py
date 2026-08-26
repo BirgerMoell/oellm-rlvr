@@ -27,6 +27,10 @@ def test_rollout_node_gets_eight_unique_ranks_and_devices() -> None:
     ]
 
 
+def test_two_rank_probe_uses_one_worker_device() -> None:
+    assert MODULE.local_rank_assignments("rollout", "learner", 2) == [(1, 0)]
+
+
 def test_child_environment_isolates_one_gpu(monkeypatch) -> None:
     monkeypatch.setenv("ROCR_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7")
     env = MODULE.child_environment(4)

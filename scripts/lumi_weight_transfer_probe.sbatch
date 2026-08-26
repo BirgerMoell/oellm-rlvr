@@ -26,6 +26,7 @@ mapfile -t PROBE_NODES < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
 TRAINER_NODE="${PROBE_NODES[1]}"
 TRAINER_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$TRAINER_NODE" getent hosts "$TRAINER_NODE" | awk 'NR==1 {print $1}')"
 MASTER_PORT="$((20000 + SLURM_JOB_ID % 20000))"
+PROBE_WORLD_SIZE="${PROBE_WORLD_SIZE:-9}"
 
 export NCCL_SOCKET_IFNAME=hsn
 export NCCL_CUMEM_ENABLE=0
@@ -33,12 +34,12 @@ export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=INIT,NET
 export PYTHONUNBUFFERED=1
 
-echo "Native transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, workers=${PROBE_NODES[0]}, port=${MASTER_PORT}"
+echo "Native transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, workers=${PROBE_NODES[0]}, port=${MASTER_PORT}, world_size=${PROBE_WORLD_SIZE}"
 srun --label --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_nccl_weight_transfer.py" \
   --master-address "$TRAINER_IP" \
   --master-port "$MASTER_PORT" \
-  --world-size 9 \
+  --world-size "$PROBE_WORLD_SIZE" \
   --trainer-host "$TRAINER_NODE" \
   --timeout 180
