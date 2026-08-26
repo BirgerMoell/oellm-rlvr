@@ -16,6 +16,7 @@ ROOT = Path(__file__).parents[1]
         "lumi-code-qwen35-2b-smoke.yaml",
         "lumi-math-qwen35-2b-signal-probe.yaml",
         "lumi-math-qwen35-2b-active-sampling.yaml",
+        "lumi-math-oellm9b-256k-sft-active-2node.yaml",
         "lumi-code-qwen35-2b-signal-probe.yaml",
         "lumi-code-qwen35-2b-4node.yaml",
         "cuda-code-qwen35-2b-smoke.yaml",

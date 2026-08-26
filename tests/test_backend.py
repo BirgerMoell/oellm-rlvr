@@ -60,3 +60,20 @@ def test_math_active_sampling_profile_runs_two_updates_and_saves_filtered_groups
     assert "--save_filtered_rollouts" in argv
     assert config.training.total_episodes == 2 * episodes_per_update
     assert config.training.checkpoint_state_freq == 1
+
+
+def test_oellm9b_profile_uses_two_nodes_and_the_staged_sft_checkpoint() -> None:
+    config = load_config(ROOT / "configs/lumi-math-oellm9b-256k-sft-active-2node.yaml")
+    argv = build_backend_argv(config)
+    episodes_per_update = config.rollout.unique_prompts * config.rollout.samples_per_prompt
+
+    assert config.platform.nodes == 2
+    assert config.model.name_or_path == "openeurollm/oellm-9b-256k-sft"
+    assert config.model.local_path.endswith("/artifacts/models/oellm-9b-256k-sft")
+    assert config.training.learner_gpus_per_node == [8]
+    assert config.rollout.engines == 8
+    assert config.rollout.tensor_parallel_size == 1
+    assert config.training.total_episodes == 2 * episodes_per_update
+    assert "--active_sampling" in argv
+    assert "--save_filtered_rollouts" in argv
+    assert "--vllm_gdn_prefill_backend" not in argv

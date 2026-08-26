@@ -133,6 +133,16 @@ $VENV/bin/oellm-rlvr sample-code \
   --min-difficulty 1 --max-difficulty 1 --diverse-by generator_family
 ```
 
+The two-node 9B SFT qualification repeats the eight-row difficulty-5 math sample so TMAX can prefill eight
+prompt slots across two asynchronous steps:
+
+```bash
+$VENV/bin/oellm-rlvr sample-math \
+  --source "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5.parquet" \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5-copies2-20260826.parquet" \
+  --count 8 --copies 2
+```
+
 Always regenerate sampled task data with this repository revision or later. Code task data generated before
 commit `ac9bcc2` contains an incorrectly escaped newline in the generated verifier heredoc; submitted
 solutions then receive reward zero because the verifier cannot be parsed. Data generated before commit
@@ -179,6 +189,7 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
 | `lumi-math-qwen35-2b-signal-probe.yaml` | One-batch calibrated difficulty-2 fraction gradient canary | 4 learner + 4 rollout GCDs |
 | `lumi-math-qwen35-2b-active-sampling.yaml` | Two-update active-sampling qualification on the calibrated math canary | 4 learner + 4 rollout GCDs |
+| `lumi-math-oellm9b-256k-sft-active-2node.yaml` | Two-node active-sampling qualification of the published OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
