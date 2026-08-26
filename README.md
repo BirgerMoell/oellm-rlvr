@@ -211,6 +211,12 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 
 Every profile is validated before rendering. It rejects oversubscribed GPU layouts, insufficient rollout batches, invalid sequence-parallel divisibility, math runs with sandboxes, and code runs without sandboxes.
 
+The real OELLM 9B ladder qualification completed on LUMI as job `21540106`: 128 rollouts, mean reward
+`0.7578125`, 14/16 mixed reward groups, gradient norms `0.34` and `0.40`, and a complete final checkpoint.
+The revision-pinned difficulty-5 sample was uniformly reward-zero for this checkpoint, so use the bounded
+ladder before turning on active sampling for a new model/data pairing. Exact evidence and resource accounting
+are in [the qualification record](docs/qualification-2026-08-24.md).
+
 The LUMI profiles intentionally keep sequence parallelism at 1 because the pinned ROCm/FLA/Triton stack's
 context-parallel GDN kernel fails AMD MLIR compilation for some variable rollout shapes. The learner GCDs are
 used as data-parallel ranks instead; see the LUMI runbook before changing this setting.

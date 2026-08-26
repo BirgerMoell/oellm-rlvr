@@ -113,6 +113,49 @@ successful optimizer update, but it does not yet exercise the filtered-prompt re
 scaling gate remains the runbook's two-node weight-sync qualification. In parallel, rerun the code signal
 profile with the concise control prompt before selecting a larger code curriculum.
 
+### OELLM 9B real-checkpoint qualification — 2026-08-26
+
+The staged `openeurollm/oellm-9b-256k-sft` artifact was checked against Hugging Face revision
+`aa328efb891af0174b634af2704252eccda2154a`. It is a dense 9,101,947,904-parameter BF16
+`Qwen3ForCausalLM` checkpoint (16.95 GiB of safetensors) with a 262,144-token configured context. The
+qualification deliberately used a 3,072-token training pack and 2,048-token response cap; it did not attempt
+to exercise the model's maximum context.
+
+The first online job, `21539700`, used the published difficulty-5 sample with active sampling. The full
+infrastructure path succeeded: one vLLM copy loaded on the rollout node, eight ZeRO-3 learner ranks formed on
+the other node, and the two-rank cross-node weight-transfer group initialized over Libfabric in 4.24 seconds.
+The selected curriculum was nevertheless unusable for this checkpoint: the first 128 inspected completions
+all had reward zero, and the filtered artifact grew to 136 rows before cancellation. Active sampling correctly
+filtered every zero-standard-deviation group and continued replenishing, so the job was canceled after 8m36s
+instead of spending the full allocation without an optimizer update.
+
+Commit `a0b00ee` adds `make-math-calibration` and the bounded
+`lumi-math-oellm9b-256k-sft-ladder-2node.yaml` profile. The generated 16-row integer ladder has SHA-256
+`6bafb197a5796b354ccfdb015a3be1656920471f5e3be69da8c9cba676cb424e`. It repeats eight arithmetic
+levels across two asynchronous prompt slots, disables active resampling, and retains constant groups so a
+calibration job is guaranteed to terminate.
+
+Job `21540106` ran that profile from the exact public commit and completed `0:0` in 23m28s. LUMI allocated
+two nodes (16 MI250X GCDs); the topology used eight learner GCDs plus one TP=1 rollout GCD and left seven
+GCDs reserved. Cold parallel checkpoint reads spent roughly 12 minutes in filesystem I/O before recovering.
+After that delay, vLLM loaded 17.02 GiB in 14.36 seconds, the eight-rank learner communicator completed, and
+the trainer-to-rollout communicator completed across the nodes in 4.51 seconds.
+
+Both 64-episode DPPO updates had real grouped reward signal and nonzero gradients:
+
+| Step | Correct | Mean reward | Mixed groups | Advantage range | Gradient norm |
+|---|---:|---:|---:|---:|---:|
+| 1 | 48/64 | 0.750000 | 7/8 | -0.875 to 0.750 | 0.34 |
+| 2 | 49/64 | 0.765625 | 7/8 | -0.875 to 0.375 | 0.40 |
+
+The combined rollout artifact contains 128 trajectories, mean reward `0.7578125`, 14/16 mixed prompt
+groups, a zero-standard-deviation fraction of `0.125`, and nonzero advantages on 112/128 trajectories. All
+128 generations stopped normally; none truncated or timed out. Step 1 recorded a 1.38-second online weight
+sync, no stale result was dropped, and the final model was saved as an 18,203,942,400-byte safetensors file
+with `.checkpoint_complete`. This qualifies real 9B checkpoint loading, two-node native weight transfer,
+math rollout verification, two nonzero-gradient learner updates, and final full-model save. It does not
+qualify 256k-context training or the wider one-trainer-plus-eight-engine communicator.
+
 ## LUMI-specific findings
 
 - The training SIF cannot reliably start nested setuid or user-namespace Apptainer. `slurm_apptainer` executes
