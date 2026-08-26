@@ -75,6 +75,7 @@ def _sample_parquet_rows(
     min_difficulty: int | None = None,
     max_difficulty: int | None = None,
     diverse_by: str | None = None,
+    exact_filters: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be positive")
@@ -90,6 +91,8 @@ def _sample_parquet_rows(
     diversity_values: set[str] = set()
     for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
         for row in batch.to_pylist():
+            if exact_filters and any(str(row.get(column, "")) != value for column, value in exact_filters.items()):
+                continue
             row_language = row.get("language") or row.get("prompt_language")
             if language is not None and row_language != language:
                 continue
@@ -119,6 +122,8 @@ def _sample_parquet_rows(
         filters.append(f"difficulty<={max_difficulty}")
     if diverse_by:
         filters.append(f"distinct {diverse_by}")
+    if exact_filters:
+        filters.extend(f"{column}={value}" for column, value in exact_filters.items())
     suffix = f" for {', '.join(filters)}" if filters else ""
     raise ValueError(f"dataset contains only {len(selected)} matching semantic groups{suffix}; requested {count}")
 
@@ -131,6 +136,7 @@ def sample_math_dataset(
     min_difficulty: int | None = None,
     max_difficulty: int | None = None,
     diverse_by: str | None = None,
+    subdomain: str | None = None,
 ) -> None:
     required = {"messages", "ground_truth", "verifier_kind"}
     rows = _sample_parquet_rows(
@@ -140,6 +146,7 @@ def sample_math_dataset(
         min_difficulty=min_difficulty,
         max_difficulty=max_difficulty,
         diverse_by=diverse_by,
+        exact_filters={"subdomain": subdomain} if subdomain else None,
     )
     for index, row in enumerate(rows):
         missing = required - row.keys()

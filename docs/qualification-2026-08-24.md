@@ -41,14 +41,27 @@ string literal`, so every submission was forced to reward zero before any hidden
 escapes that generation boundary and adds a regression test that compiles the exact heredoc. Code task data
 must be regenerated after this fix; changing only the training checkout does not repair already packed tests.
 
-The math diagnosis remains valid: all four sampled difficulty-5 prompt groups had uniform reward zero, so
-group-normalized advantages and the gradient were correctly zero. This was a dataset/checkpoint signal
-problem, not a learner, optimizer, model-save, or weight-synchronization failure.
+The initial math interpretation was also incomplete. A later difficulty-2 probe (`21536420`) again reported
+four reward-zero groups and `grad_norm=0`, but its decoded artifact contains valid answers that the backend
+rejected. All eight completions for the linear-equation prompt end in `\boxed{27}`, and several fraction
+completions end in the exact `-73/20`. The published Parquet represents each answer as a singleton list;
+the backend's multi-verifier transform then wrapped that list again and passed `["27"]`, rather than `"27"`,
+to `MathVerifier`. Commit `99613f0` flattens the singleton at sampling time and rejects ambiguous
+multi-answer rows.
+
+The repaired-verifier code probe (`21536421`) showed a separate visibility error. Six trajectories invoked
+the now-valid hidden-test runner and none reproduced the generated-heredoc syntax failure, but 26 of 32
+trajectories never submitted. Their decoded messages show that the policy received only a generic request to
+solve an unnamed coding task. The task archive retained `instruction.md`, while the backend intentionally
+copied only environment seeds into the sandbox. Commit `99613f0` puts the complete problem statement and
+`/workspace/solution.py` contract in the policy-visible message.
 
 Before scaling, build a curriculum that gives the starting policy nonzero within-prompt reward variance. Good
-next experiments are easier math/code strata, an SFT checkpoint with stronger tool-submission behavior, and a
-small active-sampling qualification. Require reward-0 and reward-1 completions inside prompt groups, nonzero
-gradient norm, bounded resampling, and a second successful weight update before using the four-node profile.
+next experiments are calibrated math/code strata, an SFT checkpoint with stronger tool-submission behavior,
+and a small active-sampling qualification. Require reward-0 and reward-1 completions inside prompt groups,
+nonzero gradient norm, bounded resampling, and a second successful weight update before using the four-node
+profile. Difficulty should only be changed after verifier schema and policy-visible task contracts have been
+replayed against saved trajectories.
 
 ## LUMI-specific findings
 

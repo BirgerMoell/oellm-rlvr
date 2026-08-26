@@ -24,7 +24,7 @@ model:
   per_turn_tokens: 4096
   pack_length: 5120
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-signal-v2-20260826.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v3-20260826.parquet
     weight: 1.0
     split: train
 task:
@@ -35,7 +35,7 @@ rollout:
   engines: 4
   tensor_parallel_size: 1
   unique_prompts: 4
-  samples_per_prompt: 8
+  samples_per_prompt: 16
   temperature: 1.0
   gpu_memory_utilization: 0.65
   async_steps: 2
@@ -46,7 +46,7 @@ training:
   learner_gpus_per_node: [4]
   sequence_parallel_size: 1
   learning_rate: 1.0e-6
-  total_episodes: 32
+  total_episodes: 64
   epochs: 1
   deepspeed_stage: 3
   loss: dppo

@@ -13,7 +13,14 @@ The backend-compatible minimum row is:
 `sample-math` selects distinct semantic groups from the published OpenEuroLLM Math RLVR Parquet shard
 and preserves all provenance and verifier columns. The policy still receives only `messages`. Use
 `--min-difficulty` and `--max-difficulty` to select an inclusive curriculum band, and `--diverse-by` to
-avoid filling a probe with one subdomain.
+avoid filling a probe with one subdomain. Use `--subdomain` for an exact subdomain match when replaying a
+known calibration prompt; do not mistake that narrow canary for a production data mixture.
+
+The online transform supports several verifiers per row by wrapping a scalar `ground_truth` and scalar
+`dataset` into aligned lists. A published singleton such as `["5"]` must therefore be flattened to `"5"`
+before training; otherwise the transform produces `[["5"]]` and sends a list, rather than a string, to
+`MathVerifier`. `sample-math` performs this normalization and rejects multi-answer rows until they have an
+explicit aligned multi-verifier contract.
 
 The lightweight `MathVerifier` extracts the last `\\boxed{...}`, then `<final>...</final>`, then an explicit answer line, then the last nonempty line. It supports normalized exact strings and bounded rational arithmetic without calling `eval`. The online backend uses its own pinned ground-truth verifier implementation; the lightweight verifier is for dataset QA and regression tests.
 
@@ -56,6 +63,10 @@ contains only the policy-visible messages and TMAX environment configuration; hi
 the model context. Code sampling supports the same inclusive difficulty band and can diversify by
 `generator_family`. The generated verifier is compiled in the unit tests; this specifically guards the
 shell-heredoc escaping boundary, where Python string escapes must survive one generation layer.
+
+The complete problem statement and output contract are part of the policy-visible message. The backend
+copies environment seeds to `/workspace` but deliberately does not expose `instruction.md` or hidden tests;
+storing the problem only in the task-data archive leaves the agent with no task to solve.
 
 ## Local verifier QA
 

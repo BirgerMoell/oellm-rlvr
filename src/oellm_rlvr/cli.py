@@ -124,6 +124,7 @@ def command_sample_math(args: argparse.Namespace) -> int:
         min_difficulty=args.min_difficulty,
         max_difficulty=args.max_difficulty,
         diverse_by=args.diverse_by,
+        subdomain=args.subdomain,
     )
     print(args.output)
     return 0
@@ -205,6 +206,7 @@ def build_parser() -> argparse.ArgumentParser:
     math_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
     math_sample.add_argument("--max-difficulty", type=int, help="optional inclusive difficulty ceiling")
     math_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
+    math_sample.add_argument("--subdomain", help="optional exact math subdomain filter")
     math_sample.set_defaults(handler=command_sample_math)
 
     code_sample = sub.add_parser("sample-code")

@@ -112,6 +112,31 @@ def test_published_math_sample_can_filter_difficulty_and_subdomain(tmp_path: Pat
     assert all(4 <= row["difficulty"] <= 5 for row in selected)
 
 
+def test_published_math_sample_can_select_one_subdomain(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    rows = [
+        {
+            "messages": [{"role": "user", "content": f"Problem {index}"}],
+            "ground_truth": [str(index)],
+            "verifier_kind": "rational_exact",
+            "semantic_group_id": f"g{index}",
+            "language": "en",
+            "difficulty": 2,
+            "subdomain": subdomain,
+        }
+        for index, subdomain in enumerate(("linear_equations", "fraction_operations", "fraction_operations"))
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    output = tmp_path / "sample.parquet"
+    sample_math_dataset(source, output, count=2, language="en", subdomain="fraction_operations")
+    selected = pq.read_table(output).to_pylist()
+    assert len(selected) == 2
+    assert {row["subdomain"] for row in selected} == {"fraction_operations"}
+
+
 def test_stdio_test_script_contains_valid_python() -> None:
     script = _stdio_test_script()
     python_source = script.split("python - <<'PY'\n", 1)[1].rsplit("\nPY\n", 1)[0]
