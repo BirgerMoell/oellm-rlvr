@@ -145,6 +145,20 @@ def sample_math_dataset(
         missing = required - row.keys()
         if missing:
             raise ValueError(f"math row {index} is missing columns: {sorted(missing)}")
+        ground_truth = row["ground_truth"]
+        if isinstance(ground_truth, list):
+            if len(ground_truth) != 1:
+                raise ValueError(
+                    f"math row {index} must contain exactly one ground truth for the math verifier; "
+                    f"found {len(ground_truth)}"
+                )
+            ground_truth = ground_truth[0]
+        if not isinstance(ground_truth, str) or not ground_truth.strip():
+            raise ValueError(f"math row {index} has an empty or non-string ground truth")
+        # rlvr_tokenize_v2 wraps scalar ground truths once to align them with the
+        # scalar verifier dispatch key. Keeping the source's singleton list here
+        # would therefore produce [[answer]], which MathVerifier cannot compare.
+        row["ground_truth"] = ground_truth
         row["oellm_source_dataset"] = str(row.get("dataset", ""))
         # Open-Instruct dispatches ground-truth verifiers by this column.
         row["dataset"] = "math"
@@ -270,7 +284,10 @@ def _pack_code_manifests(manifests: list[dict[str, object]], output_dir: str | P
                     "messages": [
                         {
                             "role": "user",
-                            "content": "Solve the coding task in the sandbox. Run tests, then submit when complete.",
+                            # The backend copies environment seeds into the sandbox,
+                            # but it does not expose instruction.md to the policy.
+                            # The actual problem must therefore be in the model prompt.
+                            "content": task.instruction.strip(),
                         }
                     ],
                     # Environment rewards are aggregated separately; this registered

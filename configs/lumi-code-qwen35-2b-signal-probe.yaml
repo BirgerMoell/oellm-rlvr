@@ -42,7 +42,7 @@ model:
   per_turn_tokens: 2048
   pack_length: 10240
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v2/train.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3/train.parquet
     weight: 1.0
     split: train
 task:
@@ -55,7 +55,7 @@ task:
     image: /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
     binary: /usr/bin/singularity
     fakeroot: false
-    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v2/task-data
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3/task-data
     test_timeout: 600
     command_timeout: 30
     last_step_warning: true

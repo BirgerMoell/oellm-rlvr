@@ -48,10 +48,31 @@ def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> No
     output = tmp_path / "sample.parquet"
     sample_math_dataset(source, output, count=1, language="en")
     row = pq.read_table(output).to_pylist()[0]
-    assert row["ground_truth"] == ["5"]
+    assert row["ground_truth"] == "5"
     assert row["verifier_kind"] == "integer_exact"
     assert row["dataset"] == "math"
     assert row["oellm_source_dataset"] == "oellm-math-rlvr"
+
+
+def test_published_math_sample_rejects_multiple_answers_for_single_verifier(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "messages": [{"role": "user", "content": "Compute 2 + 3."}],
+                    "ground_truth": ["5", "five"],
+                    "verifier_kind": "integer_exact",
+                }
+            ]
+        ),
+        source,
+    )
+    with pytest.raises(ValueError, match="exactly one ground truth"):
+        sample_math_dataset(source, tmp_path / "sample.parquet", count=1)
 
 
 def test_published_math_sample_can_filter_difficulty_and_subdomain(tmp_path: Path) -> None:
@@ -111,6 +132,8 @@ def test_code_packer_matches_tmax_environment_shape(tmp_path: Path) -> None:
     assert env["task_id"] == "add-two-integers"
     assert row["tools"] == ["bash"]
     assert row["dataset"] == "passthrough"
+    assert "Implement `add(a, b)`" in row["messages"][0]["content"]
+    assert "/workspace/solution.py" in row["messages"][0]["content"]
     assert (task_root / "add-two-integers/tests/test.sh").is_file()
     assert (tmp_path / "task-data.tar.gz").is_file()
 
