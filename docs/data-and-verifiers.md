@@ -26,6 +26,12 @@ explicit aligned multi-verifier contract.
 
 The lightweight `MathVerifier` extracts the last `\\boxed{...}`, then `<final>...</final>`, then an explicit answer line, then the last nonempty line. It supports normalized exact strings and bounded rational arithmetic without calling `eval`. The online backend uses its own pinned ground-truth verifier implementation; the lightweight verifier is for dataset QA and regression tests.
 
+The pinned online `MathVerifier` performs symbolic comparison from an executor thread. Its original timeout
+uses `signal.signal`, which is legal only on the main thread; the caught exception otherwise turns equivalent
+forms such as `-\\frac{73}{20}` and `-73/20` into reward zero. LUMI math profiles enable the guarded
+`OELLM_PATCH_MATH_EQUIV_THREADS` compatibility hook and cap extracted expressions at 512 characters before
+allowing thread-safe symbolic comparison.
+
 ## Code
 
 `pack-code` accepts one manifest or a YAML list of manifests. Each manifest has an ID, instruction, task SIF, visible seed files, hidden test files, and step limit. It writes:

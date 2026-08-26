@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.abc
 import importlib.machinery
 import sys
+import threading
 from collections.abc import Callable
 from enum import Enum
 from functools import wraps
@@ -118,6 +119,40 @@ def patch_vllm_weight_update() -> bool:
     # Pinned TMAX sends one packed update per broadcast. vLLM 0.22.1 made the
     # surrounding start/finish transaction mandatory after that TMAX revision.
     return patch_vllm_weight_module(async_llm)
+
+
+def patch_math_equivalence_module(module: ModuleType) -> bool:
+    """Keep the pinned math verifier's signal timeout out of executor threads."""
+    original_is_equiv = module.is_equiv
+    if getattr(original_is_equiv, "_oellm_thread_safe_math_equiv", False):
+        return False
+    original_timeout = module.timeout
+
+    class ThreadAwareTimeout(original_timeout):
+        def __enter__(self: Any) -> Any:
+            self._oellm_timeout_active = threading.current_thread() is threading.main_thread()
+            if self._oellm_timeout_active:
+                return super().__enter__()
+            return self
+
+        def __exit__(self: Any, *args: object) -> Any:
+            if self._oellm_timeout_active:
+                return super().__exit__(*args)
+            return None
+
+    @wraps(original_is_equiv)
+    def bounded_is_equiv(x1: str, x2: str) -> bool:
+        # Executor threads cannot install SIGALRM handlers. Keep symbolic work
+        # bounded by rejecting implausibly large extracted answers before the
+        # thread-aware timeout delegates to the pinned implementation.
+        if not isinstance(x1, str) or not isinstance(x2, str) or max(len(x1), len(x2)) > 512:
+            return False
+        return bool(original_is_equiv(x1, x2))
+
+    bounded_is_equiv._oellm_thread_safe_math_equiv = True
+    module.timeout = ThreadAwareTimeout
+    module.is_equiv = bounded_is_equiv
+    return True
 
 
 def wrap_swerl_create_backend(module: ModuleType) -> bool:

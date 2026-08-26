@@ -1,11 +1,13 @@
 import asyncio
 import importlib
 import sys
+import threading
 from enum import Enum
 from types import ModuleType
 
 from oellm_rlvr.compat import (
     install_post_import_patch,
+    patch_math_equivalence_module,
     patch_vllm_mamba_module,
     replace_none_enum_value,
     wrap_async_weight_update,
@@ -80,6 +82,34 @@ def test_weight_update_is_wrapped_in_transaction() -> None:
     engine = FakeAsyncLLM()
     assert asyncio.run(engine.update_weights("request")) == "done"
     assert engine.calls == [("start", True), ("update", "request"), ("finish",)]
+
+
+def test_math_equivalence_timeout_is_safe_in_executor_thread() -> None:
+    module = ModuleType("fake_math_utils")
+
+    class SignalTimeout:
+        def __init__(self, seconds=1):
+            self.seconds = seconds
+
+        def __enter__(self):
+            if threading.current_thread() is not threading.main_thread():
+                raise ValueError("signal only works in main thread")
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    def is_equiv(left, right):
+        with module.timeout(seconds=5):
+            return left == right
+
+    module.timeout = SignalTimeout
+    module.is_equiv = is_equiv
+    assert patch_math_equivalence_module(module) is True
+    assert patch_math_equivalence_module(module) is False
+    assert asyncio.run(asyncio.to_thread(module.is_equiv, "-73/20", "-73/20")) is True
+    assert module.is_equiv("27", "27") is True
+    assert module.is_equiv("x" * 513, "x" * 513) is False
 
 
 def test_swerl_plain_apptainer_drops_prepared_kwargs() -> None:
