@@ -77,3 +77,17 @@ def test_oellm9b_profile_uses_two_nodes_and_the_staged_sft_checkpoint() -> None:
     assert "--active_sampling" in argv
     assert "--save_filtered_rollouts" in argv
     assert "--vllm_gdn_prefill_backend" not in argv
+
+
+def test_oellm9b_ladder_profile_keeps_bounded_zero_variance_groups() -> None:
+    config = load_config(ROOT / "configs/lumi-math-oellm9b-256k-sft-ladder-2node.yaml")
+    argv = build_backend_argv(config)
+    episodes_per_update = config.rollout.unique_prompts * config.rollout.samples_per_prompt
+
+    assert config.platform.nodes == 2
+    assert config.training.learner_gpus_per_node == [8]
+    assert config.rollout.engines == 1
+    assert config.training.total_episodes == 2 * episodes_per_update
+    assert "--active_sampling" not in argv
+    assert _value(argv, "--filter_zero_std_samples") == "false"
+    assert _value(argv, "--response_length") == "2048"

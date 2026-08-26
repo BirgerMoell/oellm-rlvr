@@ -143,6 +143,20 @@ $VENV/bin/oellm-rlvr sample-math \
   --count 8 --copies 2
 ```
 
+If that published stratum is uniformly too hard for a new checkpoint, generate the checkpoint-independent
+integer ladder and run the bounded profile before enabling active sampling. The ladder deliberately spans
+eight arithmetic levels; zero-variance groups are retained, so calibration cannot resample forever:
+
+```bash
+$VENV/bin/oellm-rlvr make-math-calibration \
+  --output "$ROOT/oellm-rlvr/data/math-oellm9b-integer-ladder-copies2-20260826.parquet" \
+  --copies 2
+$VENV/bin/oellm-rlvr render-slurm \
+  --config "$ROOT/oellm-rlvr-src/configs/lumi-math-oellm9b-256k-sft-ladder-2node.yaml" \
+  --output "$ROOT/oellm-rlvr/oellm9b-ladder-qualification.sbatch"
+sbatch "$ROOT/oellm-rlvr/oellm9b-ladder-qualification.sbatch"
+```
+
 Always regenerate sampled task data with this repository revision or later. Code task data generated before
 commit `ac9bcc2` contains an incorrectly escaped newline in the generated verifier heredoc; submitted
 solutions then receive reward zero because the verifier cannot be parsed. Data generated before commit
@@ -190,6 +204,7 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-qwen35-2b-signal-probe.yaml` | One-batch calibrated difficulty-2 fraction gradient canary | 4 learner + 4 rollout GCDs |
 | `lumi-math-qwen35-2b-active-sampling.yaml` | Two-update active-sampling qualification on the calibrated math canary | 4 learner + 4 rollout GCDs |
 | `lumi-math-oellm9b-256k-sft-active-2node.yaml` | Two-node active-sampling qualification of the published OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
+| `lumi-math-oellm9b-256k-sft-ladder-2node.yaml` | Bounded two-update arithmetic calibration for the OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |

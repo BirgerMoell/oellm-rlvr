@@ -67,6 +67,49 @@ def make_math_smoke(path: str | Path, count: int = 64) -> None:
     write_rows(rows, path)
 
 
+def make_math_calibration(path: str | Path, copies: int = 1) -> None:
+    """Write a small arithmetic ladder for calibrating a starting policy.
+
+    The rows intentionally span several levels instead of assuming that a
+    published difficulty label transfers between checkpoints. Repeating the
+    ladder supplies independent prompt slots for asynchronous steps; it does
+    not change the semantic answer contract.
+    """
+    if copies < 1:
+        raise ValueError("copies must be positive")
+    problems = [
+        ("8 + 7", "15"),
+        ("27 - 19", "8"),
+        ("13 * 6", "78"),
+        ("144 / 12", "12"),
+        ("38 + 47", "85"),
+        ("123 + 456", "579"),
+        ("731 - 468", "263"),
+        ("37 * 24", "888"),
+    ]
+    rows = [
+        {
+            "id": f"integer-ladder-{index}",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Compute {expression}. Give only the final answer in \\boxed{{}}.",
+                }
+            ],
+            "ground_truth": answer,
+            "dataset": "math",
+            "verifier_kind": "integer_exact",
+            "semantic_group_id": f"integer-ladder-{index}",
+            "difficulty": index + 1,
+            "oellm_source_dataset": "oellm_math_integer_calibration",
+            "oellm_canary_copy": copy_index,
+        }
+        for copy_index in range(copies)
+        for index, (expression, answer) in enumerate(problems)
+    ]
+    write_rows(rows, path)
+
+
 def _sample_parquet_rows(
     path: str | Path,
     count: int,

@@ -5,6 +5,7 @@ import pytest
 
 from oellm_rlvr.datasets import (
     _stdio_test_script,
+    make_math_calibration,
     make_math_smoke,
     pack_code_dataset,
     sample_code_dataset,
@@ -22,6 +23,23 @@ def test_math_smoke_jsonl_schema(tmp_path: Path) -> None:
     assert rows[0]["ground_truth"] == "3"
     assert rows[0]["dataset"] == "math"
     assert rows[0]["messages"][0]["role"] == "user"
+
+
+def test_math_calibration_spans_eight_groups_and_can_repeat(tmp_path: Path) -> None:
+    path = tmp_path / "calibration.jsonl"
+    make_math_calibration(path, copies=2)
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+
+    assert len(rows) == 16
+    assert len({row["semantic_group_id"] for row in rows}) == 8
+    assert {row["oellm_canary_copy"] for row in rows} == {0, 1}
+    assert {row["ground_truth"] for row in rows} >= {"15", "579", "888"}
+    assert all(row["dataset"] == "math" for row in rows)
+
+
+def test_math_calibration_rejects_nonpositive_copies(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="copies must be positive"):
+        make_math_calibration(tmp_path / "calibration.jsonl", copies=0)
 
 
 def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> None:

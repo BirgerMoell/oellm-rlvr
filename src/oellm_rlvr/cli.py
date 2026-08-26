@@ -12,7 +12,13 @@ import yaml
 from .backend import build_backend_argv, shell_command
 from .backend_rollouts import inspect_backend_rollouts
 from .config import load_config
-from .datasets import make_math_smoke, pack_code_dataset, sample_code_dataset, sample_math_dataset
+from .datasets import (
+    make_math_calibration,
+    make_math_smoke,
+    pack_code_dataset,
+    sample_code_dataset,
+    sample_math_dataset,
+)
 from .gates import evaluate_gates
 from .schemas import TaskSpec
 from .slurm import render_slurm
@@ -110,6 +116,12 @@ def command_make_math_smoke(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_make_math_calibration(args: argparse.Namespace) -> int:
+    make_math_calibration(args.output, args.copies)
+    print(args.output)
+    return 0
+
+
 def command_pack_code(args: argparse.Namespace) -> int:
     dataset_path, task_root = pack_code_dataset(args.manifest, args.output_dir)
     _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
@@ -199,6 +211,11 @@ def build_parser() -> argparse.ArgumentParser:
     math_smoke.add_argument("--output", required=True)
     math_smoke.add_argument("--count", type=int, default=64)
     math_smoke.set_defaults(handler=command_make_math_smoke)
+
+    math_calibration = sub.add_parser("make-math-calibration")
+    math_calibration.add_argument("--output", required=True)
+    math_calibration.add_argument("--copies", type=int, default=1)
+    math_calibration.set_defaults(handler=command_make_math_calibration)
 
     pack = sub.add_parser("pack-code")
     pack.add_argument("--manifest", required=True)
