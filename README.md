@@ -114,6 +114,26 @@ This lets a weak base policy reach the deferred verifier before exhausting the r
 `--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
 configuration equal to that value.
 
+For a starting-checkpoint signal probe, select a fixed easier stratum while retaining semantic diversity:
+
+```bash
+$VENV/bin/oellm-rlvr sample-math \
+  --source data/oellm-math-rlvr-train.parquet \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-signal-20260826.parquet" \
+  --count 8 --language en --min-difficulty 2 --max-difficulty 2 --diverse-by subdomain
+$VENV/bin/oellm-rlvr sample-code \
+  --source data/oellm-code-rlvr-train.parquet \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v2" \
+  --image "$ROOT/sandboxes/python-3.12-slim" \
+  --count 8 --max-steps 6 --language en \
+  --min-difficulty 1 --max-difficulty 1 --diverse-by generator_family
+```
+
+Always regenerate code task data with this repository revision or later. Code task data generated before
+commit `ac9bcc2` contains an incorrectly escaped newline in the generated verifier heredoc; submitted
+solutions then receive reward zero because the verifier cannot be parsed. A regression test now compiles
+the exact generated Python before release.
+
 Build the small read-only task sandbox once before the code smoke:
 
 ```bash
@@ -146,6 +166,8 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 |---|---|---|
 | `lumi-math-qwen35-2b-smoke.yaml` | One-node math signal and weight-sync smoke | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
+| `lumi-math-qwen35-2b-signal-probe.yaml` | One-batch difficulty-2 math gradient probe | 4 learner + 4 rollout GCDs |
+| `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
 

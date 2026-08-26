@@ -28,9 +28,22 @@ error after nested `SLURM_LABELIO` was disabled.
 
 ## Signal result and interpretation
 
-The math batch had `math_correct_rate=0`, and the five submitted code trajectories all received reward 0.
+The math batch had `math_correct_rate=0`, and the five submitted code trajectories all recorded reward 0.
 Both jobs therefore reported `grad_norm=0`. This is acceptable for the bounded infrastructure smoke because
 zero-standard-deviation filtering is disabled there; it is not acceptable for production RLVR.
+
+### Post-run verifier audit — 2026-08-26
+
+The code rewards from job `21495572` cannot be interpreted as model correctness. Its rollout artifacts show
+that submitted trajectories reached the deferred verifier, but the generated `test.sh` embedded literal
+newlines inside the Python source string passed to `write_text`. Python raised `SyntaxError: unterminated
+string literal`, so every submission was forced to reward zero before any hidden case ran. Commit `ac9bcc2`
+escapes that generation boundary and adds a regression test that compiles the exact heredoc. Code task data
+must be regenerated after this fix; changing only the training checkout does not repair already packed tests.
+
+The math diagnosis remains valid: all four sampled difficulty-5 prompt groups had uniform reward zero, so
+group-normalized advantages and the gradient were correctly zero. This was a dataset/checkpoint signal
+problem, not a learner, optimizer, model-save, or weight-synchronization failure.
 
 Before scaling, build a curriculum that gives the starting policy nonzero within-prompt reward variance. Good
 next experiments are easier math/code strata, an SFT checkpoint with stronger tool-submission behavior, and a

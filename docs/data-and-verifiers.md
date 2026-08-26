@@ -11,7 +11,9 @@ The backend-compatible minimum row is:
 `make-math-smoke` emits JSONL or Parquet based on the output suffix. Production math data should preserve source/license/provenance outside the training columns, pin a revision, remove evaluation contamination, and test every verifier on adversarial completions before training.
 
 `sample-math` selects distinct semantic groups from the published OpenEuroLLM Math RLVR Parquet shard
-and preserves all provenance and verifier columns. The policy still receives only `messages`.
+and preserves all provenance and verifier columns. The policy still receives only `messages`. Use
+`--min-difficulty` and `--max-difficulty` to select an inclusive curriculum band, and `--diverse-by` to
+avoid filling a probe with one subdomain.
 
 The lightweight `MathVerifier` extracts the last `\\boxed{...}`, then `<final>...</final>`, then an explicit answer line, then the last nonempty line. It supports normalized exact strings and bounded rational arithmetic without calling `eval`. The online backend uses its own pinned ground-truth verifier implementation; the lightweight verifier is for dataset QA and regression tests.
 
@@ -51,7 +53,9 @@ Binary reward is the safest initial contract. Introduce partial reward only when
 `sample-code` accepts the published OpenEuroLLM Code RLVR Parquet shard. It converts each Python
 `stdin_stdout` hidden test into `cases.json` plus a bounded sandbox runner. The generated training row
 contains only the policy-visible messages and TMAX environment configuration; hidden tests never enter
-the model context.
+the model context. Code sampling supports the same inclusive difficulty band and can diversify by
+`generator_family`. The generated verifier is compiled in the unit tests; this specifically guards the
+shell-heredoc escaping boundary, where Python string escapes must survive one generation layer.
 
 ## Local verifier QA
 
