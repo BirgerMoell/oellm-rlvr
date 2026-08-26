@@ -91,10 +91,27 @@ per-turn budget from 2,048 to 1,024 tokens. This last change targets rollout eff
 interpret the already successful gradient-path result.
 
 Both the difficulty-1 code probe and calibrated difficulty-2 math canary now pass the narrow grouped-signal
-test. Before scaling, combine calibrated strata, an SFT checkpoint with stronger tool-submission behavior,
-and a small active-sampling qualification. Require bounded resampling and a second successful weight update
-before using the four-node profile. Difficulty should only be changed after verifier schema and policy-visible
-task contracts have been replayed against saved trajectories.
+test. Difficulty should only be changed after verifier schema and policy-visible task contracts have been
+replayed against saved trajectories.
+
+### Active-sampling and second-update qualification — 2026-08-26
+
+Job `21538347` ran the committed `lumi-math-qwen35-2b-active-sampling.yaml` profile from commit `64f33c9`
+with active sampling enabled, a two-step asynchronous window, filtered-rollout retention, and a 30-minute
+Slurm limit. It completed `0:0` in 4m59s and saved a complete final 2B model after 128 episodes.
+
+Both 64-episode learner steps retained four mixed reward groups and produced nonzero gradients. Step 1 had
+mean reward `0.890625`, advantages from `-0.9375` to `0.125`, `grad_norm=1.02`, and a 0.24s online weight
+sync. Step 2 used the synchronized policy at `model_step=1`, had mean reward `0.875`, advantages from
+`-0.875` to `0.125`, and `grad_norm=1.18`. No rollout was stale or truncated. The combined 128-row artifact
+has mean reward `0.8828125`, eight of eight mixed prompt groups, zero zero-standard-deviation groups, and a
+nonzero-advantage fraction of 1.0.
+
+No prompt needed filtering or replenishment in this calibrated run because every generated group already had
+reward variance. This qualifies active-sampling mode, the inter-step learner-to-vLLM update, and a second
+successful optimizer update, but it does not yet exercise the filtered-prompt replenishment branch. The next
+scaling gate remains the runbook's two-node weight-sync qualification. In parallel, rerun the code signal
+profile with the concise control prompt before selecting a larger code curriculum.
 
 ## LUMI-specific findings
 

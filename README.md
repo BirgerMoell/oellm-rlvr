@@ -216,8 +216,8 @@ oellm-rlvr inspect-rollouts --rollouts rollouts_000000.jsonl
 internally constant. The same report counts submissions, truncations, timeouts, and tool-format errors.
 
 The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
-one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24, and the math/code grouped-signal probes
-completed on 2026-08-26; see
+one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24. The math/code grouped-signal probes
+and two-update math active-sampling qualification completed on 2026-08-26; see
 [the qualification record](docs/qualification-2026-08-24.md) for exact jobs, versions, metrics, and the
 remaining production-qualification work.
 
