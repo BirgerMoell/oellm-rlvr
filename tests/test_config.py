@@ -10,22 +10,22 @@ ROOT = Path(__file__).parents[1]
 
 
 @pytest.mark.parametrize(
-    "name",
+    ("name", "expected_spare_gpus"),
     [
-        "lumi-math-qwen35-2b-smoke.yaml",
-        "lumi-code-qwen35-2b-smoke.yaml",
-        "lumi-math-qwen35-2b-signal-probe.yaml",
-        "lumi-math-qwen35-2b-active-sampling.yaml",
-        "lumi-math-oellm9b-256k-sft-active-2node.yaml",
-        "lumi-code-qwen35-2b-signal-probe.yaml",
-        "lumi-code-qwen35-2b-4node.yaml",
-        "cuda-code-qwen35-2b-smoke.yaml",
+        ("lumi-math-qwen35-2b-smoke.yaml", 0),
+        ("lumi-code-qwen35-2b-smoke.yaml", 0),
+        ("lumi-math-qwen35-2b-signal-probe.yaml", 0),
+        ("lumi-math-qwen35-2b-active-sampling.yaml", 0),
+        ("lumi-math-oellm9b-256k-sft-active-2node.yaml", 7),
+        ("lumi-code-qwen35-2b-signal-probe.yaml", 0),
+        ("lumi-code-qwen35-2b-4node.yaml", 0),
+        ("cuda-code-qwen35-2b-smoke.yaml", 0),
     ],
 )
-def test_example_profiles_validate(name: str) -> None:
+def test_example_profiles_validate(name: str, expected_spare_gpus: int) -> None:
     config = load_config(ROOT / "configs" / name)
     topology = build_topology(config)
-    assert topology.spare_gpus == 0
+    assert topology.spare_gpus == expected_spare_gpus
     assert topology.samples_per_step >= topology.data_parallel_ranks
 
 

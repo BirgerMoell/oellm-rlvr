@@ -71,7 +71,7 @@ def test_oellm9b_profile_uses_two_nodes_and_the_staged_sft_checkpoint() -> None:
     assert config.model.name_or_path == "openeurollm/oellm-9b-256k-sft"
     assert config.model.local_path.endswith("/artifacts/models/oellm-9b-256k-sft")
     assert config.training.learner_gpus_per_node == [8]
-    assert config.rollout.engines == 8
+    assert config.rollout.engines == 1
     assert config.rollout.tensor_parallel_size == 1
     assert config.training.total_episodes == 2 * episodes_per_update
     assert "--active_sampling" in argv

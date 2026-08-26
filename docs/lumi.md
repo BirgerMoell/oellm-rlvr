@@ -98,7 +98,21 @@ For repeated task images, use `prepared_apptainer` after the basic `apptainer` s
 
 ## 5. Ray and networking
 
-The generated job starts one Ray node per Slurm node under a background `srun --overlap`. It advertises all eight GCDs explicitly and keeps Ray's Unix sockets in short node-local `/tmp` paths. The driver runs once on the Ray head. `NCCL_SOCKET_IFNAME` defaults to LUMI's `hsn0..hsn3` in the provided profiles.
+The generated job starts one Ray node per Slurm node under a background `srun --overlap`. It advertises all eight GCDs explicitly and keeps Ray's Unix sockets in short node-local `/tmp` paths. The driver runs once on the Ray head. `NCCL_SOCKET_IFNAME` selects LUMI's `hsn` interfaces in the cross-node qualification profile.
+
+The LAIF `lumi-multitorch-full` image contains a matched ROCm/ROCr userspace and the Libfabric RCCL network plugin. The generated ROCm launch intentionally does not pass Singularity's `--rocm`: that flag replaces image libraries with host libraries and can produce a node-dependent HSA ABI mismatch. CUDA profiles still use `--nv`.
+
+Qualify the native transfer communicator before loading a multi-billion-parameter model:
+
+```bash
+# Proven cross-node control: trainer rank 0 plus one independently masked engine.
+sbatch --export=ALL,PROBE_WORLD_SIZE=2 scripts/lumi_weight_transfer_probe.sbatch
+
+# Intended scale-up: trainer rank 0 plus eight independently masked engines.
+sbatch --export=ALL,PROBE_WORLD_SIZE=9 scripts/lumi_weight_transfer_probe.sbatch
+```
+
+The probe uses vLLM's production `NCCLWeightTransferEngine`, initializes the same stateless communicator, and broadcasts a sentinel GPU tensor. It emits one JSON record per rank and fails after three minutes. On 2026-08-26 the two-rank topology completed over `NET/Libfabric` in about 5.5 seconds, while the nine-rank topology stalled while building local `P2P/IPC` links among the eight engine processes. The real-checkpoint qualification therefore uses one rollout engine until a wider probe completes. Do not scale the engine count merely because model loading succeeds.
 
 If Ray fails to join, check name/IP resolution and Slurm step overlap before changing training code. If native weight transfer fails, verify that the LUMI vLLM is still the system build and that pip did not replace torch or vLLM.
 

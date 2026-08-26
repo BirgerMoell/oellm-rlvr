@@ -11,7 +11,7 @@ platform:
   cpus_per_task: 56
   memory: 480G
   binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
-  network_interface: hsn0,hsn1,hsn2,hsn3
+  network_interface: hsn
 backend:
   repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
@@ -33,7 +33,7 @@ task:
   max_steps: 1
   pool_size: 32
 rollout:
-  engines: 8
+  engines: 1
   tensor_parallel_size: 1
   unique_prompts: 8
   samples_per_prompt: 8
@@ -55,9 +55,9 @@ training:
   save_freq: 0
   checkpoint_state_freq: 0
 output:
-  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/math-oellm9b-sft-active-2node-2step
-  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/math-oellm9b-sft-active-2node-2step
-  experiment_name: lumi_math_oellm9b_256k_sft_active_2node_2step
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/math-oellm9b-sft-active-1engine-2node-2step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/math-oellm9b-sft-active-1engine-2node-2step
+  experiment_name: lumi_math_oellm9b_256k_sft_active_1engine_2node_2step
   with_tracking: true
   wandb_mode: offline
   wandb_entity: local
@@ -68,3 +68,5 @@ environment:
   TRANSFORMERS_OFFLINE: "1"
   OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
   OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  NCCL_DEBUG: INFO
+  NCCL_DEBUG_SUBSYS: INIT,NET

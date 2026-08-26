@@ -189,7 +189,7 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
 | `lumi-math-qwen35-2b-signal-probe.yaml` | One-batch calibrated difficulty-2 fraction gradient canary | 4 learner + 4 rollout GCDs |
 | `lumi-math-qwen35-2b-active-sampling.yaml` | Two-update active-sampling qualification on the calibrated math canary | 4 learner + 4 rollout GCDs |
-| `lumi-math-oellm9b-256k-sft-active-2node.yaml` | Two-node active-sampling qualification of the published OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
+| `lumi-math-oellm9b-256k-sft-active-2node.yaml` | Two-node active-sampling qualification of the published OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
