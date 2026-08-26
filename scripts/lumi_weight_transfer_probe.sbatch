@@ -35,7 +35,7 @@ export PYTHONUNBUFFERED=1
 
 echo "Native transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, workers=${PROBE_NODES[0]}, port=${MASTER_PORT}"
 srun --label --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpu-bind=none \
-  singularity exec --rocm -B "$BIND" "$CONTAINER" \
+  singularity exec -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_nccl_weight_transfer.py" \
   --master-address "$TRAINER_IP" \
   --master-port "$MASTER_PORT" \
