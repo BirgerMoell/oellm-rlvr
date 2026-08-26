@@ -137,6 +137,37 @@ def test_published_math_sample_can_select_one_subdomain(tmp_path: Path) -> None:
     assert {row["subdomain"] for row in selected} == {"fraction_operations"}
 
 
+def test_published_math_sample_can_repeat_a_calibration_row(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "messages": [{"role": "user", "content": "Compute 7/20 - 8/2."}],
+                    "ground_truth": ["-73/20"],
+                    "verifier_kind": "rational_exact",
+                    "semantic_group_id": "fraction-canary",
+                    "language": "en",
+                    "difficulty": 2,
+                    "subdomain": "fraction_operations",
+                }
+            ]
+        ),
+        source,
+    )
+    output = tmp_path / "sample.parquet"
+
+    sample_math_dataset(source, output, count=1, copies=8)
+
+    selected = pq.read_table(output).to_pylist()
+    assert len(selected) == 8
+    assert [row["oellm_canary_copy"] for row in selected] == list(range(8))
+    assert {row["ground_truth"] for row in selected} == {"-73/20"}
+
+
 def test_stdio_test_script_contains_valid_python() -> None:
     script = _stdio_test_script()
     python_source = script.split("python - <<'PY'\n", 1)[1].rsplit("\nPY\n", 1)[0]

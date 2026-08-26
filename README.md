@@ -122,9 +122,9 @@ selects a narrow calibration prompt; the code command retains family diversity:
 ```bash
 $VENV/bin/oellm-rlvr sample-math \
   --source data/oellm-math-rlvr-train.parquet \
-  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v3-20260826.parquet" \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v4-20260826.parquet" \
   --count 1 --language en --min-difficulty 2 --max-difficulty 2 \
-  --subdomain fraction_operations
+  --subdomain fraction_operations --copies 8
 $VENV/bin/oellm-rlvr sample-code \
   --source data/oellm-code-rlvr-train.parquet \
   --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3" \
@@ -140,10 +140,11 @@ solutions then receive reward zero because the verifier cannot be parsed. Data g
 twice in the backend, and code rows do not put the actual problem in the policy-visible message. Regression
 tests now enforce scalar math answers, visible code instructions, and compilable generated verifier Python.
 
-The math signal profile repeats that revision-pinned fraction canary as four prompt groups with 16 samples
-each. Earlier decoded trajectories for this exact prompt contained both exact fraction answers and genuine
-wrong answers. This is a gradient-path qualification, not a representative training mixture; after it passes,
-use active sampling over a diverse curriculum to retain mixed groups.
+The math signal profile repeats that revision-pinned fraction canary into the eight rows required for four
+prompt groups and two asynchronous steps, then draws 16 samples per group. Earlier decoded trajectories for
+this exact prompt contained both exact fraction answers and genuine wrong answers. This is a gradient-path
+qualification, not a representative training mixture; after it passes, use active sampling over a diverse
+curriculum to retain mixed groups.
 
 Build the small read-only task sandbox once before the code smoke:
 

@@ -15,6 +15,8 @@ and preserves all provenance and verifier columns. The policy still receives onl
 `--min-difficulty` and `--max-difficulty` to select an inclusive curriculum band, and `--diverse-by` to
 avoid filling a probe with one subdomain. Use `--subdomain` for an exact subdomain match when replaying a
 known calibration prompt; do not mistake that narrow canary for a production data mixture.
+`--copies` can repeat each selected row to meet the backend's prefill/async minimum for a controlled canary;
+it must not be used to manufacture diversity in a production curriculum.
 
 The online transform supports several verifiers per row by wrapping a scalar `ground_truth` and scalar
 `dataset` into aligned lists. A published singleton such as `["5"]` must therefore be flattened to `"5"`

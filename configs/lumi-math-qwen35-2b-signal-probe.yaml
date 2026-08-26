@@ -24,7 +24,7 @@ model:
   per_turn_tokens: 4096
   pack_length: 5120
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v3-20260826.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v4-20260826.parquet
     weight: 1.0
     split: train
 task:

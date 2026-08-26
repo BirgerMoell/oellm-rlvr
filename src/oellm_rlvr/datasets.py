@@ -137,7 +137,10 @@ def sample_math_dataset(
     max_difficulty: int | None = None,
     diverse_by: str | None = None,
     subdomain: str | None = None,
+    copies: int = 1,
 ) -> None:
+    if copies < 1:
+        raise ValueError("copies must be positive")
     required = {"messages", "ground_truth", "verifier_kind"}
     rows = _sample_parquet_rows(
         source,
@@ -169,6 +172,8 @@ def sample_math_dataset(
         row["oellm_source_dataset"] = str(row.get("dataset", ""))
         # Open-Instruct dispatches ground-truth verifiers by this column.
         row["dataset"] = "math"
+    if copies > 1:
+        rows = [dict(row, oellm_canary_copy=copy_index) for row in rows for copy_index in range(copies)]
     write_rows(rows, output)
 
 
