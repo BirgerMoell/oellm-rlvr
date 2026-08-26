@@ -205,6 +205,15 @@ Before scaling, run a separate signal qualification with active sampling enabled
 and policy-lag gates. The four-node training profile enables active sampling; do not scale a run with all-equal
 rewards merely because the bounded infrastructure smoke passes.
 
+Inspect the backend artifact directly after each probe:
+
+```bash
+oellm-rlvr inspect-rollouts --rollouts rollouts_000000.jsonl
+```
+
+`has_grouped_reward_signal` is false when aggregate accuracy looks healthy but every prompt group is
+internally constant. The same report counts submissions, truncations, timeouts, and tool-format errors.
+
 The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
 one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24; see
 [the qualification record](docs/qualification-2026-08-24.md) for exact jobs, versions, metrics, and the

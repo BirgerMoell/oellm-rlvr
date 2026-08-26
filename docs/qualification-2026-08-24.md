@@ -56,8 +56,29 @@ solve an unnamed coding task. The task archive retained `instruction.md`, while 
 copied only environment seeds into the sandbox. Commit `99613f0` puts the complete problem statement and
 `/workspace/solution.py` contract in the policy-visible message.
 
-Before scaling, build a curriculum that gives the starting policy nonzero within-prompt reward variance. Good
-next experiments are calibrated math/code strata, an SFT checkpoint with stronger tool-submission behavior,
+### Easier-stratum signal probes — 2026-08-26
+
+Job `21536744` replayed the fixed scalar-answer contract on English difficulty-2 math and completed `0:0` in
+6m44s. The verifier now behaved correctly and accepted 16 of 32 trajectories. The gradient was still zero:
+the four eight-sample groups were internally constant (`8/8`, `0/8`, `8/8`, `0/8`), so grouped DPPO correctly
+assigned every trajectory advantage zero. This demonstrates why an aggregate 50% accuracy is not enough for
+RLVR; variation must occur among samples for the same prompt. The follow-up math canary repeats the calibrated
+fraction prompt `7/20 - 8/2`, whose saved rollouts contained both exact and incorrect answers, with 16 samples
+per group.
+
+Job `21536745` used regenerated English difficulty-1 code tasks with the actual problem in the model-visible
+message. It completed `0:0` in 23m14s and produced the first verified code learning signal: two of 32
+trajectories submitted passing solutions, one in each of two eight-sample prompt groups. The rollout artifact
+records rewards `{0, 1}`, advantages from `-0.125` to `0.875`, and the learner reports `grad_norm=0.21` followed
+by a 0.24s weight sync. No environment timeout occurred. Thirty trajectories did not submit, two completions
+were length-truncated, and tool-format failures occurred in eight trajectories, so commit `a5a2869` adds a
+concise system prompt naming the editable path and submission marker and reduces the signal profile's
+per-turn budget from 2,048 to 1,024 tokens. This last change targets rollout efficiency; it is not needed to
+interpret the already successful gradient-path result.
+
+Before scaling, build a curriculum that gives the starting policy nonzero within-prompt reward variance. The
+difficulty-1 code probe now passes that narrow signal test; math still requires the calibrated canary result.
+Next experiments should combine calibrated strata, an SFT checkpoint with stronger tool-submission behavior,
 and a small active-sampling qualification. Require reward-0 and reward-1 completions inside prompt groups,
 nonzero gradient norm, bounded resampling, and a second successful weight update before using the four-node
 profile. Difficulty should only be changed after verifier schema and policy-visible task contracts have been

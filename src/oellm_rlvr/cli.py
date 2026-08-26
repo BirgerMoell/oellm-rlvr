@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from .backend import build_backend_argv, shell_command
+from .backend_rollouts import inspect_backend_rollouts
 from .config import load_config
 from .datasets import make_math_smoke, pack_code_dataset, sample_code_dataset, sample_math_dataset
 from .gates import evaluate_gates
@@ -170,6 +171,11 @@ def command_gate(args: argparse.Namespace) -> int:
     return 0 if report.passed else 1
 
 
+def command_inspect_rollouts(args: argparse.Namespace) -> int:
+    _json(inspect_backend_rollouts(args.rollouts).as_dict())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oellm-rlvr")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -241,6 +247,10 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--config", required=True)
     gate.add_argument("--trajectories", required=True)
     gate.set_defaults(handler=command_gate)
+
+    inspect_rollouts = sub.add_parser("inspect-rollouts")
+    inspect_rollouts.add_argument("--rollouts", required=True, help="backend rollouts_*.jsonl artifact")
+    inspect_rollouts.set_defaults(handler=command_inspect_rollouts)
     return parser
 
 
