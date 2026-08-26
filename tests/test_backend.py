@@ -48,3 +48,15 @@ def test_production_profile_enables_active_sampling() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-4node.yaml")
     argv = build_backend_argv(config)
     assert "--active_sampling" in argv
+
+
+def test_math_active_sampling_profile_runs_two_updates_and_saves_filtered_groups() -> None:
+    config = load_config(ROOT / "configs/lumi-math-qwen35-2b-active-sampling.yaml")
+    argv = build_backend_argv(config)
+    episodes_per_update = config.rollout.unique_prompts * config.rollout.samples_per_prompt
+
+    assert "--active_sampling" in argv
+    assert "--filter_zero_std_samples" not in argv
+    assert "--save_filtered_rollouts" in argv
+    assert config.training.total_episodes == 2 * episodes_per_update
+    assert config.training.checkpoint_state_freq == 1

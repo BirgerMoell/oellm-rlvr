@@ -1,0 +1,70 @@
+version: 1
+name: rlvr-math-active-sampling
+platform:
+  accelerator: rocm
+  nodes: 1
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: dev-g
+  walltime: 00:30:00
+  cpus_per_task: 56
+  memory: 480G
+  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  network_interface: hsn0,hsn1,hsn2,hsn3
+backend:
+  repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
+  extra_args: [--save_filtered_rollouts]
+model:
+  name_or_path: hamishivi/Qwen3.5-2B
+  local_path: /scratch/project_465002530/users/bmoell/models/Qwen3.5-2B
+  max_prompt_tokens: 1024
+  response_tokens: 4096
+  per_turn_tokens: 4096
+  pack_length: 5120
+datasets:
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v4-20260826.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: math
+  max_steps: 1
+  pool_size: 16
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  unique_prompts: 4
+  samples_per_prompt: 16
+  temperature: 1.0
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enforce_eager: true
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 128
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dppo
+  save_freq: 0
+  checkpoint_state_freq: 1
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/math-active-sampling-2step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/math-active-sampling-2step
+  experiment_name: lumi_math_qwen35_2b_active_sampling_2step
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
