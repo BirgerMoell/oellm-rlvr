@@ -37,3 +37,13 @@ def test_child_environment_isolates_one_gpu(monkeypatch) -> None:
     assert "ROCR_VISIBLE_DEVICES" not in env
     assert env["HIP_VISIBLE_DEVICES"] == "4"
     assert env["CUDA_VISIBLE_DEVICES"] == "4"
+
+
+def test_child_environment_can_leave_all_allocated_gpus_visible(monkeypatch) -> None:
+    monkeypatch.setenv("ROCR_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7")
+    monkeypatch.setenv("HIP_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7")
+    env = MODULE.child_environment(4, isolate_device=False)
+    assert "ROCR_VISIBLE_DEVICES" not in env
+    assert "HIP_VISIBLE_DEVICES" not in env
+    assert "CUDA_VISIBLE_DEVICES" not in env

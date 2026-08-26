@@ -27,6 +27,11 @@ TRAINER_NODE="${PROBE_NODES[1]}"
 TRAINER_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$TRAINER_NODE" getent hosts "$TRAINER_NODE" | awk 'NR==1 {print $1}')"
 MASTER_PORT="$((20000 + SLURM_JOB_ID % 20000))"
 PROBE_WORLD_SIZE="${PROBE_WORLD_SIZE:-9}"
+PROBE_UNMASKED_WORKERS="${PROBE_UNMASKED_WORKERS:-0}"
+PROBE_EXTRA_ARGS=()
+if [[ "$PROBE_UNMASKED_WORKERS" == 1 ]]; then
+  PROBE_EXTRA_ARGS+=(--unmasked-workers)
+fi
 
 export NCCL_SOCKET_IFNAME=hsn
 export NCCL_CUMEM_ENABLE=0
@@ -34,7 +39,7 @@ export NCCL_DEBUG=INFO
 export NCCL_DEBUG_SUBSYS=INIT,NET
 export PYTHONUNBUFFERED=1
 
-echo "Native transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, workers=${PROBE_NODES[0]}, port=${MASTER_PORT}, world_size=${PROBE_WORLD_SIZE}"
+echo "Native transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, workers=${PROBE_NODES[0]}, port=${MASTER_PORT}, world_size=${PROBE_WORLD_SIZE}, unmasked_workers=${PROBE_UNMASKED_WORKERS}"
 srun --label --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_nccl_weight_transfer.py" \
@@ -42,4 +47,5 @@ srun --label --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpu-bind=none 
   --master-port "$MASTER_PORT" \
   --world-size "$PROBE_WORLD_SIZE" \
   --trainer-host "$TRAINER_NODE" \
-  --timeout 180
+  --timeout 180 \
+  "${PROBE_EXTRA_ARGS[@]}"

@@ -21,6 +21,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trainer-host", required=True)
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--rank", type=int)
+    parser.add_argument("--local-device", type=int, default=0)
+    parser.add_argument("--unmasked-workers", action="store_true")
     return parser.parse_args()
 
 
@@ -31,11 +33,15 @@ def local_rank_assignments(hostname: str, trainer_host: str, world_size: int) ->
     return [(rank, rank - 1) for rank in range(1, world_size)]
 
 
-def child_environment(local_device: int) -> dict[str, str]:
+def child_environment(local_device: int, *, isolate_device: bool = True) -> dict[str, str]:
     env = dict(os.environ)
     env.pop("ROCR_VISIBLE_DEVICES", None)
-    env["HIP_VISIBLE_DEVICES"] = str(local_device)
-    env["CUDA_VISIBLE_DEVICES"] = str(local_device)
+    if isolate_device:
+        env["HIP_VISIBLE_DEVICES"] = str(local_device)
+        env["CUDA_VISIBLE_DEVICES"] = str(local_device)
+    else:
+        env.pop("HIP_VISIBLE_DEVICES", None)
+        env.pop("CUDA_VISIBLE_DEVICES", None)
     env["PYTHONUNBUFFERED"] = "1"
     return env
 
@@ -45,9 +51,12 @@ def run_rank(args: argparse.Namespace) -> int:
     from vllm.distributed.weight_transfer.nccl_engine import NCCLWeightTransferEngine
 
     assert args.rank is not None
-    if torch.cuda.device_count() != 1:
-        raise RuntimeError(f"rank {args.rank}: expected one visible device, found {torch.cuda.device_count()}")
-    torch.cuda.set_device(0)
+    visible_devices = torch.cuda.device_count()
+    if not 0 <= args.local_device < visible_devices:
+        raise RuntimeError(
+            f"rank {args.rank}: local device {args.local_device} is outside {visible_devices} visible device(s)"
+        )
+    torch.cuda.set_device(args.local_device)
     print(
         json.dumps(
             {
@@ -57,6 +66,8 @@ def run_rank(args: argparse.Namespace) -> int:
                 "hostname": socket.gethostname(),
                 "hip_visible_devices": os.environ.get("HIP_VISIBLE_DEVICES"),
                 "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                "local_device": args.local_device,
+                "visible_device_count": visible_devices,
             },
             sort_keys=True,
         ),
@@ -68,7 +79,7 @@ def run_rank(args: argparse.Namespace) -> int:
         args.master_port,
         args.rank,
         args.world_size,
-        device=0,
+        device=args.local_device,
     )
     initialized = time.perf_counter()
     value = torch.tensor([9173 if args.rank == 0 else -1], dtype=torch.int64, device="cuda")
@@ -83,7 +94,7 @@ def run_rank(args: argparse.Namespace) -> int:
                 "event": "weight_transfer_probe_rank",
                 "rank": args.rank,
                 "hostname": socket.gethostname(),
-                "device": torch.cuda.get_device_name(0),
+                "device": torch.cuda.get_device_name(args.local_device),
                 "init_seconds": round(initialized - started, 3),
                 "total_seconds": round(time.perf_counter() - started, 3),
                 "received": received,
@@ -116,11 +127,20 @@ def run_orchestrator(args: argparse.Namespace) -> int:
             str(args.timeout),
             "--rank",
             str(global_rank),
+            "--local-device",
+            str(0 if hostname == args.trainer_host or not args.unmasked_workers else local_device),
         ]
         processes.append(
             (
                 global_rank,
-                subprocess.Popen(command, env=child_environment(local_device), text=True),
+                subprocess.Popen(
+                    command,
+                    env=child_environment(
+                        local_device,
+                        isolate_device=hostname == args.trainer_host or not args.unmasked_workers,
+                    ),
+                    text=True,
+                ),
             )
         )
 
