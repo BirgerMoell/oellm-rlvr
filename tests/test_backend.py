@@ -60,6 +60,7 @@ def test_math_active_sampling_profile_runs_two_updates_and_saves_filtered_groups
     assert "--save_filtered_rollouts" in argv
     assert config.training.total_episodes == 2 * episodes_per_update
     assert config.training.checkpoint_state_freq == 1
+    assert _value(argv, "--checkpoint_state_dir") == f"{config.output.directory}_state"
 
 
 def test_oellm9b_profile_uses_two_nodes_and_the_staged_sft_checkpoint() -> None:
@@ -91,3 +92,20 @@ def test_oellm9b_ladder_profile_keeps_bounded_zero_variance_groups() -> None:
     assert "--active_sampling" not in argv
     assert _value(argv, "--filter_zero_std_samples") == "false"
     assert _value(argv, "--response_length") == "2048"
+
+
+def test_oellm9b_pilot_runs_ten_restartable_hierarchical_updates() -> None:
+    config = load_config(ROOT / "configs/lumi-math-oellm9b-256k-sft-pilot-2node.yaml")
+    argv = build_backend_argv(config)
+    episodes_per_update = config.rollout.unique_prompts * config.rollout.samples_per_prompt
+
+    assert config.platform.partition == "standard-g"
+    assert config.rollout.engines == 8
+    assert config.rollout.weight_transfer == "hierarchical"
+    assert config.training.learner_gpus_per_node == [8]
+    assert config.training.total_episodes == 10 * episodes_per_update
+    assert config.training.save_freq == 10
+    assert config.training.checkpoint_state_freq == 5
+    assert _value(argv, "--checkpoint_state_dir").endswith("math-oellm9b-sft-pilot-10step-state")
+    assert "--active_sampling" in argv
+    assert "--save_filtered_rollouts" in argv

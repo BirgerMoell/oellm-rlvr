@@ -15,6 +15,16 @@ def test_lumi_job_renders_ray_and_rocm_preflight() -> None:
     assert "scripts/ray_node.sh" in rendered
     assert "run-backend --config" in rendered
     assert "actual_commit" in rendered
+    assert 'export TRITON_CACHE_DIR="$RAY_TMP/triton-cache"' in rendered
+    assert 'export XDG_CACHE_HOME="$RAY_TMP/xdg-cache"' in rendered
+    assert 'export MIOPEN_USER_DB_PATH="$RAY_TMP/miopen-cache"' in rendered
+    assert 'export JOB_TMPDIR="$RAY_TMP/tmp"' in rendered
+    assert "mkdir -p \"$JOB_TMPDIR\" \"$XDG_CACHE_HOME\"" in rendered
+    assert 'export TMPDIR="$JOB_TMPDIR"' in rendered
+    ray_launch = rendered.split("bash \"$CONTROL_ROOT/scripts/ray_node.sh\"", 1)[0].rsplit("srun --label", 1)[1]
+    assert '--gpus-per-task="$GPUS_PER_NODE"' in ray_launch
+    assert "--ntasks-per-node=1" in ray_launch
+    assert "--overlap" not in ray_launch
 
 
 def test_cuda_job_uses_nv_flag() -> None:

@@ -92,6 +92,7 @@ output:
   wandb_mode: offline
   wandb_entity: local
 environment:
+  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
   HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"

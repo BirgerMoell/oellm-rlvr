@@ -156,6 +156,54 @@ with `.checkpoint_complete`. This qualifies real 9B checkpoint loading, two-node
 math rollout verification, two nonzero-gradient learner updates, and final full-model save. It does not
 qualify 256k-context training or the wider one-trainer-plus-eight-engine communicator.
 
+### Eight-engine LUMI scale-out qualification — 2026-09-04/05
+
+The eight-engine qualification exposed three independent startup defects before model training, rather than
+one collective-communication failure. Job `21722061` first qualified the proposed hierarchy directly: one
+trainer→relay RCCL link across nodes and seven independent relay→leaf links on the rollout node all received
+the sentinel tensor and completed `0:0` in 2m03s. A separate Ray actor probe, job `21723965`, proved that all
+eight actor indices, including index 7, saw exactly one assigned GCD in both the actor and a spawned child
+process; it completed `0:0` in 1m33s.
+
+The full-checkpoint attempts then separated the remaining faults:
+
+- `21722147` initialized seven engines, while engine 8 failed with `DP adjusted local rank 0 is out of
+  bounds`. `21722652` reproduced that symptom and also exposed a full shared home directory through an LLVM
+  `Disk quota exceeded` error.
+- `21723001` used job-local compiler and framework caches and removed the disk failure, but retained the
+  engine-8 error. The long-lived Ray cluster was still running in an overlapping Slurm step.
+- Making Ray the primary, non-overlapping Slurm step with an explicit eight-GCD request fixed device
+  ownership: jobs `21723964`, `21724342`, `21734415`, and `21734584` all initialized eight independent
+  17.02 GiB vLLM copies successfully.
+- Those attempts revealed two control-plane compatibility bugs after GPU initialization. TMAX was launched
+  through `runpy` under `__main__`, so the canonical module carrying the hierarchical trainer patch never
+  loaded; after switching to a canonical import, a pinned actor method still expected the script footer's
+  module-global `streaming_config`. The final issue was the Ray decorator itself: Ray 2.54 names its actor
+  descriptor from `__ray_actor_class__` but serializes `metadata.modified_class`. The control launcher now
+  reproduces the pinned parser footer, restores the global inside every trainer process, and patches the
+  class Ray actually exports.
+
+No shared user cache was deleted. Generated jobs instead put XDG, Triton, TorchInductor, CUDA/HIP, MIOpen,
+and temporary compiler state under a job-local node directory.
+
+Job `21734954` then completed the full qualification `0:0` in 14m52s. All eight vLLM engines loaded, all eight
+trainer models initialized, and the trainer→relay plus seven relay→leaf weight-transfer engines initialized
+in 1m20s. The initial model broadcast finished, step 1 performed a 3.81-second post-update hierarchical sync,
+and step 2 consumed rollout model version 1 with zero stale results. Both DPPO updates had useful signal:
+
+| Step | Correct | Mean reward | Mixed groups | Advantage range | Gradient norm |
+|---|---:|---:|---:|---:|---:|
+| 1 | 44/64 | 0.687500 | 8/8 | -0.875 to 0.750 | 0.38 |
+| 2 | 40/64 | 0.625000 | 8/8 | -0.875 to 0.750 | 0.39 |
+
+The saved rollout shard has SHA-256
+`c4af921a2e37039299c5e32d0e9ace14247d7bbc3ddcea07bfb7de9a3a5f2b3f`: 128 trajectories, mean reward
+`0.65625`, 16/16 mixed prompt groups, zero zero-standard-deviation groups, nonzero advantages on every row,
+and no truncations, timeouts, or tool-format errors. The final model contains an 18,203,942,400-byte
+`model.safetensors` and `.checkpoint_complete`. The two-node allocation used 16 MI250X GCDs for 14m52s,
+equivalent to 0.496 node-hours or 3.964 GCD-hours. This qualifies the 8+8 topology for the bounded 9B math
+pilot; restart-state recovery and a broader curriculum remain pilot gates rather than claims from this run.
+
 ## LUMI-specific findings
 
 - The training SIF cannot reliably start nested setuid or user-namespace Apptainer. `slurm_apptainer` executes

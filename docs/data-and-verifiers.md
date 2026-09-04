@@ -17,6 +17,9 @@ avoid filling a probe with one subdomain. Use `--subdomain` for an exact subdoma
 known calibration prompt; do not mistake that narrow canary for a production data mixture.
 `--copies` can repeat each selected row to meet the backend's prefill/async minimum for a controlled canary;
 it must not be used to manufacture diversity in a production curriculum.
+Pass `--seed` for a reproducible reservoir sample over all matching semantic groups. Without it, the
+sampler deliberately retains the original first-match behavior for smoke tests and exact canary replay.
+Seed production and pilot subsets so a source shard's row order cannot silently determine the curriculum.
 
 The online transform supports several verifiers per row by wrapping a scalar `ground_truth` and scalar
 `dataset` into aligned lists. A published singleton such as `["5"]` must therefore be flattened to `"5"`
@@ -69,7 +72,7 @@ Binary reward is the safest initial contract. Introduce partial reward only when
 `stdin_stdout` hidden test into `cases.json` plus a bounded sandbox runner. The generated training row
 contains only the policy-visible messages and TMAX environment configuration; hidden tests never enter
 the model context. Code sampling supports the same inclusive difficulty band and can diversify by
-`generator_family`. The generated verifier is compiled in the unit tests; this specifically guards the
+`generator_family`. It also accepts `--seed` for reproducible reservoir sampling. The generated verifier is compiled in the unit tests; this specifically guards the
 shell-heredoc escaping boundary, where Python string escapes must survive one generation layer.
 
 The complete problem statement and output contract are part of the policy-visible message. The backend

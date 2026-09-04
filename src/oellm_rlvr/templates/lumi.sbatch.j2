@@ -54,6 +54,14 @@ export PYTHONPATH="${CONTROL_ROOT}/src:${BACKEND_ROOT}:${VENV_SITE}:/opt/venv/li
 export PATH="$(dirname "$PYTHON_BIN"):$PATH"
 export RAY_ADDRESS
 export RAY_TMPDIR="$RAY_TMP"
+export JOB_TMPDIR="$RAY_TMP/tmp"
+export XDG_CACHE_HOME="$RAY_TMP/xdg-cache"
+export TRITON_CACHE_DIR="$RAY_TMP/triton-cache"
+export TORCHINDUCTOR_CACHE_DIR="$RAY_TMP/torchinductor-cache"
+export CUDA_CACHE_PATH="$RAY_TMP/cuda-cache"
+export MIOPEN_USER_DB_PATH="$RAY_TMP/miopen-cache"
+export MIOPEN_CUSTOM_CACHE_DIR="$MIOPEN_USER_DB_PATH"
+export MIOPEN_FIND_MODE=FAST
 export WANDB_MODE={{ config.output.wandb_mode | tojson }}
 export TOKENIZERS_PARALLELISM=false
 export VLLM_ALLOW_INSECURE_SERIALIZATION=1
@@ -73,6 +81,12 @@ fi
 {% endif %}{% for key, value in config.environment.items() %}export {{ key }}={{ value | tojson }}
 {% endfor %}
 
+# Home is small and shared on LUMI. Eight concurrent Triton/LLVM compilers can
+# otherwise fill it during vLLM startup. Create job-local caches on every node.
+srun --label --gpu-bind=none bash -c \
+  'mkdir -p "$JOB_TMPDIR" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$CUDA_CACHE_PATH" "$MIOPEN_USER_DB_PATH"'
+export TMPDIR="$JOB_TMPDIR"
+
 cleanup() {
   if [[ -n "${RAY_STEP_PID:-}" ]]; then kill "$RAY_STEP_PID" 2>/dev/null || true; fi
 }
@@ -83,7 +97,12 @@ srun --label --gpu-bind=none singularity exec {{ accelerator_flag }} -B "$BIND" 
   env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" "$CONTROL_ROOT/scripts/preflight_gpu.py" \
   --accelerator {{ config.platform.accelerator }} --gpus "$GPUS_PER_NODE"
 
-srun --label --overlap --gpu-bind=none --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" \
+# Ray owns the allocation for the lifetime of the job. LUMI can omit GPU
+# devices from a long-lived overlapping step, so make this the primary step
+# and request every GCD explicitly. The short control steps below use
+# --overlap and do not execute GPU work themselves.
+srun --label --gpu-bind=none --gpus-per-task="$GPUS_PER_NODE" \
+  --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
   singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" RAY_TMPDIR="$RAY_TMP" RAY_BIN="$RAY_BIN" \
   bash "$CONTROL_ROOT/scripts/ray_node.sh" "$HEAD_IP" "$RAY_PORT" "$GPUS_PER_NODE" &

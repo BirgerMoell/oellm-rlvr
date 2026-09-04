@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 import tarfile
 from pathlib import Path
 from typing import Any
@@ -119,6 +120,7 @@ def _sample_parquet_rows(
     max_difficulty: int | None = None,
     diverse_by: str | None = None,
     exact_filters: dict[str, str] | None = None,
+    seed: int | None = None,
 ) -> list[dict[str, Any]]:
     if count < 1:
         raise ValueError("count must be positive")
@@ -132,6 +134,10 @@ def _sample_parquet_rows(
     selected: list[dict[str, Any]] = []
     semantic_groups: set[str] = set()
     diversity_values: set[str] = set()
+    rng = random.Random(seed)
+    matching_groups = 0
+    diverse_rows: dict[str, dict[str, Any]] = {}
+    diverse_counts: dict[str, int] = {}
     for batch in parquet.iter_batches(batch_size=max(64, count * 4)):
         for row in batch.to_pylist():
             if exact_filters and any(str(row.get(column, "")) != value for column, value in exact_filters.items()):
@@ -148,14 +154,36 @@ def _sample_parquet_rows(
             if group in semantic_groups:
                 continue
             diversity_value = str(row.get(diverse_by, "")) if diverse_by else ""
-            if diverse_by and (not diversity_value or diversity_value in diversity_values):
+            if diverse_by and not diversity_value:
                 continue
             semantic_groups.add(group)
+            if seed is not None and diverse_by:
+                seen = diverse_counts.get(diversity_value, 0) + 1
+                diverse_counts[diversity_value] = seen
+                if rng.randrange(seen) == 0:
+                    diverse_rows[diversity_value] = row
+                continue
             if diverse_by:
+                if diversity_value in diversity_values:
+                    continue
                 diversity_values.add(diversity_value)
-            selected.append(row)
-            if len(selected) == count:
+            if seed is None:
+                selected.append(row)
+            else:
+                matching_groups += 1
+                if len(selected) < count:
+                    selected.append(row)
+                else:
+                    replacement = rng.randrange(matching_groups)
+                    if replacement < count:
+                        selected[replacement] = row
+            if seed is None and len(selected) == count:
                 return selected
+    if seed is not None and diverse_by and len(diverse_rows) >= count:
+        keys = rng.sample(sorted(diverse_rows), count)
+        return [diverse_rows[key] for key in keys]
+    if seed is not None and not diverse_by and len(selected) == count:
+        return selected
     filters = []
     if language is not None:
         filters.append(f"language={language}")
@@ -168,7 +196,8 @@ def _sample_parquet_rows(
     if exact_filters:
         filters.extend(f"{column}={value}" for column, value in exact_filters.items())
     suffix = f" for {', '.join(filters)}" if filters else ""
-    raise ValueError(f"dataset contains only {len(selected)} matching semantic groups{suffix}; requested {count}")
+    available = len(diverse_rows) if seed is not None and diverse_by else len(selected)
+    raise ValueError(f"dataset contains only {available} matching semantic groups{suffix}; requested {count}")
 
 
 def sample_math_dataset(
@@ -181,6 +210,7 @@ def sample_math_dataset(
     diverse_by: str | None = None,
     subdomain: str | None = None,
     copies: int = 1,
+    seed: int | None = None,
 ) -> None:
     if copies < 1:
         raise ValueError("copies must be positive")
@@ -193,6 +223,7 @@ def sample_math_dataset(
         max_difficulty=max_difficulty,
         diverse_by=diverse_by,
         exact_filters={"subdomain": subdomain} if subdomain else None,
+        seed=seed,
     )
     for index, row in enumerate(rows):
         missing = required - row.keys()
@@ -269,6 +300,7 @@ def sample_code_dataset(
     min_difficulty: int | None = None,
     max_difficulty: int | None = None,
     diverse_by: str | None = None,
+    seed: int | None = None,
 ) -> tuple[Path, Path]:
     if max_steps < 1:
         raise ValueError("max_steps must be positive")
@@ -279,6 +311,7 @@ def sample_code_dataset(
         min_difficulty=min_difficulty,
         max_difficulty=max_difficulty,
         diverse_by=diverse_by,
+        seed=seed,
     )
     manifests: list[dict[str, object]] = []
     for index, row in enumerate(rows):

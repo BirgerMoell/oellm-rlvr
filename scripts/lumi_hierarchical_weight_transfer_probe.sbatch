@@ -36,7 +36,11 @@ export NCCL_DEBUG_SUBSYS=INIT,NET
 export PYTHONUNBUFFERED=1
 
 echo "Hierarchical transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, relay=${RELAY_NODE}/${RELAY_IP}, port=${MASTER_PORT}"
-srun --label --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpu-bind=none \
+# This is the only long-lived step in the probe. Do not use --overlap here:
+# LUMI can create an overlapping step without attaching the allocation's GPU
+# devices, even when the step requests the matching GRES count.
+srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 \
+  --gpus-per-task=8 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_hierarchical_weight_transfer.py" \
   --trainer-address "$TRAINER_IP" \

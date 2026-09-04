@@ -125,6 +125,7 @@ class TrainingConfig(StrictModel):
     seed: int = 42
     save_freq: int = Field(default=20, ge=0)
     checkpoint_state_freq: int = Field(default=10, ge=0)
+    checkpoint_state_directory: str | None = None
     gradient_checkpointing: bool = True
     use_liger_loss: bool = True
 

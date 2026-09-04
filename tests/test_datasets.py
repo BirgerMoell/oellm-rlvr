@@ -155,6 +155,70 @@ def test_published_math_sample_can_select_one_subdomain(tmp_path: Path) -> None:
     assert {row["subdomain"] for row in selected} == {"fraction_operations"}
 
 
+def test_published_math_sample_seed_is_reproducible_and_not_first_rows(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    rows = [
+        {
+            "id": f"m{index}",
+            "dataset": "oellm-math-rlvr",
+            "messages": [{"role": "user", "content": f"Problem {index}"}],
+            "ground_truth": [str(index)],
+            "verifier_kind": "integer_exact",
+            "semantic_group_id": f"g{index}",
+            "language": "en",
+            "difficulty": 2,
+            "subdomain": "arithmetic",
+        }
+        for index in range(40)
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), source)
+
+    outputs = [tmp_path / f"sample-{index}.parquet" for index in range(3)]
+    sample_math_dataset(source, outputs[0], count=8, language="en", seed=20260904)
+    sample_math_dataset(source, outputs[1], count=8, language="en", seed=20260904)
+    sample_math_dataset(source, outputs[2], count=8, language="en", seed=7)
+
+    ids = [[row["id"] for row in pq.read_table(path).to_pylist()] for path in outputs]
+    assert ids[0] == ids[1]
+    assert ids[0] != ids[2]
+    assert ids[0] != [f"m{index}" for index in range(8)]
+
+
+def test_seeded_diverse_sample_uses_distinct_values_reproducibly(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    rows = [
+        {
+            "id": f"m{index}",
+            "dataset": "oellm-math-rlvr",
+            "messages": [{"role": "user", "content": f"Problem {index}"}],
+            "ground_truth": [str(index)],
+            "verifier_kind": "integer_exact",
+            "semantic_group_id": f"g{index}",
+            "language": "en",
+            "difficulty": 2,
+            "subdomain": f"domain-{index % 6}",
+        }
+        for index in range(30)
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    first = tmp_path / "first.parquet"
+    second = tmp_path / "second.parquet"
+
+    for output in (first, second):
+        sample_math_dataset(source, output, count=4, diverse_by="subdomain", seed=11)
+
+    selected_first = pq.read_table(first).to_pylist()
+    selected_second = pq.read_table(second).to_pylist()
+    assert [row["id"] for row in selected_first] == [row["id"] for row in selected_second]
+    assert len({row["subdomain"] for row in selected_first}) == 4
+
+
 def test_published_math_sample_can_repeat_a_calibration_row(tmp_path: Path) -> None:
     pa = pytest.importorskip("pyarrow")
     import pyarrow.parquet as pq

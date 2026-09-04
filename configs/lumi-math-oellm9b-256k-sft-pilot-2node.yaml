@@ -1,13 +1,13 @@
 version: 1
-name: rlvr-math-oellm9b-sft-hierarchical
+name: rlvr-math-oellm9b-sft-pilot
 platform:
   accelerator: rocm
   nodes: 2
   gpus_per_node: 8
   container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
   account: project_465002530
-  partition: dev-g
-  walltime: 00:45:00
+  partition: standard-g
+  walltime: 02:00:00
   cpus_per_task: 56
   memory: 480G
   binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
@@ -16,6 +16,7 @@ backend:
   repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
   python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
+  extra_args: [--save_filtered_rollouts]
 model:
   name_or_path: openeurollm/oellm-9b-256k-sft
   local_path: /scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft
@@ -24,7 +25,7 @@ model:
   per_turn_tokens: 2048
   pack_length: 3072
 datasets:
-  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-oellm9b-integer-ladder-copies2-20260826.parquet
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-pilot-en-d1-3-seed20260904-n256.parquet
     weight: 1.0
     split: train
 task:
@@ -40,7 +41,7 @@ rollout:
   temperature: 1.0
   gpu_memory_utilization: 0.65
   async_steps: 2
-  active_sampling: false
+  active_sampling: true
   inflight_updates: true
   enforce_eager: true
   gdn_prefill_backend: null
@@ -48,25 +49,31 @@ training:
   learner_gpus_per_node: [8]
   sequence_parallel_size: 1
   learning_rate: 1.0e-6
-  total_episodes: 128
+  total_episodes: 640
   epochs: 1
   deepspeed_stage: 3
   loss: dppo
-  save_freq: 0
-  checkpoint_state_freq: 0
+  save_freq: 10
+  checkpoint_state_freq: 5
+  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/math-oellm9b-sft-pilot-10step-state
 output:
-  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/math-oellm9b-sft-hierarchical-8engine-2node-2step
-  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/math-oellm9b-sft-hierarchical-8engine-2node-2step
-  experiment_name: lumi_math_oellm9b_256k_sft_hierarchical_8engine_2node_2step
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/math-oellm9b-sft-pilot-10step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/math-oellm9b-sft-pilot-10step
+  experiment_name: lumi_math_oellm9b_256k_sft_pilot_10step
   with_tracking: true
   wandb_mode: offline
   wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.15
+  max_error_fraction: 0.02
+  max_policy_lag: 4
 environment:
-  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
   HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
   OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
   OELLM_PATCH_MATH_EQUIV_THREADS: "1"
   NCCL_DEBUG: INFO

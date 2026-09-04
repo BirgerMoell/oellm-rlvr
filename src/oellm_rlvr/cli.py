@@ -139,6 +139,7 @@ def command_sample_math(args: argparse.Namespace) -> int:
         diverse_by=args.diverse_by,
         subdomain=args.subdomain,
         copies=args.copies,
+        seed=args.seed,
     )
     print(args.output)
     return 0
@@ -156,6 +157,7 @@ def command_sample_code(args: argparse.Namespace) -> int:
         min_difficulty=args.min_difficulty,
         max_difficulty=args.max_difficulty,
         diverse_by=args.diverse_by,
+        seed=args.seed,
     )
     _json({"dataset": str(dataset_path), "task_data_dir": str(task_root)})
     return 0
@@ -232,6 +234,7 @@ def build_parser() -> argparse.ArgumentParser:
     math_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
     math_sample.add_argument("--subdomain", help="optional exact math subdomain filter")
     math_sample.add_argument("--copies", type=int, default=1, help="repeat each selected row (calibration only)")
+    math_sample.add_argument("--seed", type=int, help="reservoir-sample matching semantic groups reproducibly")
     math_sample.set_defaults(handler=command_sample_math)
 
     code_sample = sub.add_parser("sample-code")
@@ -244,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     code_sample.add_argument("--min-difficulty", type=int, help="optional inclusive difficulty floor")
     code_sample.add_argument("--max-difficulty", type=int, help="optional inclusive difficulty ceiling")
     code_sample.add_argument("--diverse-by", help="require a different non-empty value in this column per row")
+    code_sample.add_argument("--seed", type=int, help="reservoir-sample matching semantic groups reproducibly")
     code_sample.add_argument(
         "--max-steps",
         type=int,

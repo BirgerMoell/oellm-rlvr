@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.abc
 import importlib.machinery
+import os
 import socket
 import sys
 import threading
@@ -166,17 +167,79 @@ def patch_open_instruct_vllm_module(module: ModuleType) -> bool:
     return True
 
 
+def wrap_open_instruct_rocm_visibility(module: ModuleType) -> bool:
+    """Keep vLLM's CUDA alias aligned with Ray's per-actor HIP mask.
+
+    Ray 2.54 assigns AMD GPUs through ``HIP_VISIBLE_DEVICES``. vLLM 0.22.1
+    aliases that value to ``CUDA_VISIBLE_DEVICES`` when its ROCm platform is
+    imported, which happens before Ray applies an actor-specific mask. Without
+    resynchronizing the alias, an EngineCore child can inherit a stale mask and
+    report zero visible devices.
+    """
+    actor_type = module.LLMRayActor
+    original = actor_type._setup_gpu_visibility
+    if getattr(original, "_oellm_rocm_visibility", False):
+        return False
+
+    @wraps(original)
+    def compatible_visibility(self: Any, *args: Any, **kwargs: Any) -> Any:
+        result = original(self, *args, **kwargs)
+        if getattr(module.torch.version, "hip", None):
+            hip_devices = os.environ.get("HIP_VISIBLE_DEVICES")
+            if hip_devices is not None:
+                os.environ["CUDA_VISIBLE_DEVICES"] = hip_devices
+            os.environ.pop("ROCR_VISIBLE_DEVICES", None)
+            module.logger.info(
+                "Synchronized vLLM ROCm visibility: HIP_VISIBLE_DEVICES=%s CUDA_VISIBLE_DEVICES=%s",
+                hip_devices,
+                os.environ.get("CUDA_VISIBLE_DEVICES"),
+            )
+        return result
+
+    compatible_visibility._oellm_rocm_visibility = True
+    actor_type._setup_gpu_visibility = compatible_visibility
+    return True
+
+
 def _ray_actor_target(actor_type: Any) -> Any:
     metadata = getattr(actor_type, "__ray_metadata__", None)
+    # Ray 2.54 derives this internal subclass from the user class. The function
+    # descriptor is named from ``__ray_actor_class__``, but ``ActorClass._remote``
+    # serializes ``metadata.modified_class`` in ``export_actor_class``. Patch the
+    # serialized class, not merely the original class used for its descriptor.
     return getattr(metadata, "modified_class", actor_type)
+
+
+def wrap_open_instruct_streaming_config(actor_type: Any) -> bool:
+    """Restore the script global expected by the pinned trainer actor.
+
+    The pinned ``grpo_fast.py`` footer assigns ``streaming_config`` at module
+    scope before calling ``main``.  Importing that file canonically is required
+    for the hierarchical Ray patch, but then the parsed config is only a local
+    ``main`` argument.  Two actor methods still read the old module global.
+    Seed it inside each Ray worker from the config already stored on the actor.
+    """
+    original = actor_type.from_pretrained
+    if getattr(original, "_oellm_streaming_config_global", False):
+        return False
+
+    @wraps(original)
+    def compatible_from_pretrained(self: Any, *args: Any, **kwargs: Any) -> Any:
+        original.__globals__["streaming_config"] = self.streaming_config
+        return original(self, *args, **kwargs)
+
+    compatible_from_pretrained._oellm_streaming_config_global = True
+    actor_type.from_pretrained = compatible_from_pretrained
+    return True
 
 
 def patch_open_instruct_grpo_module(module: ModuleType) -> bool:
     """Use a trainer→relay→leaf topology for native vLLM weight sync."""
     actor_type = _ray_actor_target(module.PolicyTrainerRayProcess)
+    streaming_config_patched = wrap_open_instruct_streaming_config(actor_type)
     original = actor_type.setup_model_update_group
     if getattr(original, "_oellm_hierarchical_setup", False):
-        return False
+        return streaming_config_patched
 
     @wraps(original)
     def hierarchical_setup(self: Any, vllm_engines: list[Any]) -> None:

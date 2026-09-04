@@ -13,6 +13,11 @@ The default runtime is:
 
 It provides PyTorch 2.10 ROCm 7, gfx90a vLLM 0.22.1 with native weight transfer, Transformers 5.10, DeepSpeed, PyArrow, and LUMI's Slingshot/RCCL integration. The bootstrap adds Ray and missing backend libraries in a venv while retaining these system packages.
 
+Generated jobs put Triton, TorchInductor, CUDA/HIP, MIOpen, XDG, and temporary compiler output under the
+job-specific node-local `RAY_TMP` directory. Do not let concurrent vLLM compilation fall back to `$HOME`:
+the shared home filesystem is small, and a full home produces misleading EngineCore GPU-init failures in
+addition to the direct LLVM `Disk quota exceeded` error.
+
 ## 2. Bootstrap once
 
 Run `scripts/bootstrap_lumi_env.sh` on a login node with network access. Do not use the backend's CUDA-oriented `uv sync`. Re-run bootstrap when the base SIF or pinned backend commit changes; do not mutate a venv used by an active run.
@@ -29,12 +34,22 @@ The hooks run only when the relevant vLLM module is imported, so Ray's generic p
   vLLM's own `msgspec` IPC decoder rejects for Qwen3.5.
 - `OELLM_PATCH_VLLM_WEIGHT_UPDATE=1` wraps TMAX's packed update in the `start_weight_update` /
   `finish_weight_update` transaction newly required by vLLM 0.22.1.
+- `OELLM_PATCH_RAY_ROCM_VISIBILITY=1` copies Ray's actor-specific `HIP_VISIBLE_DEVICES` assignment to
+  vLLM's `CUDA_VISIBLE_DEVICES` alias immediately before EngineCore starts. Ray 2.54 updates the HIP mask,
+  while vLLM 0.22.1 can otherwise retain the all-device alias created at import time; with eight concurrent
+  engines this surfaced as `DP adjusted local rank 0 is out of bounds`.
 - Math profiles use `OELLM_PATCH_MATH_EQUIV_THREADS=1` because the pinned verifier invokes symbolic LaTeX
   comparison in an executor thread while its timeout tries to install a main-thread-only `SIGALRM` handler.
   The hook skips that signal operation off the main thread and rejects extracted expressions over 512
   characters before symbolic parsing.
 - Code profiles use `OELLM_PATCH_SWERL_APPTAINER_KWARGS=1` to register the LUMI `slurm_apptainer`
   backend and filter prepared-backend defaults before pinned TMAX constructs a plain Apptainer backend.
+
+Hierarchical transfer also uses the control launcher's canonical `open_instruct.grpo_fast` entry point. This
+is necessary because `runpy(..., run_name="__main__")` defines the trainer only in `__main__` and bypasses the
+canonical module's compatibility hook. The launcher reproduces the pinned script footer and restores its
+legacy module-global `streaming_config` inside each trainer actor; remove this shim when the pinned backend
+uses `self.streaming_config` consistently.
 
 Remove each flag after upgrading TMAX or vLLM to a pair that implements the corresponding behavior natively.
 
@@ -98,7 +113,12 @@ For repeated task images, use `prepared_apptainer` after the basic `apptainer` s
 
 ## 5. Ray and networking
 
-The generated job starts one Ray node per Slurm node under a background `srun --overlap`. It advertises all eight GCDs explicitly and keeps Ray's Unix sockets in short node-local `/tmp` paths. The driver runs once on the Ray head. `NCCL_SOCKET_IFNAME` selects LUMI's `hsn` interfaces in the cross-node qualification profile.
+The generated job starts one Ray node per Slurm node in the single long-lived primary Slurm step. That step
+requests all eight GCDs per task explicitly; making it an overlapping step can leave the orchestrator without
+the complete device allocation on LUMI. Short readiness and driver steps use `--overlap`, but execute no GPU
+work directly: their Ray actors consume the GPU resources advertised by the primary step. Ray keeps its Unix
+sockets in short node-local `/tmp` paths. The driver runs once on the Ray head. `NCCL_SOCKET_IFNAME` selects
+LUMI's `hsn` interfaces in the cross-node qualification profile.
 
 The LAIF `lumi-multitorch-full` image contains a matched ROCm/ROCr userspace and the Libfabric RCCL network plugin. The generated ROCm launch intentionally does not pass Singularity's `--rocm`: that flag replaces image libraries with host libraries and can produce a node-dependent HSA ABI mismatch. CUDA profiles still use `--nv`.
 
@@ -118,9 +138,9 @@ sbatch scripts/lumi_hierarchical_weight_transfer_probe.sbatch
 The probes use vLLM's production stateless NCCL/RCCL communicator and broadcast a sentinel GPU tensor. They
 emit one JSON record per role/rank and fail after three minutes. On 2026-08-26 the two-rank topology completed
 over `NET/Libfabric` in about 5.5 seconds, while the nine-rank topology stalled while building local `P2P/IPC`
-links among the eight engine processes. The hierarchical probe tests the replacement topology without loading
-the 9B checkpoint: trainer→relay is one cross-node pair, while relay→leaf links are seven independent local
-pairs. Run it before the eight-engine profile below.
+links among the eight engine processes. On 2026-09-04 the hierarchical replacement completed as job
+`21722061` in 2m03s: trainer→relay crossed the nodes and seven independent relay→leaf links delivered the
+sentinel locally. Keep this probe as the fast gate before the full eight-engine profile below.
 
 ```bash
 oellm-rlvr render-slurm \
@@ -131,6 +151,11 @@ sbatch oellm9b-hierarchical.sbatch
 
 The profile occupies all 16 allocated GCDs. Success requires all eight engine initialization messages, the
 initial and post-update syncs, two nonzero-gradient updates, 128 complete rollouts, and `COMPLETED 0:0`.
+
+This gate passed on 2026-09-05 as job `21734954`: `COMPLETED 0:0` in 14m52s, eight engines, an 80-second
+hierarchical communicator setup, gradient norms `0.38` and `0.39`, zero stale results, and a 3.81-second
+post-update sync. All 128 saved rollouts stopped normally; all 16 prompt groups had mixed binary rewards.
+See [the qualification record](qualification-2026-08-24.md) for hashes, metrics, and failure isolation.
 
 If Ray fails to join, check name/IP resolution and Slurm step overlap before changing training code. If native weight transfer fails, verify that the LUMI vLLM is still the system build and that pip did not replace torch or vLLM.
 
@@ -151,3 +176,8 @@ The defaults reject more than 80% zero-signal groups, 15% truncation, 2% verifie
 ## 7. Recovery
 
 Outputs, trainer checkpoints, traces, and rollout shards must live on shared storage. Ray state is ephemeral. On preemption or node failure, allocate a fresh cluster and resume from the backend checkpoint state; never try to reuse a half-dead Ray cluster. Keep run YAML, rendered sbatch, Git revisions, SIF path/digest, dataset revisions, and logs together under the run directory.
+
+When `training.checkpoint_state_freq` is positive, the launcher passes an explicit shared state directory to
+TMAX. It defaults to `<output.directory>_state` and can be overridden with
+`training.checkpoint_state_directory`. Reusing the same config resumes from the newest valid DeepSpeed state;
+use a new output and state path when intentionally starting over.

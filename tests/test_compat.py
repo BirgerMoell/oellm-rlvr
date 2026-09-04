@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import os
 import sys
 import threading
 from enum import Enum
@@ -14,6 +15,8 @@ from oellm_rlvr.compat import (
     patch_vllm_weight_transfer_factory,
     replace_none_enum_value,
     wrap_async_weight_update,
+    wrap_open_instruct_rocm_visibility,
+    wrap_open_instruct_streaming_config,
     wrap_swerl_create_backend,
 )
 
@@ -185,8 +188,52 @@ def test_rollout_actor_gets_hierarchical_endpoint_methods(monkeypatch) -> None:
     assert len(set(endpoint["ports"])) == 3
 
 
+def test_rocm_rollout_actor_resynchronizes_vllm_cuda_alias(monkeypatch) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class FakeActor:
+        def _setup_gpu_visibility(self, *args, **_kwargs):
+            calls.append(args)
+            os.environ["HIP_VISIBLE_DEVICES"] = "6"
+
+    module = ModuleType("fake_vllm_utils")
+    module.LLMRayActor = FakeActor
+    module.torch = SimpleNamespace(version=SimpleNamespace(hip="7.0"))
+    module.logger = SimpleNamespace(info=lambda *_args: None)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7")
+    monkeypatch.setenv("ROCR_VISIBLE_DEVICES", "6")
+
+    assert wrap_open_instruct_rocm_visibility(module) is True
+    assert wrap_open_instruct_rocm_visibility(module) is False
+    FakeActor()._setup_gpu_visibility(False, "uni")
+
+    assert calls == [(False, "uni")]
+    assert os.environ["HIP_VISIBLE_DEVICES"] == "6"
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "6"
+    assert "ROCR_VISIBLE_DEVICES" not in os.environ
+
+
+def test_cuda_rollout_actor_keeps_cuda_visibility(monkeypatch) -> None:
+    class FakeActor:
+        def _setup_gpu_visibility(self, *_args, **_kwargs):
+            os.environ["HIP_VISIBLE_DEVICES"] = "2"
+
+    module = ModuleType("fake_vllm_utils")
+    module.LLMRayActor = FakeActor
+    module.torch = SimpleNamespace(version=SimpleNamespace(hip=None))
+    module.logger = SimpleNamespace(info=lambda *_args: None)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "5")
+    wrap_open_instruct_rocm_visibility(module)
+    FakeActor()._setup_gpu_visibility(False, "uni")
+
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "5"
+
+
 def test_nonzero_trainer_rank_joins_hierarchical_barrier() -> None:
     class FakePolicyActor:
+        def from_pretrained(self):
+            return "loaded"
+
         def setup_model_update_group(self, vllm_engines):
             raise AssertionError("native setup should not run")
 
@@ -207,6 +254,53 @@ def test_nonzero_trainer_rank_joins_hierarchical_barrier() -> None:
     assert actor.vllm_engines is not None
     assert actor.model_update_group is None
     assert barrier_calls == [True]
+
+
+def test_hierarchical_setup_patches_ray_decorated_worker_class() -> None:
+    class OriginalPolicyActor:
+        def from_pretrained(self):
+            return "loaded"
+
+        def setup_model_update_group(self, _vllm_engines):
+            raise AssertionError("native setup should not run")
+
+    class RayModifiedPolicyActor(OriginalPolicyActor):
+        __ray_actor_class__ = OriginalPolicyActor
+
+    decorated_actor = SimpleNamespace(
+        __ray_metadata__=SimpleNamespace(modified_class=RayModifiedPolicyActor)
+    )
+    barrier_calls: list[bool] = []
+    module = ModuleType("fake_decorated_grpo_fast")
+    module.PolicyTrainerRayProcess = decorated_actor
+    module.torch = SimpleNamespace(distributed=SimpleNamespace(barrier=lambda: barrier_calls.append(True)))
+
+    assert patch_open_instruct_grpo_module(module) is True
+    assert RayModifiedPolicyActor.setup_model_update_group._oellm_hierarchical_setup is True
+    assert not getattr(OriginalPolicyActor.setup_model_update_group, "_oellm_hierarchical_setup", False)
+
+    actor = RayModifiedPolicyActor()
+    actor.args = SimpleNamespace(single_gpu_mode=False)
+    actor.vllm_config = SimpleNamespace(vllm_tensor_parallel_size=1)
+    actor.rank = 1
+    actor.setup_model_update_group([object(), object()])
+    assert barrier_calls == [True]
+
+
+def test_trainer_actor_restores_streaming_config_global(monkeypatch) -> None:
+    class FakePolicyActor:
+        def from_pretrained(self):
+            return globals()["streaming_config"]
+
+    function_globals = FakePolicyActor.from_pretrained.__globals__
+    monkeypatch.delitem(function_globals, "streaming_config", raising=False)
+    assert wrap_open_instruct_streaming_config(FakePolicyActor) is True
+    assert wrap_open_instruct_streaming_config(FakePolicyActor) is False
+
+    actor = FakePolicyActor()
+    actor.streaming_config = object()
+    assert actor.from_pretrained() is actor.streaming_config
+    assert function_globals["streaming_config"] is actor.streaming_config
 
 
 def test_rank_zero_builds_one_trainer_relay_group_and_leaf_links() -> None:
@@ -232,6 +326,9 @@ def test_rank_zero_builds_one_trainer_relay_group_and_leaf_links() -> None:
             self.init_weight_transfer_engine = RemoteMethod(lambda request: init_requests.append(request.init_info))
 
     class FakePolicyActor:
+        def from_pretrained(self):
+            return "loaded"
+
         def setup_model_update_group(self, vllm_engines):
             raise AssertionError("native setup should not run")
 

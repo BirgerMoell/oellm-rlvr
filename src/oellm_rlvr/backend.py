@@ -176,6 +176,11 @@ def build_backend_argv(config: RunConfig) -> list[str]:
         if config.task.system_prompt_file:
             argv.extend(["--system_prompt_override_file", config.task.system_prompt_file])
     argv.extend(config.backend.extra_args)
+    if config.training.checkpoint_state_freq > 0 or config.training.checkpoint_state_directory:
+        checkpoint_state_directory = (
+            config.training.checkpoint_state_directory or f"{config.output.directory}_state"
+        )
+        argv.extend(["--checkpoint_state_dir", checkpoint_state_directory])
     return argv
 
 

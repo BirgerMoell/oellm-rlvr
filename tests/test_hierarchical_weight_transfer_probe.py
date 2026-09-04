@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "probe_hierarchical_weight_transfer.py"
+SBATCH = Path(__file__).parents[1] / "scripts" / "lumi_hierarchical_weight_transfer_probe.sbatch"
 SPEC = importlib.util.spec_from_file_location("probe_hierarchical_weight_transfer", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -33,3 +34,10 @@ def test_child_environment_isolates_each_role_gpu(monkeypatch) -> None:
     assert "ROCR_VISIBLE_DEVICES" not in env
     assert env["HIP_VISIBLE_DEVICES"] == "6"
     assert env["CUDA_VISIBLE_DEVICES"] == "6"
+
+
+def test_lumi_step_requests_all_gpus_for_each_node_orchestrator() -> None:
+    script = SBATCH.read_text()
+    launch = script.split("srun --label --nodes=2", 1)[1]
+    assert "--gpus-per-task=8 --gpu-bind=none" in launch
+    assert "--overlap" not in launch
