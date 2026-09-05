@@ -11,6 +11,7 @@ import yaml
 
 from .backend import build_backend_argv, shell_command
 from .backend_rollouts import inspect_backend_rollouts
+from .campaign import load_campaign, render_campaign_markdown
 from .config import load_config
 from .datasets import (
     make_math_calibration,
@@ -259,6 +260,24 @@ def command_inspect_rollouts(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_validate_campaign(args: argparse.Namespace) -> int:
+    _json(load_campaign(args.campaign).summary())
+    return 0
+
+
+def command_render_campaign(args: argparse.Namespace) -> int:
+    campaign = load_campaign(args.campaign)
+    rendered = render_campaign_markdown(campaign)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered)
+        print(output)
+    else:
+        print(rendered, end="")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oellm-rlvr")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -386,6 +405,15 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_rollouts = sub.add_parser("inspect-rollouts")
     inspect_rollouts.add_argument("--rollouts", required=True, help="backend rollouts_*.jsonl artifact")
     inspect_rollouts.set_defaults(handler=command_inspect_rollouts)
+
+    validate_campaign = sub.add_parser("validate-campaign", help="validate an end-to-end RL campaign DAG")
+    validate_campaign.add_argument("--campaign", required=True)
+    validate_campaign.set_defaults(handler=command_validate_campaign)
+
+    render_campaign = sub.add_parser("render-campaign", help="render an RL campaign schedule as Markdown")
+    render_campaign.add_argument("--campaign", required=True)
+    render_campaign.add_argument("--output")
+    render_campaign.set_defaults(handler=command_render_campaign)
     return parser
 
 

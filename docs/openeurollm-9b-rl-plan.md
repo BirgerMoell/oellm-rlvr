@@ -365,6 +365,10 @@ LUMI-visible GCDs separately; the table uses GCD-hours because that is what the 
 
 ## Immediate implementation order
 
+The executable version of this order, including repository pins, stage dependencies, compute ceilings, artifacts,
+and current readiness gaps, is the [LUMI full-stack RL dry run](lumi-full-stack-rl-dry-run.md) and
+[`campaigns/lumi-9b-end-to-end-dry-run.yaml`](../campaigns/lumi-9b-end-to-end-dry-run.yaml).
+
 1. archive the completed GSM8K qualification and run the full retention scorecard on parent and step 32;
 2. add multi-domain reward routing, per-domain advantage normalization, scheduled quotas, and curriculum state;
 3. build the SkyRL AMD Apptainer image and exercise Harbor's Singularity environment on LUMI;

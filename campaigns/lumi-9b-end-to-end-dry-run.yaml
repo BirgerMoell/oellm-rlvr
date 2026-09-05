@@ -1,0 +1,458 @@
+version: 1
+name: OpenEuroLLM 9B full-stack RL dry run
+objective: >-
+  Exercise every production RL boundary on LUMI with the current 9B SFT checkpoint: immutable input,
+  baseline evaluation, difficulty profiling, single-turn math and code updates, agentic rollout and reward,
+  full-weight synchronization, checkpoint/restart, a miniature multi-environment curriculum, SWE rollouts,
+  recovery, independent evaluation, and deterministic reward replay.
+starting_checkpoint: openeurollm/oellm-9b-256k-sft@08359ad61333263c067edaf290067fea5b103d34
+replacement_checkpoint: <frozen-upcoming-sft-or-dpo-checkpoint>
+hard_ceiling_gcd_hours: 750
+
+repositories:
+  - name: tmax-reproduction
+    url: https://github.com/OpenEuroLLM/tmax-reproduction
+    ref: 3f80d37042402b8363f39c9535723b0d4cb8de54
+    commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+    decision: primary
+    role: already-qualified single-turn learner and rollout backend
+  - name: skyrl
+    url: https://github.com/NovaSky-AI/SkyRL
+    ref: skyrl-v0.3.0
+    commit: f5bc3b78dfddfb352870d5d7430cd226e5785838
+    decision: primary
+    role: agentic trainer and rollout generator candidate
+  - name: harbor
+    url: https://github.com/harbor-framework/harbor
+    ref: v0.22.0
+    commit: 4407eb5227a2ff4f0d3f16b2eb48849382fdf276
+    decision: primary
+    role: agent harness, Singularity task environment, verifier, and ATIF trajectory format
+  - name: verl
+    url: https://github.com/verl-project/verl
+    ref: v0.9.0
+    commit: 483b8a009ba3a97563edee3a19887e4862b8094a
+    decision: fallback
+    role: bounded agentic trainer fallback if SkyRL misses the day-5 LUMI gate
+  - name: slime
+    url: https://github.com/THUDM/slime
+    ref: v0.3.2
+    commit: 3778dbf6d1a533ab478ecf5ddaa11449a47752b2
+    decision: watch
+    role: Megatron plus SGLang scale reference; upstream ROCm image currently supports MI300 and MI325 only
+  - name: rllm
+    url: https://github.com/rllm-org/rllm
+    ref: v0.3.0-pre
+    commit: 09567646bfeacfa022c64aa8f97135d7f1e3f824
+    decision: watch
+    role: useful general agent API layered over verl or Tinker, but not a separate LUMI backend
+  - name: openrlhf
+    url: https://github.com/OpenRLHF/OpenRLHF
+    ref: v0.11.0
+    commit: 3c3be6234e0cb353e76bb8019947db9dfe99fca7
+    decision: watch
+    role: mature Ray, DeepSpeed, and vLLM reference without a documented MI250X qualification
+  - name: nemo-gym
+    url: https://github.com/NVIDIA-NeMo/Gym
+    ref: v0.5.1
+    commit: 9008bb1fbe256450558121492ee70470eebe952f
+    decision: reference
+    role: source of environment designs, verifier contracts, and open RL datasets
+  - name: nemo-rl
+    url: https://github.com/NVIDIA-NeMo/RL
+    ref: v0.7.0
+    commit: 81aa43dda4765b0429cf31dab44441e4e4383911
+    decision: reference
+    role: source of Nemotron multi-environment curriculum and stability recipes
+  - name: areal
+    url: https://github.com/areal-project/AReaL
+    ref: v2.1.0
+    commit: ecc8b0e4dfb4e3965f67121a5c87866a07c390ae
+    decision: watch
+    role: strong asynchronous agentic design without a documented MI250X path
+  - name: prime-rl
+    url: https://github.com/PrimeIntellect-ai/prime-rl
+    ref: v0.9.0
+    commit: ab5de8fff44b2c4a5c85e24b6e6e3f7d57eee7b1
+    decision: watch
+    role: environment and asynchronous-training reference; upstream currently requires NVIDIA
+  - name: torchforge
+    url: https://github.com/meta-pytorch/torchforge
+    ref: main
+    commit: b32f06b6417a6d3e7ed50355036a1133e000d932
+    decision: reject
+    role: not a near-term dependency because upstream development is paused
+
+stages:
+  - id: checkpoint-freeze
+    title: Freeze and fingerprint the parent checkpoint
+    day: D0
+    lane: foundation
+    backend: oellm-rlvr
+    readiness: build_required
+    objective: Record model, tokenizer, chat-template, generation-config, and file hashes before any rollout.
+    implementation_tasks:
+      - Add a checkpoint-manifest command that hashes a local Hugging Face snapshot without following external symlinks.
+      - Store the Hub revision and resolved local snapshot in one signed JSON artifact.
+    artifacts:
+      - checkpoint-manifest.json
+      - checkpoint-files.sha256
+    gates:
+      - Every referenced file exists and every SHA-256 replays exactly.
+      - The tokenizer and chat-template revisions are explicit.
+    resources:
+      nodes: 0
+      expected_gcd_hours: 0
+      hard_ceiling_gcd_hours: 0
+
+  - id: cluster-preflight
+    title: Prove the exact LUMI software and network surface
+    day: D0
+    lane: foundation
+    backend: oellm-rlvr
+    readiness: ready
+    needs: [checkpoint-freeze]
+    objective: Load BF16 weights and verify gfx90a, RCCL, Ray, vLLM, Apptainer, and offline caches.
+    commands:
+      - python scripts/preflight_gpu.py --accelerator rocm --expected-gpus 8
+      - oellm-rlvr doctor --config configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml
+    artifacts:
+      - preflight.json
+      - package-lock.txt
+      - container-and-driver-digests.txt
+    gates:
+      - All eight GCDs are visible on each node.
+      - One BF16 prompt generates with the frozen tokenizer and no network access.
+      - Two Ray nodes join over hsn and an RCCL all-reduce succeeds.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 1
+      hard_ceiling_gcd_hours: 4
+
+  - id: parent-fast-eval
+    title: Establish the frozen parent scorecard
+    day: D0-D1
+    lane: evaluation
+    backend: oellm-eval
+    readiness: ready
+    needs: [cluster-preflight]
+    objective: Measure the untouched parent on clean capability, multilingual, form, safety, and long-context slices.
+    commands:
+      - oellm-eval schedule --models <local-parent> --task_groups <frozen-rl-fast-scorecard>
+    artifacts:
+      - parent-fast-scorecard.json
+      - parent-predictions/
+    gates:
+      - Every primary task emits row-level predictions and immutable task revisions.
+      - The same command reproduces aggregate scores from the stored predictions.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 12
+      hard_ceiling_gcd_hours: 32
+
+  - id: pass-rate-profile
+    title: Profile reward signal before training
+    day: D1
+    lane: foundation
+    backend: oellm-rlvr
+    readiness: build_required
+    needs: [cluster-preflight]
+    objective: Sample eight outputs per prompt across math, code, structured output, function calling, and agentic tasks.
+    commands:
+      - oellm-rlvr profile-tasks --catalog <rl-task-catalog.yaml> --samples-per-prompt 8 --output <profile-dir>
+    implementation_tasks:
+      - Implement the multi-domain task catalog and pass-rate profiler.
+      - Record verifier failures separately from model failures and write semantic-cluster IDs.
+      - Add per-domain and per-language pass-rate-bin reports.
+    artifacts:
+      - task-profile.parquet
+      - pass-rate-histograms.json
+      - verifier-error-report.json
+    gates:
+      - At least 60 percent of admitted training prompts have parent pass rate in [0.10, 0.90].
+      - Verifier and environment errors are below 2 percent.
+      - No primary evaluation prompt or semantic near-duplicate appears in the training catalog.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 20
+      hard_ceiling_gcd_hours: 48
+
+  - id: tmax-reasoning-canary
+    title: Repeat the qualified single-turn reasoning update
+    day: D1
+    lane: single_turn
+    backend: tmax-reproduction
+    readiness: ready
+    needs: [pass-rate-profile]
+    objective: Run 16 DPPO-TV updates on informative math groups and export a restartable checkpoint.
+    commands:
+      - oellm-rlvr render-slurm --config configs/lumi-dryrun-reasoning-oellm9b-16step.yaml --output <jobs>/reasoning.sbatch
+      - sbatch <jobs>/reasoning.sbatch
+    artifacts:
+      - reasoning-step-16/
+      - reasoning-rollouts/
+      - reasoning-state/
+    gates:
+      - At least 95 percent of updates have finite non-zero gradients.
+      - Every learner update is followed by a rollout attributed to the new policy within lag four.
+      - Mixed reward groups exceed 20 percent and reward replay is exact.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 6
+      hard_ceiling_gcd_hours: 24
+
+  - id: tmax-code-canary
+    title: Exercise executable code rewards
+    day: D1-D2
+    lane: single_turn
+    backend: tmax-reproduction
+    readiness: ready
+    needs: [pass-rate-profile]
+    objective: Run four updates with hidden tests, multi-turn bash use, and isolated Apptainer workspaces.
+    commands:
+      - oellm-rlvr render-slurm --config configs/lumi-dryrun-code-oellm9b-4step.yaml --output <jobs>/code.sbatch
+      - sbatch <jobs>/code.sbatch
+    artifacts:
+      - code-step-4/
+      - code-rollouts/
+      - code-verifier-replay.json
+    gates:
+      - Hidden tests never occur in prompts, seed files, or pre-submission observations.
+      - At least one task has both passing and failing completions.
+      - Environment errors are below 2 percent and verifier replay is exact.
+    resources:
+      nodes: 4
+      expected_gcd_hours: 20
+      hard_ceiling_gcd_hours: 48
+
+  - id: skyrl-amd-smoke
+    title: Qualify SkyRL FSDP plus vLLM on MI250X
+    day: D1-D2
+    lane: agentic
+    backend: skyrl
+    readiness: build_required
+    needs: [cluster-preflight]
+    objective: Reproduce the upstream AMD Tinker smoke in a LUMI Apptainer image and verify post-update sampling.
+    commands:
+      - sbatch <jobs>/skyrl-amd-smoke.sbatch
+    implementation_tasks:
+      - Convert the pinned SkyRL AMD Docker recipe to a reproducible Apptainer definition based on the LUMI ROCm image.
+      - Replace Docker device and network assumptions with Slurm-visible gfx90a devices and hsn Ray addresses.
+      - Freeze Python and native package versions without replacing LUMI's working PyTorch, vLLM, or RCCL stack.
+    artifacts:
+      - skyrl-amd-runtime.sif.sha256
+      - skyrl-tinker-smoke.json
+      - pre-update-and-post-update-samples.json
+    gates:
+      - Four optimizer steps and sampler weight reloads complete on one LUMI node.
+      - Post-update sampler weights match the learner version.
+      - No CUDA-only kernel or NCCL symbol is loaded.
+    resources:
+      nodes: 1
+      expected_gcd_hours: 4
+      hard_ceiling_gcd_hours: 16
+
+  - id: harbor-task-contract
+    title: Build and audit the agentic micro-task pack
+    day: D1-D2
+    lane: agentic
+    backend: harbor
+    readiness: build_required
+    needs: [checkpoint-freeze]
+    objective: Create 16 tiny deterministic tasks covering function calls, state, recovery, terminal use, and repo repair.
+    commands:
+      - harbor run -p tasks/dry-run --environment-type singularity --agent oracle
+      - harbor run -p tasks/dry-run --environment-type singularity --agent deliberate-failure
+    implementation_tasks:
+      - Convert task images to prebuilt SIF files because LUMI compute nodes are offline.
+      - Add four tasks each for exact function calls, stateful two-tool flows, terminal edits, and micro-repository repair.
+      - Add oracle, deliberate-failure, timeout, and reward-replay tests for every task.
+      - Export Harbor ATIF trajectories into the oellm-rlvr trajectory contract without exposing hidden tests.
+    artifacts:
+      - harbor-task-pack-v0/
+      - harbor-oracle-results.json
+      - harbor-failure-results.json
+      - task-and-sif-manifest.json
+    gates:
+      - Oracle pass rate is 100 percent and deliberate-failure pass rate is 0 percent.
+      - Repeated oracle runs produce identical rewards.
+      - Environment startup success is at least 98 percent across 100 launches.
+    resources:
+      nodes: 0
+      expected_gcd_hours: 0
+      hard_ceiling_gcd_hours: 0
+
+  - id: agentic-9b-one-step
+    title: Complete one real 9B SkyRL plus Harbor optimizer step
+    day: D2-D3
+    lane: agentic
+    backend: skyrl+harbor
+    readiness: build_required
+    needs: [skyrl-amd-smoke, harbor-task-contract]
+    objective: Prove token-accurate multi-turn rollouts, rewards, full-weight learning, weight sync, and post-update generation.
+    commands:
+      - sbatch <jobs>/skyrl-harbor-oellm9b-one-step.sbatch
+    implementation_tasks:
+      - Add a SkyRL backend adapter and resolved-config capture to oellm-rlvr.
+      - Wire Harbor's generator to prebuilt Singularity tasks on compute nodes with no external network.
+      - Validate the OELLM chat template, think tags, tool-call tokenization, loss masks, and returned token IDs.
+      - Add policy-version, environment-error, turn-count, and reward-component fields to stored trajectories.
+    artifacts:
+      - agentic-step-1/
+      - agentic-rollouts-0-and-1.atif.jsonl
+      - token-and-logprob-agreement.json
+      - agentic-state/
+    gates:
+      - One finite non-zero 9B optimizer step completes and changes a known parameter checksum.
+      - A post-update Harbor rollout is served from exactly that learner version.
+      - Token IDs and loss masks round-trip without retokenization drift.
+      - The stage exits below 80 GCD-hours.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 28
+      hard_ceiling_gcd_hours: 80
+
+  - id: agentic-mixed-16
+    title: Run a miniature multi-environment agentic curriculum
+    day: D3-D4
+    lane: agentic
+    backend: skyrl+harbor
+    readiness: build_required
+    needs: [agentic-9b-one-step, pass-rate-profile]
+    objective: Run 16 updates over function calling, stateful tools, structured output, and executable code with retention replay.
+    commands:
+      - sbatch <jobs>/skyrl-harbor-oellm9b-mixed-16.sbatch
+    implementation_tasks:
+      - Implement scheduled per-environment quotas and domain-relative advantage normalization.
+      - Preserve rejected zero-variance groups and cap active-resampling attempts.
+      - Persist sampler, optimizer, RNG, curriculum, and environment queue state.
+    artifacts:
+      - agentic-mixed-step-16/
+      - multi-environment-metrics.parquet
+      - agentic-mixed-state/
+    gates:
+      - Every environment receives its configured quota within 10 percent.
+      - At least 95 percent of updates have finite non-zero gradients.
+      - Policy lag is at most four and environment errors are below 2 percent.
+      - A fixed held-out agentic slice does not regress from step 8 to step 16.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 96
+      hard_ceiling_gcd_hours: 192
+
+  - id: swe-4-update
+    title: Exercise long-horizon software-engineering RL
+    day: D4-D5
+    lane: agentic
+    backend: skyrl+harbor
+    readiness: build_required
+    needs: [agentic-mixed-16]
+    objective: Run four updates on micro-repository repair tasks with 8-16 turns and deferred hidden tests.
+    commands:
+      - sbatch <jobs>/skyrl-harbor-oellm9b-swe-4.sbatch
+    implementation_tasks:
+      - Add immutable git bundles or repository snapshots to each task instead of network clones.
+      - Capture commands, observations, diffs, test logs, stop reasons, wall time, and resource use in ATIF.
+      - Separate model-caused timeouts from infrastructure failures in rewards and metrics.
+    artifacts:
+      - swe-step-4/
+      - swe-trajectories.atif.jsonl
+      - swe-reward-replay.json
+    gates:
+      - At least one completion reaches the hidden test runner and one reward group is mixed.
+      - Hidden tests remain absent from all model-visible context.
+      - Reward replay from frozen repo and SIF artifacts is exact.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 64
+      hard_ceiling_gcd_hours: 160
+
+  - id: restart-and-recovery
+    title: Prove preemption recovery and capability replay
+    day: D5
+    lane: recovery
+    backend: oellm-rlvr+skyrl
+    readiness: build_required
+    needs: [tmax-reasoning-canary, tmax-code-canary, agentic-mixed-16, swe-4-update]
+    objective: Resume after an intentional stop, then run 16 short retention updates across reasoning and instruction tasks.
+    commands:
+      - sbatch <jobs>/oellm9b-restart-and-recovery.sbatch
+    implementation_tasks:
+      - Add a deterministic interruption hook immediately after a saved optimizer state.
+      - Restore policy, optimizer, RNG, curriculum, queue, and policy-version counters.
+      - Implement the short recovery mixture without mixing incomparable raw reward scales.
+    artifacts:
+      - restart-equivalence.json
+      - recovery-step-16/
+      - recovery-retention-metrics.json
+    gates:
+      - The first post-resume batch and update match an uninterrupted control within documented tolerances.
+      - No target retention slice drops by more than one absolute point from the best prior mini-stage.
+      - Think-tag imbalance, repetition, and truncation do not rise by more than five points.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 8
+      hard_ceiling_gcd_hours: 32
+
+  - id: final-eval-and-replay
+    title: Run independent promotion evaluation and artifact replay
+    day: D5-D6
+    lane: evaluation
+    backend: oellm-eval+harbor
+    readiness: build_required
+    needs: [parent-fast-eval, restart-and-recovery]
+    objective: Compare parent and candidate on frozen suites, replay every sampled reward, and issue a go/no-go report.
+    commands:
+      - oellm-eval schedule --models <parent>,<dry-run-candidate> --task_groups <frozen-rl-fast-scorecard>
+      - oellm-rlvr replay-campaign --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml --artifacts <campaign-root>
+    implementation_tasks:
+      - Add a campaign artifact index and reward-replay command.
+      - Add paired parent/candidate statistics for every deterministic task slice.
+      - Generate a machine-readable promotion decision without optimizing on the evaluation results.
+    artifacts:
+      - paired-final-scorecard.json
+      - campaign-replay-report.json
+      - go-no-go.md
+    gates:
+      - All online rewards replay exactly or have a documented deterministic tolerance.
+      - General and multilingual average regression is at most one absolute point.
+      - Safety, prompt injection, direct-mode behavior, and 32K-256K retrieval do not regress beyond frozen limits.
+      - The report identifies the selected backend and exact remaining blockers for production.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 31
+      hard_ceiling_gcd_hours: 84
+
+  - id: verl-agentic-contingency
+    title: Time-boxed verl agentic fallback
+    day: D3-D4 only if SkyRL misses its gate
+    lane: contingency
+    backend: verl+harbor-adapter
+    readiness: contingency
+    required: false
+    needs: [cluster-preflight, harbor-task-contract]
+    objective: Attempt the same 9B one-step contract with verl without delaying the working TMAX path.
+    commands:
+      - sbatch <jobs>/verl-harbor-oellm9b-one-step.sbatch
+    implementation_tasks:
+      - Backport the pinned verl ROCm image to gfx90a and the LUMI host stack.
+      - Reuse the Harbor task pack and identical one-step gates.
+    artifacts:
+      - verl-agentic-step-1/
+      - verl-qualification-report.json
+    gates:
+      - The same token, gradient, weight-sync, restart, and reward-replay gates as agentic-9b-one-step pass.
+      - Stop after 96 GCD-hours; do not run two agentic backends in parallel beyond qualification.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 40
+      hard_ceiling_gcd_hours: 96
+
+campaign_gates:
+  - Every stage records immutable repository, container, model, tokenizer, dataset, task, and verifier identities.
+  - The dry run touches every production boundary but is selected on infrastructure correctness, not benchmark gain.
+  - All required stages finish within 720 GCD-hours and the campaign reservation never exceeds 750 GCD-hours.
+  - At least 95 percent of training updates have finite non-zero gradients and every post-update rollout has a policy version.
+  - Environment and verifier infrastructure failures remain below 2 percent and are excluded from policy reward.
+  - Checkpoint/restart is equivalent within documented numeric tolerances and all rewards are replayable.
+  - The next production checkpoint can replace the dry-run parent by changing one frozen checkpoint manifest.

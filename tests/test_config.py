@@ -18,6 +18,8 @@ ROOT = Path(__file__).parents[1]
         ("lumi-math-qwen35-2b-active-sampling.yaml", 0),
         ("lumi-math-oellm9b-256k-sft-active-2node.yaml", 7),
         ("lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml", 0),
+        ("lumi-dryrun-reasoning-oellm9b-16step.yaml", 0),
+        ("lumi-dryrun-code-oellm9b-4step.yaml", 0),
         ("lumi-code-qwen35-2b-signal-probe.yaml", 0),
         ("lumi-code-qwen35-2b-4node.yaml", 0),
         ("cuda-code-qwen35-2b-smoke.yaml", 0),

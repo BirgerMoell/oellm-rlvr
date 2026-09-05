@@ -12,6 +12,7 @@ The repository deliberately does not copy a trainer. It pins the OpenEuroLLM TMA
 - revision-pinned GSM8K preparation plus paired parent/candidate reasoning evaluation and blinded trace audit;
 - task packing, append-only trajectory schemas, and rollout health gates;
 - ROCm and CUDA profiles using one control plane.
+- machine-validated multi-stage campaign DAGs with repository pins, compute ceilings, artifacts, and gates.
 
 ## How online training works
 
@@ -43,6 +44,15 @@ python3 -m venv .venv
   --task examples/math_task.json \
   --completion examples/math_completion.txt
 pytest
+```
+
+Validate and render the proposed full-stack LUMI dry run:
+
+```bash
+.venv/bin/oellm-rlvr validate-campaign \
+  --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml
+.venv/bin/oellm-rlvr render-campaign \
+  --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml
 ```
 
 The standalone `CodeVerifier` defaults to Apptainer. Its local runner refuses to start without `--allow-unsafe-local`; local execution is only for trusted unit-test fixtures, never generated model code.
@@ -209,6 +219,8 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml` | Eight-engine hierarchical-transfer qualification of the OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-math-oellm9b-256k-sft-pilot-2node.yaml` | Ten-update, restartable 9B math RLVR pilot | 8 learner + 8 rollout GCDs |
 | `lumi-reasoning-gsm8k-oellm9b-32step.yaml` | Paired GSM8K reasoning-RL reference experiment (<96 GCD-hours) | 8 learner + 8 rollout GCDs |
+| `lumi-dryrun-reasoning-oellm9b-16step.yaml` | Full-stack campaign's bounded 9B reasoning canary | 8 learner + 8 rollout GCDs |
+| `lumi-dryrun-code-oellm9b-4step.yaml` | Full-stack campaign's executable-code canary | 8 learner + 8 rollout GCDs |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
@@ -225,6 +237,11 @@ all 32 updates had non-zero gradients, and training used 9.30 GCD-hours. Read th
 [qualification record](docs/qualification-gsm8k-reasoning-2026-09-05.md) for the immutable evidence and the
 [comprehensive OpenEuroLLM 9B RL plan](docs/openeurollm-9b-rl-plan.md) for the proposed single-turn,
 multilingual, code, and SkyRL + Harbor agentic programme.
+
+The next qualification is specified by the [full-stack LUMI RL dry-run runbook](docs/lumi-full-stack-rl-dry-run.md)
+and its [machine-readable campaign](campaigns/lumi-9b-end-to-end-dry-run.yaml). It evaluates current RL systems,
+pins SkyRL + Harbor as the primary agentic candidate and verl as the bounded fallback, and schedules a miniature
+of every production stage within a 750 GCD-hour required campaign reservation.
 
 The real OELLM 9B ladder qualification completed on LUMI as job `21540106`: 128 rollouts, mean reward
 `0.7578125`, 14/16 mixed reward groups, gradient norms `0.34` and `0.40`, and a complete final checkpoint.

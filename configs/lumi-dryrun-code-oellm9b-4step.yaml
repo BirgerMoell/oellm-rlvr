@@ -1,0 +1,114 @@
+version: 1
+name: rlvr-dryrun-code-oellm9b-4step
+platform:
+  accelerator: rocm
+  nodes: 2
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: standard-g
+  walltime: 03:00:00
+  cpus_per_task: 56
+  memory: 480G
+  binds:
+    - /pfs
+    - /scratch
+    - /flash
+    - /project
+    - /projappl
+    - /appl
+    - /opt/cray
+    - /var/spool/slurmd
+    - /usr/bin/srun:/usr/bin/srun
+    - /lib64:/hostlib64
+    - /usr/lib64:/hostusr/lib64
+    - /usr/lib64/slurm:/usr/lib64/slurm
+    - /usr/share/lua:/usr/share/lua
+    - /usr/lib64/lua:/usr/lib64/lua
+    - /etc/slurm:/etc/slurm
+    - /etc/passwd:/etc/passwd
+    - /etc/group:/etc/group
+    - /run/munge:/run/munge
+  network_interface: hsn
+backend:
+  repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
+  extra_args: [--save_filtered_rollouts]
+model:
+  name_or_path: openeurollm/oellm-9b-256k-sft
+  local_path: /scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft
+  max_prompt_tokens: 2048
+  response_tokens: 6144
+  per_turn_tokens: 1024
+  pack_length: 8192
+datasets:
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-dryrun-oellm9b-s6/train.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: code
+  max_steps: 6
+  pool_size: 32
+  system_prompt_file: ../prompts/code-agent-system.txt
+  sandbox:
+    backend: slurm_apptainer
+    image: /scratch/project_465002530/users/bmoell/sandboxes/python-3.12-slim
+    binary: /usr/bin/singularity
+    fakeroot: false
+    task_data_dir: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/code-dryrun-oellm9b-s6/task-data
+    test_timeout: 600
+    command_timeout: 30
+    last_step_warning: true
+    append_turns_remaining: true
+    tool_call_format_error_feedback: true
+    cache_dir: /scratch/project_465002530/users/bmoell/apptainer-cache
+    tmp_dir: /scratch/project_465002530/users/bmoell/apptainer-tmp
+rollout:
+  engines: 8
+  tensor_parallel_size: 1
+  weight_transfer: hierarchical
+  unique_prompts: 8
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [8]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 256
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dppo
+  save_freq: 4
+  checkpoint_state_freq: 2
+  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/dryrun-code-oellm9b-4step-state
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/dryrun-code-oellm9b-4step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/dryrun-code-oellm9b-4step
+  experiment_name: lumi_dryrun_code_oellm9b_4step
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.50
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_SWERL_APPTAINER_KWARGS: "1"
+  SWERL_SANDBOX_TIMING_LOGS: "1"
+  SWERL_RESET_FAILURE_ZERO_REWARD: "1"
+  NCCL_DEBUG: INFO
+  NCCL_DEBUG_SUBSYS: INIT,NET
