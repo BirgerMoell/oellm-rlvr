@@ -104,3 +104,13 @@ def test_compare_requires_identical_keys(tmp_path: Path) -> None:
     after = _write(tmp_path / "after.jsonl", [_record("b", 0, "\\boxed{1}", "1")])
     with pytest.raises(ValueError, match="identical"):
         compare_reasoning_evals(before, after)
+
+
+def test_compare_requires_identical_prompt_protocol(tmp_path: Path) -> None:
+    before_row = _record("a", 0, "\\boxed{1}", "1")
+    after_row = _record("a", 0, "\\boxed{1}", "1")
+    after_row["prompt"][0]["content"] = "A changed prompt"
+    before = _write(tmp_path / "before.jsonl", [before_row])
+    after = _write(tmp_path / "after.jsonl", [after_row])
+    with pytest.raises(ValueError, match="prompt protocols differ"):
+        compare_reasoning_evals(before, after)

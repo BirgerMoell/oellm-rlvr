@@ -385,6 +385,13 @@ def compare_reasoning_evals(
     keys = sorted(before)
     if not keys:
         raise ValueError("comparison inputs are empty")
+    for key in keys:
+        if before[key].get("prompt") != after[key].get("prompt"):
+            raise ValueError(f"baseline and candidate prompt protocols differ for {key}")
+        if before[key]["analysis"].get("expected_normalized") != after[key]["analysis"].get(
+            "expected_normalized"
+        ):
+            raise ValueError(f"baseline and candidate expected answers differ for {key}")
     transitions = Counter(
         (bool(before[key]["analysis"]["correct"]), bool(after[key]["analysis"]["correct"])) for key in keys
     )
