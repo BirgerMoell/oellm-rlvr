@@ -138,6 +138,8 @@ def prepare_gsm8k_dataset(
     *,
     revision: str,
     prompt_style: str = "concise",
+    calibration_count: int = 64,
+    calibration_seed: int = 20260905,
 ) -> dict[str, object]:
     """Create leak-resistant RL train and held-out evaluation artifacts.
 
@@ -149,6 +151,8 @@ def prepare_gsm8k_dataset(
         raise ValueError("revision must be a non-empty immutable dataset revision")
     if prompt_style not in GSM8K_PROMPTS:
         raise ValueError(f"unknown GSM8K prompt style {prompt_style!r}; choose from {sorted(GSM8K_PROMPTS)}")
+    if calibration_count < 0:
+        raise ValueError("calibration_count must be non-negative")
     prompt = GSM8K_PROMPTS[prompt_style]
     train_source = Path(train_source)
     test_source = Path(test_source)
@@ -169,10 +173,21 @@ def prepare_gsm8k_dataset(
     destination.mkdir(parents=True, exist_ok=True)
     train_path = destination / "train.parquet"
     test_path = destination / "test.parquet"
+    # Prompt and decoding calibration is itself a use of evaluation data. Keep
+    # the touched rows explicit and exclude them from the primary paired test.
+    # Leave at least one primary row for tiny fixtures.
+    selected_count = min(calibration_count, max(len(test_rows) - 1, 0))
+    selected_indexes = set(random.Random(calibration_seed).sample(range(len(test_rows)), selected_count))
+    calibration_rows = [row for index, row in enumerate(test_rows) if index in selected_indexes]
+    primary_rows = [row for index, row in enumerate(test_rows) if index not in selected_indexes]
+    calibration_path = destination / "test-calibration.parquet"
+    primary_path = destination / "test-primary.parquet"
     write_rows(train_rows, train_path)
     write_rows(test_rows, test_path)
+    write_rows(calibration_rows, calibration_path)
+    write_rows(primary_rows, primary_path)
     manifest: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "dataset": "openai/gsm8k",
         "revision": revision,
         "configuration": "main",
@@ -193,6 +208,23 @@ def prepare_gsm8k_dataset(
             "output": str(test_path),
             "output_sha256": _sha256(test_path),
             "contains_reference_reasoning": True,
+        },
+        "evaluation_protocol": {
+            "calibration_seed": calibration_seed,
+            "calibration": {
+                "rows": len(calibration_rows),
+                "output": str(calibration_path),
+                "output_sha256": _sha256(calibration_path),
+            },
+            "primary": {
+                "rows": len(primary_rows),
+                "output": str(primary_path),
+                "output_sha256": _sha256(primary_path),
+                "excludes_calibration_rows": True,
+            },
+            "calibration_primary_id_overlap": len(
+                {str(row["id"]) for row in calibration_rows} & {str(row["id"]) for row in primary_rows}
+            ),
         },
         "train_test_prompt_overlap": 0,
     }

@@ -18,7 +18,7 @@ module purge
 
 : "${MODEL:?Set MODEL to an immutable local Hugging Face checkpoint}"
 : "${TAG:?Set an immutable run label}"
-: "${DATASET:=/scratch/project_465002530/users/bmoell/oellm-rlvr/data/gsm8k-main-740312ad/test.parquet}"
+: "${DATASET:=/scratch/project_465002530/users/bmoell/oellm-rlvr/data/gsm8k-main-740312ad/test-primary.parquet}"
 : "${RESULTS_ROOT:=/scratch/project_465002530/users/bmoell/oellm-rlvr/evals}"
 : "${CONTROL_ROOT:=$SLURM_SUBMIT_DIR}"
 : "${TOKENIZER:=$MODEL}"

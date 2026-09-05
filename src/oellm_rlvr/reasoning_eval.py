@@ -111,6 +111,7 @@ def analyze_reasoning_completion(
         "format_pass": len(boxes) == 1 and _equivalent_numeric(boxes[0], expected),
         "reasoning_structure_present": len(prefix_tokens) >= 8,
         "reasoning_prefix_tokens": len(prefix_tokens),
+        "uses_think_tags": open_think > 0 or close_think > 0,
         "think_tags_balanced": open_think == close_think,
         "think_tag_pairs": min(open_think, close_think),
         "contains_gsm8k_reference_marker": "####" in text,
@@ -153,6 +154,7 @@ def summarize_reasoning_predictions(records: list[dict[str, Any]]) -> dict[str, 
         "reasoning_structure_rate": fmean(
             bool(record["analysis"]["reasoning_structure_present"]) for record in records
         ),
+        "think_tag_use_rate": fmean(bool(record["analysis"].get("uses_think_tags")) for record in records),
         "unbalanced_think_tag_rate": fmean(
             not bool(record["analysis"]["think_tags_balanced"]) for record in records
         ),
@@ -392,6 +394,7 @@ def compare_reasoning_evals(
         "boxed_answer_rate",
         "correct_boxed_format_rate",
         "reasoning_structure_rate",
+        "think_tag_use_rate",
         "unbalanced_think_tag_rate",
         "gsm8k_reference_marker_rate",
         "high_repetition_rate",

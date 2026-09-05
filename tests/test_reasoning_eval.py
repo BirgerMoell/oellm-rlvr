@@ -36,6 +36,8 @@ def test_reasoning_analysis_distinguishes_correctness_form_and_structure() -> No
     assert good["correct"] and good["format_pass"] and good["reasoning_structure_present"]
     assert short["correct"] and short["format_pass"] and not short["reasoning_structure_present"]
     assert not malformed["correct"]
+    assert not good["uses_think_tags"]
+    assert malformed["uses_think_tags"]
     assert not malformed["think_tags_balanced"]
     assert malformed["length_stopped"]
 
@@ -57,6 +59,7 @@ def test_reasoning_summary_reports_sample_and_prompt_metrics() -> None:
     assert summary["sample_accuracy"] == 0.5
     assert summary["pass_at_k"] == 1.0
     assert summary["samples_per_prompt"] == [2]
+    assert summary["think_tag_use_rate"] == 0.0
 
 
 def test_paired_comparison_and_blinded_audit(tmp_path: Path) -> None:

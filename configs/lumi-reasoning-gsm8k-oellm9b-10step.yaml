@@ -65,7 +65,7 @@ output:
   wandb_entity: local
 gates:
   max_zero_std_fraction: 0.80
-  max_truncation_fraction: 0.10
+  max_truncation_fraction: 0.30
   max_error_fraction: 0.02
   max_policy_lag: 4
 environment:

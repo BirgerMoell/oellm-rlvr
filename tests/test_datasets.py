@@ -82,6 +82,37 @@ def test_prepare_gsm8k_separates_train_from_reference_eval(tmp_path: Path) -> No
     assert manifest["train_test_prompt_overlap"] == 0
     assert manifest["prompt_style"] == "concise"
     assert manifest["train"]["rows"] == 1
+    assert manifest["evaluation_protocol"]["calibration"]["rows"] == 0
+    assert manifest["evaluation_protocol"]["primary"]["rows"] == 1
+
+
+def test_prepare_gsm8k_excludes_calibration_rows_from_primary_eval(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    train_source = tmp_path / "raw-train.parquet"
+    test_source = tmp_path / "raw-test.parquet"
+    pq.write_table(pa.Table.from_pylist([{"question": "Train question", "answer": "Work.\n#### 1"}]), train_source)
+    pq.write_table(
+        pa.Table.from_pylist(
+            [{"question": f"Test question {index}", "answer": f"Work.\n#### {index}"} for index in range(10)]
+        ),
+        test_source,
+    )
+    manifest = prepare_gsm8k_dataset(
+        train_source,
+        test_source,
+        tmp_path / "prepared",
+        revision="abc123",
+        calibration_count=3,
+        calibration_seed=7,
+    )
+    calibration = pq.read_table(tmp_path / "prepared/test-calibration.parquet").to_pylist()
+    primary = pq.read_table(tmp_path / "prepared/test-primary.parquet").to_pylist()
+    assert len(calibration) == 3
+    assert len(primary) == 7
+    assert {row["id"] for row in calibration}.isdisjoint({row["id"] for row in primary})
+    assert manifest["evaluation_protocol"]["calibration_primary_id_overlap"] == 0
 
 
 def test_prepare_gsm8k_supports_natural_prompt_for_calibration(tmp_path: Path) -> None:

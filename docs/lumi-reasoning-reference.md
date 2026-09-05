@@ -27,18 +27,39 @@ and pipeline signal, never as a new state-of-the-art or uncontaminated benchmark
   `740312add88f781978c0658806c59bc2815b9866`.
 - RL data: all 7,473 official train rows. No assistant answer or reference rationale is retained in the learner
   parquet.
-- Evaluation data: all 1,319 official test rows, used only by the evaluator.
+- Evaluation data: 64 seeded official test rows reserved for prompt/decoding calibration and the remaining
+  1,255 untouched rows for the primary paired comparison. Neither split enters training.
 - Prompt: the `concise` profile requests at most four short calculation lines, no `<think>` tags or repeated
   checking, and one final numeric `\boxed{...}` line. The rejected `natural` calibration remains available for
   reproducing the parent model's verbosity failure.
 - Optimizer: DPPO, LR `1e-6`, 10 updates of 64 accepted trajectories, eight samples per prompt, active sampling.
 - Compute: two LUMI-G nodes, eight learner GCDs and eight TP=1 vLLM rollout GCDs.
-- Primary comparison: full-test greedy decoding, native tokenizer chat template, maximum 512 new tokens.
+- Primary comparison: greedy decoding on the 1,255-row primary split, native tokenizer chat template, maximum
+  1,024 new tokens.
 - Qualitative comparison: 24 blinded paired traces stratified across improvement, regression, both-correct, and
   both-wrong transitions.
 
 Ten updates are a bounded signal experiment, not a converged RL recipe. If it passes, the next run should
 extend the same immutable protocol to 50–100 updates and add a clean held-out or newly authored task family.
+
+### Parent calibration result
+
+The fixed 64-row calibration split showed that simply increasing the generation budget does not cure the
+parent's looping behavior:
+
+| Prompt | Max tokens | Accuracy | Box present | Length stop | High repetition |
+|---|---:|---:|---:|---:|---:|
+| natural | 512 | 25.0% | 28.1% | 71.9% | 35.9% |
+| natural | 1,024 | 40.6% | 54.7% | 45.3% | 60.9% |
+| concise | 512 | 32.8% | 56.3% | 43.8% | 18.8% |
+| concise | 1,024 | 39.1% | 76.6% | 21.9% | 35.9% |
+| concise | 2,048 | 39.1% | 78.1% | 20.3% | 35.9% |
+
+Use concise/1,024: doubling to 2,048 produced no accuracy gain and only a 1.6-point length-stop reduction.
+All 64 concise/2,048 outputs used `<think>` tags despite the instruction, so tag use is reported rather than
+silently treated as compliance. The parent's 21.9% concise/1,024 length-stop rate is an observed starting
+condition. The training-rollout gate is therefore 30%; the paired candidate must not increase the primary
+length-stop or repetition rates by more than five points.
 
 ## 1. Prepare the pinned data
 
@@ -63,8 +84,10 @@ singularity exec -B /pfs,/scratch,/flash,/project,/projappl,/appl \
 ```
 
 `manifest.json` records both source and generated SHA-256 values, row counts, the prompt protocol, and the
-zero-overlap check. Do not use `test.parquet` in an RL config. The test file contains reference rationales for
-offline audit; the training file intentionally does not.
+zero-overlap checks. `test-calibration.parquet` contains the 64 rows allowed for protocol tuning;
+`test-primary.parquet` contains the other 1,255 rows and is the only primary comparison artifact. Do not use
+any test parquet in an RL config. Test files contain reference rationales for offline audit; the training file
+intentionally does not.
 
 ## 2. Run a bounded evaluator smoke
 
@@ -73,7 +96,8 @@ template, vLLM build, answer extraction, and result writer work together:
 
 ```bash
 MODEL=/scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft
-sbatch --export=ALL,MODEL="$MODEL",TOKENIZER="$MODEL",TAG=gsm8k-parent-smoke-n64,LIMIT=64,MAX_NEW_TOKENS=512,MAX_MODEL_LEN=1536 \
+CALIBRATION=/scratch/project_465002530/users/bmoell/oellm-rlvr/data/gsm8k-main-740312ad/test-calibration.parquet
+sbatch --export=ALL,MODEL="$MODEL",TOKENIZER="$MODEL",DATASET="$CALIBRATION",TAG=gsm8k-parent-calibration \
   scripts/lumi_reasoning_eval.sbatch
 ```
 
@@ -82,10 +106,11 @@ error, and a low length-stop/high-repetition rate before continuing.
 
 ## 3. Run the paired parent baseline
 
-Omit `LIMIT` for the full official test split. Keep this exact command's decoding fields for the candidate:
+Use the untouched primary artifact. Keep this exact command's decoding fields for the candidate:
 
 ```bash
-sbatch --export=ALL,MODEL="$MODEL",TOKENIZER="$MODEL",TAG=gsm8k-parent-full,MAX_NEW_TOKENS=512,MAX_MODEL_LEN=1536 \
+PRIMARY=/scratch/project_465002530/users/bmoell/oellm-rlvr/data/gsm8k-main-740312ad/test-primary.parquet
+sbatch --export=ALL,MODEL="$MODEL",TOKENIZER="$MODEL",DATASET="$PRIMARY",TAG=gsm8k-parent-primary,MAX_NEW_TOKENS=1024,MAX_MODEL_LEN=3072 \
   scripts/lumi_reasoning_eval.sbatch
 ```
 
@@ -116,7 +141,7 @@ output directory:
 CANDIDATE=$(find /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/reasoning-gsm8k-oellm9b-10step \
   -type f -name .checkpoint_complete -printf '%h\n' | sort | tail -1)
 test -r "$CANDIDATE/model.safetensors"
-sbatch --export=ALL,MODEL="$CANDIDATE",TOKENIZER="$CANDIDATE",TAG=gsm8k-candidate-full,MAX_NEW_TOKENS=512,MAX_MODEL_LEN=1536 \
+sbatch --export=ALL,MODEL="$CANDIDATE",TOKENIZER="$CANDIDATE",DATASET="$PRIMARY",TAG=gsm8k-candidate-primary,MAX_NEW_TOKENS=1024,MAX_MODEL_LEN=3072 \
   scripts/lumi_reasoning_eval.sbatch
 ```
 
@@ -125,18 +150,18 @@ Then compare exact paired samples and create the blinded reasoning audit:
 ```bash
 ROOT=/scratch/project_465002530/users/bmoell/oellm-rlvr
 oellm-rlvr compare-reasoning \
-  --baseline "$ROOT/evals/gsm8k-parent-full/predictions.jsonl" \
-  --candidate "$ROOT/evals/gsm8k-candidate-full/predictions.jsonl" \
+  --baseline "$ROOT/evals/gsm8k-parent-primary/predictions.jsonl" \
+  --candidate "$ROOT/evals/gsm8k-candidate-primary/predictions.jsonl" \
   --output "$ROOT/evals/gsm8k-comparison.json"
 oellm-rlvr make-reasoning-audit \
-  --baseline "$ROOT/evals/gsm8k-parent-full/predictions.jsonl" \
-  --candidate "$ROOT/evals/gsm8k-candidate-full/predictions.jsonl" \
+  --baseline "$ROOT/evals/gsm8k-parent-primary/predictions.jsonl" \
+  --candidate "$ROOT/evals/gsm8k-candidate-primary/predictions.jsonl" \
   --output "$ROOT/evals/gsm8k-reasoning-audit.md" --count 24
 ```
 
 The automatic report contains accuracy, pass@k/majority metrics, paired wrong→right and right→wrong counts,
-a paired-bootstrap 95% interval, exact McNemar test, boxed-answer form, structural-reasoning presence, unbalanced
-`<think>` tags, reference-marker leakage, repetition, length stops, and response length. Structural flags do not
+a paired-bootstrap 95% interval, exact McNemar test, boxed-answer form, structural-reasoning presence, any and
+unbalanced `<think>` tags, reference-marker leakage, repetition, length stops, and response length. Structural flags do not
 establish that reasoning is logically sound. Rate the blinded audit before opening its `.key.json` mapping.
 
 ## Decision table
@@ -144,7 +169,7 @@ establish that reasoning is logically sound. Rate the blinded audit before openi
 | Outcome | Requirement | Decision |
 |---|---|---|
 | Infrastructure pass | 10 finite optimizer steps; at least 8 nonzero gradients; all weight syncs complete; policy lag ≤4; final model and restart state readable | The LUMI reasoning pipeline works |
-| Reward-signal pass | Mixed rewards in accepted groups; zero-std ≤80%; truncation ≤10%; verifier/system errors ≤2% | The data/verifier produces trainable signal |
+| Reward-signal pass | Mixed rewards in accepted groups; zero-std ≤80%; training-rollout truncation ≤30%; verifier/system errors ≤2% | The data/verifier produces trainable signal |
 | Strong model signal | Accuracy delta >0 and paired-bootstrap lower bound >0 | Extend to 50–100 updates |
 | Weak but safe signal | Point estimate ≥0, interval crosses 0, and no form/reasoning regression | Repeat with more updates or a higher-powered clean holdout |
 | No-go | Significant accuracy loss, >5-point form/structure loss, >5-point rise in repetition/length stops, or blinded logic/clarity regression | Stop; inspect reward/prompt/KL and do not scale |
