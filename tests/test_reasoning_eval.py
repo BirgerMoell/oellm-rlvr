@@ -32,6 +32,7 @@ def test_reasoning_analysis_distinguishes_correctness_form_and_structure() -> No
     )
     short = analyze_reasoning_completion("\\boxed{19}", "19")
     malformed = analyze_reasoning_completion("<think>First calculate 12 + 7. Answer: 18", "19", finish_reason="length")
+    channeled = analyze_reasoning_completion("<think>We calculate 12 + 7 = 19.</think>\n\\boxed{19}", "19")
 
     assert good["correct"] and good["format_pass"] and good["reasoning_structure_present"]
     assert short["correct"] and short["format_pass"] and not short["reasoning_structure_present"]
@@ -40,6 +41,8 @@ def test_reasoning_analysis_distinguishes_correctness_form_and_structure() -> No
     assert malformed["uses_think_tags"]
     assert not malformed["think_tags_balanced"]
     assert malformed["length_stopped"]
+    assert channeled["reasoning_channel_format_pass"]
+    assert not good["reasoning_channel_format_pass"]
 
 
 def test_reasoning_analysis_accepts_gsm8k_thousands_separators() -> None:

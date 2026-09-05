@@ -329,7 +329,7 @@ def build_parser() -> argparse.ArgumentParser:
     gsm8k.add_argument("--test-source", required=True, help="same revision's main/test parquet")
     gsm8k.add_argument("--output-dir", required=True)
     gsm8k.add_argument("--revision", required=True, help="immutable Hugging Face dataset commit")
-    gsm8k.add_argument("--prompt-style", choices=("concise", "natural"), default="concise")
+    gsm8k.add_argument("--prompt-style", choices=("reasoning", "concise", "natural"), default="reasoning")
     gsm8k.add_argument("--calibration-count", type=int, default=64)
     gsm8k.add_argument("--calibration-seed", type=int, default=20260905)
     gsm8k.set_defaults(handler=command_prepare_gsm8k)

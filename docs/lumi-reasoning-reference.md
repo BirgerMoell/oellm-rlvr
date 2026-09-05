@@ -29,9 +29,9 @@ and pipeline signal, never as a new state-of-the-art or uncontaminated benchmark
   parquet.
 - Evaluation data: 64 seeded official test rows reserved for prompt/decoding calibration and the remaining
   1,255 untouched rows for the primary paired comparison. Neither split enters training.
-- Prompt: the `concise` profile requests at most four short calculation lines, no `<think>` tags or repeated
-  checking, and one final numeric `\boxed{...}` line. The rejected `natural` calibration remains available for
-  reproducing the parent model's verbosity failure.
+- Prompt: the `reasoning` profile requests exactly one balanced `<think>...</think>` block containing at most
+  four short calculation lines, no repeated checking, and one final numeric `\boxed{...}` line after the block.
+  The rejected `natural` and tag-suppressing `concise` profiles remain available for calibration reproduction.
 - Optimizer: DPPO, LR `1e-6`, 10 updates of 64 accepted trajectories, eight samples per prompt, active sampling.
 - Compute: two LUMI-G nodes, eight learner GCDs and eight TP=1 vLLM rollout GCDs.
 - Primary comparison: greedy decoding on the 1,255-row primary split, native tokenizer chat template, maximum
@@ -47,19 +47,18 @@ extend the same immutable protocol to 50–100 updates and add a clean held-out 
 The fixed 64-row calibration split showed that simply increasing the generation budget does not cure the
 parent's looping behavior:
 
-| Prompt | Max tokens | Accuracy | Box present | Length stop | High repetition |
+| Rejected prompt | Max tokens | Accuracy | Box present | Length stop | High repetition |
 |---|---:|---:|---:|---:|---:|
 | natural | 512 | 25.0% | 28.1% | 71.9% | 35.9% |
 | natural | 1,024 | 40.6% | 54.7% | 45.3% | 60.9% |
-| concise | 512 | 32.8% | 56.3% | 43.8% | 18.8% |
-| concise | 1,024 | 39.1% | 76.6% | 21.9% | 35.9% |
-| concise | 2,048 | 39.1% | 78.1% | 20.3% | 35.9% |
+| no-think concise | 512 | 32.8% | 56.3% | 43.8% | 18.8% |
+| no-think concise | 1,024 | 39.1% | 76.6% | 21.9% | 35.9% |
+| no-think concise | 2,048 | 39.1% | 78.1% | 20.3% | 35.9% |
 
-Use concise/1,024: doubling to 2,048 produced no accuracy gain and only a 1.6-point length-stop reduction.
-All 64 concise/2,048 outputs used `<think>` tags despite the instruction, so tag use is reported rather than
-silently treated as compliance. The parent's 21.9% concise/1,024 length-stop rate is an observed starting
-condition. The training-rollout gate is therefore 30%; the paired candidate must not increase the primary
-length-stop or repetition rates by more than five points.
+These runs rejected suppressing the model's learned reasoning channel: all 64 no-think/2,048 outputs used
+`<think>` tags anyway, and doubling the budget produced no accuracy gain. The locked protocol instead asks for
+one short, closed reasoning block and measures strict channel conformance. The training-rollout truncation gate
+is 30%; the paired candidate must not increase primary length-stop or repetition rates by more than five points.
 
 ## 1. Prepare the pinned data
 
@@ -80,7 +79,7 @@ singularity exec -B /pfs,/scratch,/flash,/project,/projappl,/appl \
   /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python -m oellm_rlvr.cli prepare-gsm8k \
   --train-source "$ROOT/data/sources/gsm8k-$REV/train.parquet" \
   --test-source "$ROOT/data/sources/gsm8k-$REV/test.parquet" \
-  --output-dir "$ROOT/data/gsm8k-main-740312ad" --revision "$REV" --prompt-style concise
+  --output-dir "$ROOT/data/gsm8k-main-740312ad" --revision "$REV" --prompt-style reasoning
 ```
 
 `manifest.json` records both source and generated SHA-256 values, row counts, the prompt protocol, and the
@@ -160,9 +159,10 @@ oellm-rlvr make-reasoning-audit \
 ```
 
 The automatic report contains accuracy, pass@k/majority metrics, paired wrong→right and right→wrong counts,
-a paired-bootstrap 95% interval, exact McNemar test, boxed-answer form, structural-reasoning presence, any and
-unbalanced `<think>` tags, reference-marker leakage, repetition, length stops, and response length. Structural flags do not
-establish that reasoning is logically sound. Rate the blinded audit before opening its `.key.json` mapping.
+a paired-bootstrap 95% interval, exact McNemar test, boxed-answer form, structural-reasoning presence, tag use,
+strict one-block reasoning-channel format, unbalanced `<think>` tags, reference-marker leakage, repetition,
+length stops, and response length. Structural flags do not establish that reasoning is logically sound. Rate the
+blinded audit before opening its `.key.json` mapping.
 
 ## Decision table
 

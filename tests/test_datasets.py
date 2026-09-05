@@ -68,19 +68,13 @@ def test_prepare_gsm8k_separates_train_from_reference_eval(tmp_path: Path) -> No
 
     assert train["ground_truth"] == "5"
     assert train["dataset"] == "math"
-    assert train["messages"] == [
-        {
-            "role": "user",
-            "content": "Solve the following grade-school math problem with a concise, verifiable derivation. Use at "
-            "most four short calculation lines. Do not repeat or second-guess the calculation, and do not use "
-            "<think> tags. End with exactly one final line of the form \\boxed{number}.\n\nSam has 2 apples and "
-            "buys 3. How many?",
-        }
-    ]
+    assert train["messages"][0]["role"] == "user"
+    assert "inside exactly one <think>...</think> block" in train["messages"][0]["content"]
+    assert train["messages"][0]["content"].endswith("Sam has 2 apples and buys 3. How many?")
     assert "reference_answer" not in train
     assert test["reference_answer"].endswith("#### 7")
     assert manifest["train_test_prompt_overlap"] == 0
-    assert manifest["prompt_style"] == "concise"
+    assert manifest["prompt_style"] == "reasoning"
     assert manifest["train"]["rows"] == 1
     assert manifest["evaluation_protocol"]["calibration"]["rows"] == 0
     assert manifest["evaluation_protocol"]["primary"]["rows"] == 1

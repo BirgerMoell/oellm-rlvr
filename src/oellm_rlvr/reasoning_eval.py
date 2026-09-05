@@ -98,6 +98,15 @@ def analyze_reasoning_completion(
     repeated_fraction = _fraction_repeated_ngrams(text)
     open_think = len(re.findall(r"<think>", text, flags=re.IGNORECASE))
     close_think = len(re.findall(r"</think>", text, flags=re.IGNORECASE))
+    lower_text = text.casefold()
+    open_think_position = lower_text.find("<think>")
+    close_think_position = lower_text.find("</think>")
+    reasoning_channel_format_pass = (
+        open_think == 1
+        and close_think == 1
+        and open_think_position < close_think_position < last_box_position
+        and len(boxes) == 1
+    )
     expected_normalized = _normalized_numeric(expected)
     extracted_normalized = _normalized_numeric(extracted)
     return {
@@ -114,6 +123,7 @@ def analyze_reasoning_completion(
         "uses_think_tags": open_think > 0 or close_think > 0,
         "think_tags_balanced": open_think == close_think,
         "think_tag_pairs": min(open_think, close_think),
+        "reasoning_channel_format_pass": reasoning_channel_format_pass,
         "contains_gsm8k_reference_marker": "####" in text,
         "repeated_4gram_fraction": round(repeated_fraction, 6),
         "high_repetition": repeated_fraction > 0.20,
@@ -155,6 +165,9 @@ def summarize_reasoning_predictions(records: list[dict[str, Any]]) -> dict[str, 
             bool(record["analysis"]["reasoning_structure_present"]) for record in records
         ),
         "think_tag_use_rate": fmean(bool(record["analysis"].get("uses_think_tags")) for record in records),
+        "reasoning_channel_format_rate": fmean(
+            bool(record["analysis"].get("reasoning_channel_format_pass")) for record in records
+        ),
         "unbalanced_think_tag_rate": fmean(
             not bool(record["analysis"]["think_tags_balanced"]) for record in records
         ),
@@ -395,6 +408,7 @@ def compare_reasoning_evals(
         "correct_boxed_format_rate",
         "reasoning_structure_rate",
         "think_tag_use_rate",
+        "reasoning_channel_format_rate",
         "unbalanced_think_tag_rate",
         "gsm8k_reference_marker_rate",
         "high_repetition_rate",

@@ -57,6 +57,12 @@ def write_rows(rows: list[dict[str, object]], path: str | Path) -> None:
 
 
 GSM8K_PROMPTS = {
+    "reasoning": (
+        "Solve the following grade-school math problem. Put a concise, verifiable derivation of at most four "
+        "short calculation lines inside exactly one <think>...</think> block. Do not repeat or second-guess the "
+        "calculation. After </think>, output exactly one final line of the form \\boxed{number}, with no other "
+        "text.\n\n{question}"
+    ),
     "concise": (
         "Solve the following grade-school math problem with a concise, verifiable derivation. Use at most four "
         "short calculation lines. Do not repeat or second-guess the calculation, and do not use <think> tags. "
@@ -137,7 +143,7 @@ def prepare_gsm8k_dataset(
     output_dir: str | Path,
     *,
     revision: str,
-    prompt_style: str = "concise",
+    prompt_style: str = "reasoning",
     calibration_count: int = 64,
     calibration_seed: int = 20260905,
 ) -> dict[str, object]:
