@@ -171,10 +171,12 @@ SkyRL no-go decision. More compute will not compensate for a failed token, weigh
 
 ## What must be implemented first
 
-The campaign validator currently marks four stages ready and nine required stages as `build_required`. The
-critical path is:
+The campaign validator currently marks two training stages ready and eleven required stages as `build_required`.
+The preflight and evaluation components exist, but they need standalone campaign wrappers before they count as
+runnable stages. The critical path is:
 
-1. add checkpoint fingerprinting and a multi-domain task catalogue/profiler;
+1. add checkpoint fingerprinting, freeze the fast evaluation scorecard, and add a multi-domain task
+   catalogue/profiler;
 2. build the pinned SkyRL AMD Apptainer image and the Harbor SIF task pack in parallel;
 3. add the SkyRL backend adapter and Harbor-to-ATIF/control-plane trajectory bridge;
 4. pass the synchronous 9B agentic one-step gate;

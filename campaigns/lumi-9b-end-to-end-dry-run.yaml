@@ -110,12 +110,15 @@ stages:
     day: D0
     lane: foundation
     backend: oellm-rlvr
-    readiness: ready
+    readiness: build_required
     needs: [checkpoint-freeze]
     objective: Load BF16 weights and verify gfx90a, RCCL, Ray, vLLM, Apptainer, and offline caches.
     commands:
-      - python scripts/preflight_gpu.py --accelerator rocm --expected-gpus 8
       - oellm-rlvr doctor --config configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml
+      - sbatch scripts/lumi_hierarchical_weight_transfer_probe.sbatch
+    implementation_tasks:
+      - Add a standalone two-node Slurm preflight that runs the GPU/import check on every node and verifies both Ray nodes and 16 GCDs before exiting.
+      - Add an offline BF16 model-load and one-prompt generation check against the frozen local snapshot.
     artifacts:
       - preflight.json
       - package-lock.txt
@@ -134,11 +137,14 @@ stages:
     day: D0-D1
     lane: evaluation
     backend: oellm-eval
-    readiness: ready
+    readiness: build_required
     needs: [cluster-preflight]
     objective: Measure the untouched parent on clean capability, multilingual, form, safety, and long-context slices.
     commands:
       - oellm-eval schedule --models <local-parent> --task_groups <frozen-rl-fast-scorecard>
+    implementation_tasks:
+      - Freeze an inexpensive RL fast scorecard in oellm-eval with row-level outputs and immutable task revisions.
+      - Add direct-mode, reasoning-form, safety, and 32K-256K retention slices that can be repeated after every mini-stage.
     artifacts:
       - parent-fast-scorecard.json
       - parent-predictions/

@@ -15,11 +15,13 @@ def test_lumi_campaign_validates_and_stays_inside_budget() -> None:
 
     assert summary["valid"] is True
     assert summary["stage_count"] == 14
+    assert summary["ready_stage_count"] == 2
     assert summary["required_expected_gcd_hours"] == 290
     assert summary["required_hard_ceiling_gcd_hours"] == 720
     assert summary["campaign_hard_ceiling_gcd_hours"] == 750
     assert summary["contingency_hard_ceiling_gcd_hours"] == 96
     assert "agentic-9b-one-step" in summary["build_required"]
+    assert len(summary["build_required"]) == 11
 
 
 def test_campaign_markdown_exposes_schedule_and_gaps() -> None:
