@@ -220,6 +220,12 @@ official-test boundary, a resumable LUMI vLLM evaluator, paired confidence stati
 metrics, and a blinded A/B reasoning audit. GSM8K results for the current SFT checkpoint are diagnostic because
 its earlier training mixture contains a GSM8K-derived component.
 
+The 32-update reference has now completed: exact accuracy moved from 40.80% to 44.46% on 1,255 paired prompts,
+all 32 updates had non-zero gradients, and training used 9.30 GCD-hours. Read the
+[qualification record](docs/qualification-gsm8k-reasoning-2026-09-05.md) for the immutable evidence and the
+[comprehensive OpenEuroLLM 9B RL plan](docs/openeurollm-9b-rl-plan.md) for the proposed single-turn,
+multilingual, code, and SkyRL + Harbor agentic programme.
+
 The real OELLM 9B ladder qualification completed on LUMI as job `21540106`: 128 rollouts, mean reward
 `0.7578125`, 14/16 mixed reward groups, gradient norms `0.34` and `0.40`, and a complete final checkpoint.
 The revision-pinned difficulty-5 sample was uniformly reward-zero for this checkpoint, so use the bounded

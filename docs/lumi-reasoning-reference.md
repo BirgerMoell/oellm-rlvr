@@ -51,10 +51,11 @@ repo ID `birgermoell/oellm-9b-256k-sft`, revision
 do not resolve a moving Hub branch from compute nodes.
 
 The training allocation is 2 LUMI-G nodes / 16 MI250X GCDs for at most 6 hours: a hard cap of 12 node-hours or
-96 GCD-hours. Eight GCDs host the learner and eight host TP=1 rollout engines. Linear extrapolation from the
-successful two-update qualification (3.964 GCD-hours) predicts about 64 GCD-hours for 32 updates. Each
-64-sample calibration takes about 0.05 GCD-hours; each 1,255-row greedy evaluation is expected to take
-0.2–0.4 GCD-hours and has a 2 GCD-hour hard cap.
+96 GCD-hours. Eight GCDs host the learner and eight host TP=1 rollout engines. The completed 32-update job used
+34m53s, or 9.30 GCD-hours; the earlier extrapolation from a two-update startup-heavy qualification was much too
+conservative. Each corrected 64-sample calibration used about 0.05 GCD-hours and each 1,255-row greedy
+evaluation used about 0.21 GCD-hours. See
+[the completed qualification record](qualification-gsm8k-reasoning-2026-09-05.md).
 
 ### Parent calibration result
 
