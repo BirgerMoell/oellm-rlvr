@@ -56,10 +56,17 @@ def write_rows(rows: list[dict[str, object]], path: str | Path) -> None:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-GSM8K_PROMPT = (
-    "Solve the following grade-school math problem. Show your reasoning clearly, then put only the final "
-    "numeric answer in \\boxed{...}.\n\n{question}"
-)
+GSM8K_PROMPTS = {
+    "concise": (
+        "Solve the following grade-school math problem with a concise, verifiable derivation. Use at most four "
+        "short calculation lines. Do not repeat or second-guess the calculation, and do not use <think> tags. "
+        "End with exactly one final line of the form \\boxed{number}.\n\n{question}"
+    ),
+    "natural": (
+        "Solve the following grade-school math problem. Show your reasoning clearly, then put only the final "
+        "numeric answer in \\boxed{...}.\n\n{question}"
+    ),
+}
 
 
 def _sha256(path: str | Path) -> str:
@@ -93,6 +100,7 @@ def _gsm8k_rows(
     split: str,
     revision: str,
     include_reference: bool,
+    prompt: str,
 ) -> list[dict[str, object]]:
     converted: list[dict[str, object]] = []
     for index, row in enumerate(rows):
@@ -103,7 +111,7 @@ def _gsm8k_rows(
         task_id = f"openai-gsm8k-{split}-{index:05d}"
         converted_row: dict[str, object] = {
             "id": task_id,
-            "messages": [{"role": "user", "content": GSM8K_PROMPT.replace("{question}", question.strip())}],
+            "messages": [{"role": "user", "content": prompt.replace("{question}", question.strip())}],
             "ground_truth": _gsm8k_ground_truth(answer, split=split, index=index),
             # The pinned Open-Instruct/TMAX backend dispatches its symbolic
             # math verifier from this exact value.
@@ -129,6 +137,7 @@ def prepare_gsm8k_dataset(
     output_dir: str | Path,
     *,
     revision: str,
+    prompt_style: str = "concise",
 ) -> dict[str, object]:
     """Create leak-resistant RL train and held-out evaluation artifacts.
 
@@ -138,12 +147,17 @@ def prepare_gsm8k_dataset(
     """
     if not revision.strip():
         raise ValueError("revision must be a non-empty immutable dataset revision")
+    if prompt_style not in GSM8K_PROMPTS:
+        raise ValueError(f"unknown GSM8K prompt style {prompt_style!r}; choose from {sorted(GSM8K_PROMPTS)}")
+    prompt = GSM8K_PROMPTS[prompt_style]
     train_source = Path(train_source)
     test_source = Path(test_source)
     train_raw = _read_parquet_rows(train_source)
     test_raw = _read_parquet_rows(test_source)
-    train_rows = _gsm8k_rows(train_raw, split="train", revision=revision, include_reference=False)
-    test_rows = _gsm8k_rows(test_raw, split="test", revision=revision, include_reference=True)
+    train_rows = _gsm8k_rows(
+        train_raw, split="train", revision=revision, include_reference=False, prompt=prompt
+    )
+    test_rows = _gsm8k_rows(test_raw, split="test", revision=revision, include_reference=True, prompt=prompt)
 
     train_questions = {str(row["messages"][0]["content"]) for row in train_rows}  # type: ignore[index]
     test_questions = {str(row["messages"][0]["content"]) for row in test_rows}  # type: ignore[index]
@@ -162,7 +176,8 @@ def prepare_gsm8k_dataset(
         "dataset": "openai/gsm8k",
         "revision": revision,
         "configuration": "main",
-        "prompt_protocol": GSM8K_PROMPT,
+        "prompt_style": prompt_style,
+        "prompt_protocol": prompt,
         "train": {
             "rows": len(train_rows),
             "source": str(train_source),

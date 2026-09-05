@@ -28,7 +28,9 @@ and pipeline signal, never as a new state-of-the-art or uncontaminated benchmark
 - RL data: all 7,473 official train rows. No assistant answer or reference rationale is retained in the learner
   parquet.
 - Evaluation data: all 1,319 official test rows, used only by the evaluator.
-- Prompt: one user turn requesting clear reasoning and one final numeric `\boxed{...}` answer.
+- Prompt: the `concise` profile requests at most four short calculation lines, no `<think>` tags or repeated
+  checking, and one final numeric `\boxed{...}` line. The rejected `natural` calibration remains available for
+  reproducing the parent model's verbosity failure.
 - Optimizer: DPPO, LR `1e-6`, 10 updates of 64 accepted trajectories, eight samples per prompt, active sampling.
 - Compute: two LUMI-G nodes, eight learner GCDs and eight TP=1 vLLM rollout GCDs.
 - Primary comparison: full-test greedy decoding, native tokenizer chat template, maximum 512 new tokens.
@@ -57,7 +59,7 @@ singularity exec -B /pfs,/scratch,/flash,/project,/projappl,/appl \
   /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python -m oellm_rlvr.cli prepare-gsm8k \
   --train-source "$ROOT/data/sources/gsm8k-$REV/train.parquet" \
   --test-source "$ROOT/data/sources/gsm8k-$REV/test.parquet" \
-  --output-dir "$ROOT/data/gsm8k-main-740312ad" --revision "$REV"
+  --output-dir "$ROOT/data/gsm8k-main-740312ad" --revision "$REV" --prompt-style concise
 ```
 
 `manifest.json` records both source and generated SHA-256 values, row counts, the prompt protocol, and the

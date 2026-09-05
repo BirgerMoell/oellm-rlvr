@@ -172,6 +172,7 @@ def command_prepare_gsm8k(args: argparse.Namespace) -> int:
             args.test_source,
             args.output_dir,
             revision=args.revision,
+            prompt_style=args.prompt_style,
         )
     )
     return 0
@@ -326,6 +327,7 @@ def build_parser() -> argparse.ArgumentParser:
     gsm8k.add_argument("--test-source", required=True, help="same revision's main/test parquet")
     gsm8k.add_argument("--output-dir", required=True)
     gsm8k.add_argument("--revision", required=True, help="immutable Hugging Face dataset commit")
+    gsm8k.add_argument("--prompt-style", choices=("concise", "natural"), default="concise")
     gsm8k.set_defaults(handler=command_prepare_gsm8k)
 
     reasoning_eval = sub.add_parser("eval-reasoning", help="run resumable vLLM math-reasoning evaluation")

@@ -71,14 +71,32 @@ def test_prepare_gsm8k_separates_train_from_reference_eval(tmp_path: Path) -> No
     assert train["messages"] == [
         {
             "role": "user",
-            "content": "Solve the following grade-school math problem. Show your reasoning clearly, then put only "
-            "the final numeric answer in \\boxed{...}.\n\nSam has 2 apples and buys 3. How many?",
+            "content": "Solve the following grade-school math problem with a concise, verifiable derivation. Use at "
+            "most four short calculation lines. Do not repeat or second-guess the calculation, and do not use "
+            "<think> tags. End with exactly one final line of the form \\boxed{number}.\n\nSam has 2 apples and "
+            "buys 3. How many?",
         }
     ]
     assert "reference_answer" not in train
     assert test["reference_answer"].endswith("#### 7")
     assert manifest["train_test_prompt_overlap"] == 0
+    assert manifest["prompt_style"] == "concise"
     assert manifest["train"]["rows"] == 1
+
+
+def test_prepare_gsm8k_supports_natural_prompt_for_calibration(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    train_source = tmp_path / "raw-train.parquet"
+    test_source = tmp_path / "raw-test.parquet"
+    pq.write_table(pa.Table.from_pylist([{"question": "Train question", "answer": "Work.\n#### 1"}]), train_source)
+    pq.write_table(pa.Table.from_pylist([{"question": "Test question", "answer": "Work.\n#### 2"}]), test_source)
+    manifest = prepare_gsm8k_dataset(
+        train_source, test_source, tmp_path / "prepared", revision="abc123", prompt_style="natural"
+    )
+    assert manifest["prompt_style"] == "natural"
+    assert "Show your reasoning clearly" in manifest["prompt_protocol"]
 
 
 def test_prepare_gsm8k_rejects_train_test_overlap(tmp_path: Path) -> None:
