@@ -52,7 +52,7 @@ export OUTPUT JOB_TMPDIR PYTHONPATH
 echo "model=$MODEL tokenizer=$TOKENIZER dataset=$DATASET tag=$TAG output=$OUTPUT"
 srun --label --gpu-bind=none --gpus-per-task=1 singularity exec \
   -B /pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd \
-  "$CONTAINER" bash -lc '
+  "$CONTAINER" env PYTHONPATH="$PYTHONPATH" HF_HOME="$HF_HOME" bash -c '
     set -euo pipefail
     if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
       export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
@@ -71,7 +71,7 @@ srun --label --gpu-bind=none --gpus-per-task=1 singularity exec \
     export PYTHONPATH HF_HOME
     limit_args=()
     if [[ -n "$LIMIT" ]]; then limit_args=(--limit "$LIMIT"); fi
-    "$PYTHON_BIN" -m oellm_rlvr.cli eval-reasoning \
+    env PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" -m oellm_rlvr.cli eval-reasoning \
       --model "$MODEL" --tokenizer "$TOKENIZER" --dataset "$DATASET" --output "$OUTPUT" \
       --limit-seed "$LIMIT_SEED" --samples-per-prompt "$SAMPLES_PER_PROMPT" \
       --temperature "$TEMPERATURE" --top-p "$TOP_P" --max-new-tokens "$MAX_NEW_TOKENS" \
