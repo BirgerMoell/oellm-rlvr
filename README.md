@@ -208,7 +208,7 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-oellm9b-256k-sft-ladder-2node.yaml` | Bounded two-update arithmetic calibration for the OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
 | `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml` | Eight-engine hierarchical-transfer qualification of the OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-math-oellm9b-256k-sft-pilot-2node.yaml` | Ten-update, restartable 9B math RLVR pilot | 8 learner + 8 rollout GCDs |
-| `lumi-reasoning-gsm8k-oellm9b-10step.yaml` | Paired GSM8K reasoning-RL reference experiment | 8 learner + 8 rollout GCDs |
+| `lumi-reasoning-gsm8k-oellm9b-32step.yaml` | Paired GSM8K reasoning-RL reference experiment (<96 GCD-hours) | 8 learner + 8 rollout GCDs |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |

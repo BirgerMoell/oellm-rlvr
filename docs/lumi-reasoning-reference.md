@@ -32,15 +32,29 @@ and pipeline signal, never as a new state-of-the-art or uncontaminated benchmark
 - Prompt: the `reasoning` profile requests exactly one balanced `<think>...</think>` block containing at most
   four short calculation lines, no repeated checking, and one final numeric `\boxed{...}` line after the block.
   The rejected `natural` and tag-suppressing `concise` profiles remain available for calibration reproduction.
-- Optimizer: DPPO, LR `1e-6`, 10 updates of 64 accepted trajectories, eight samples per prompt, active sampling.
+- Optimizer: DPPO, LR `1e-6`, 32 updates of 64 accepted trajectories, eight samples per prompt, active sampling.
 - Compute: two LUMI-G nodes, eight learner GCDs and eight TP=1 vLLM rollout GCDs.
 - Primary comparison: greedy decoding on the 1,255-row primary split, native tokenizer chat template, maximum
   1,024 new tokens.
 - Qualitative comparison: 24 blinded paired traces stratified across improvement, regression, both-correct, and
   both-wrong transitions.
 
-Ten updates are a bounded signal experiment, not a converged RL recipe. If it passes, the next run should
-extend the same immutable protocol to 50–100 updates and add a clean held-out or newly authored task family.
+Thirty-two updates are a bounded signal experiment, not a converged RL recipe. If it passes, the next run
+should extend the same immutable protocol and add a clean held-out or newly authored task family.
+
+### Checkpoint and compute provenance
+
+The logical parent is `openeurollm/oellm-9b-256k-sft`. The immutable LUMI staging manifest records original
+repo ID `birgermoell/oellm-9b-256k-sft`, revision
+`08359ad61333263c067edaf290067fea5b103d34`, and manifest SHA-256
+`717c07f19caecbeb518f2385a79ecdfc748ef824b5c47a8fbcb1b0b31610c4fe`. Preserve that manifest with the run;
+do not resolve a moving Hub branch from compute nodes.
+
+The training allocation is 2 LUMI-G nodes / 16 MI250X GCDs for at most 6 hours: a hard cap of 12 node-hours or
+96 GCD-hours. Eight GCDs host the learner and eight host TP=1 rollout engines. Linear extrapolation from the
+successful two-update qualification (3.964 GCD-hours) predicts about 64 GCD-hours for 32 updates. Each
+64-sample calibration takes about 0.05 GCD-hours; each 1,255-row greedy evaluation is expected to take
+0.2–0.4 GCD-hours and has a 2 GCD-hour hard cap.
 
 ### Parent calibration result
 
@@ -57,8 +71,12 @@ parent's looping behavior:
 
 These runs rejected suppressing the model's learned reasoning channel: all 64 no-think/2,048 outputs used
 `<think>` tags anyway, and doubling the budget produced no accuracy gain. The locked protocol instead asks for
-one short, closed reasoning block and measures strict channel conformance. The training-rollout truncation gate
-is 30%; the paired candidate must not increase primary length-stop or repetition rates by more than five points.
+one short, closed reasoning block and measures strict channel conformance. With that corrected prompt, 1,024
+tokens produced 32.8% accuracy, 64.1% strict reasoning-channel format, 35.9% length stops, and 45.3% high
+repetition. Increasing to 2,048 tokens left accuracy at 32.8%, moved strict format only to 65.6% and length stops
+to 34.4%, and increased repetition to 46.9%. The locked budget is therefore 1,024 tokens. The
+training-rollout truncation gate is 45%; the paired candidate must not increase primary length-stop or
+repetition rates by more than five points.
 
 ## 1. Prepare the pinned data
 
@@ -116,28 +134,28 @@ sbatch --export=ALL,MODEL="$MODEL",TOKENIZER="$MODEL",DATASET="$PRIMARY",TAG=gsm
 The evaluator appends one record at a time and resumes an interrupted run by `(id, sample_index)`. Re-submit
 the identical command to resume. Never reuse a tag for another checkpoint or protocol.
 
-## 4. Run ten online RL updates
+## 4. Run 32 online RL updates
 
 ```bash
-CONFIG=configs/lumi-reasoning-gsm8k-oellm9b-10step.yaml
+CONFIG=configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml
 oellm-rlvr validate --config "$CONFIG"
 oellm-rlvr topology --config "$CONFIG"
 oellm-rlvr doctor --config "$CONFIG"
-oellm-rlvr render-slurm --config "$CONFIG" --output reasoning-gsm8k-10step.sbatch
-sbatch reasoning-gsm8k-10step.sbatch
+oellm-rlvr render-slurm --config "$CONFIG" --output reasoning-gsm8k-32step.sbatch
+sbatch reasoning-gsm8k-32step.sbatch
 ```
 
-The run requests at most six node-hours / 48 GCD-hours, but billing is actual runtime. It saves restart state
-at steps 5 and 10 and a full Hugging Face model at step 10. Active sampling is important: a relatively strong
-parent may yield all-correct or all-wrong eight-sample groups, which have no policy-gradient signal.
+The run requests at most 12 node-hours / 96 GCD-hours, but billing is actual runtime. It saves restart state
+every 8 updates and full Hugging Face exports at updates 16 and 32. Active sampling is important: a relatively
+strong parent may yield all-correct or all-wrong eight-sample groups, which have no policy-gradient signal.
 
-## 5. Evaluate the immutable step-10 export
+## 5. Evaluate the immutable step-32 export
 
 Resolve the one directory containing `.checkpoint_complete`; do not point evaluation at the mutable parent
 output directory:
 
 ```bash
-CANDIDATE=$(find /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/reasoning-gsm8k-oellm9b-10step \
+CANDIDATE=$(find /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/reasoning-gsm8k-oellm9b-32step \
   -type f -name .checkpoint_complete -printf '%h\n' | sort | tail -1)
 test -r "$CANDIDATE/model.safetensors"
 sbatch --export=ALL,MODEL="$CANDIDATE",TOKENIZER="$CANDIDATE",DATASET="$PRIMARY",TAG=gsm8k-candidate-primary,MAX_NEW_TOKENS=1024,MAX_MODEL_LEN=3072 \
@@ -168,8 +186,8 @@ blinded audit before opening its `.key.json` mapping.
 
 | Outcome | Requirement | Decision |
 |---|---|---|
-| Infrastructure pass | 10 finite optimizer steps; at least 8 nonzero gradients; all weight syncs complete; policy lag ≤4; final model and restart state readable | The LUMI reasoning pipeline works |
-| Reward-signal pass | Mixed rewards in accepted groups; zero-std ≤80%; training-rollout truncation ≤30%; verifier/system errors ≤2% | The data/verifier produces trainable signal |
+| Infrastructure pass | 32 finite optimizer steps; at least 90% nonzero gradients; all weight syncs complete; policy lag ≤4; final model and restart state readable | The LUMI reasoning pipeline works |
+| Reward-signal pass | Mixed rewards in accepted groups; zero-std ≤80%; training-rollout truncation ≤45%; verifier/system errors ≤2% | The data/verifier produces trainable signal |
 | Strong model signal | Accuracy delta >0 and paired-bootstrap lower bound >0 | Extend to 50–100 updates |
 | Weak but safe signal | Point estimate ≥0, interval crosses 0, and no form/reasoning regression | Repeat with more updates or a higher-powered clean holdout |
 | No-go | Significant accuracy loss, >5-point form/structure loss, >5-point rise in repetition/length stops, or blinded logic/clarity regression | Stop; inspect reward/prompt/KL and do not scale |
