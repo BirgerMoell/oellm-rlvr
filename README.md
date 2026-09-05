@@ -9,6 +9,7 @@ The repository deliberately does not copy a trainer. It pins the OpenEuroLLM TMA
 - online vLLM rollout command generation and native learner-to-vLLM weight transfer;
 - deterministic math verification;
 - code-agent rollouts in Apptainer with seed files and deferred hidden tests;
+- revision-pinned GSM8K preparation plus paired parent/candidate reasoning evaluation and blinded trace audit;
 - task packing, append-only trajectory schemas, and rollout health gates;
 - ROCm and CUDA profiles using one control plane.
 
@@ -207,11 +208,17 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-oellm9b-256k-sft-ladder-2node.yaml` | Bounded two-update arithmetic calibration for the OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
 | `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml` | Eight-engine hierarchical-transfer qualification of the OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-math-oellm9b-256k-sft-pilot-2node.yaml` | Ten-update, restartable 9B math RLVR pilot | 8 learner + 8 rollout GCDs |
+| `lumi-reasoning-gsm8k-oellm9b-10step.yaml` | Paired GSM8K reasoning-RL reference experiment | 8 learner + 8 rollout GCDs |
 | `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
 | `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
 
 Every profile is validated before rendering. It rejects oversubscribed GPU layouts, insufficient rollout batches, invalid sequence-parallel divisibility, math runs with sandboxes, and code runs without sandboxes.
+
+The [reasoning-RL reference protocol](docs/lumi-reasoning-reference.md) adds a strict official-train versus
+official-test boundary, a resumable LUMI vLLM evaluator, paired confidence statistics, form/degeneration
+metrics, and a blinded A/B reasoning audit. GSM8K results for the current SFT checkpoint are diagnostic because
+its earlier training mixture contains a GSM8K-derived component.
 
 The real OELLM 9B ladder qualification completed on LUMI as job `21540106`: 128 rollouts, mean reward
 `0.7578125`, 14/16 mixed reward groups, gradient norms `0.34` and `0.40`, and a complete final checkpoint.

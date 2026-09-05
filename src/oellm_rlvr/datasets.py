@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import tarfile
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,136 @@ def write_rows(rows: list[dict[str, object]], path: str | Path) -> None:
     with destination.open("w") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+GSM8K_PROMPT = (
+    "Solve the following grade-school math problem. Show your reasoning clearly, then put only the final "
+    "numeric answer in \\boxed{...}.\n\n{question}"
+)
+
+
+def _sha256(path: str | Path) -> str:
+    digest = sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_parquet_rows(path: str | Path) -> list[dict[str, Any]]:
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as error:
+        raise RuntimeError("Parquet input requires pyarrow (install oellm-rlvr[data])") from error
+    return pq.read_table(path).to_pylist()
+
+
+def _gsm8k_ground_truth(answer: object, *, split: str, index: int) -> str:
+    if not isinstance(answer, str) or "####" not in answer:
+        raise ValueError(f"GSM8K {split} row {index} has no '####' final answer")
+    result = answer.rsplit("####", 1)[1].strip().replace(",", "")
+    if not result:
+        raise ValueError(f"GSM8K {split} row {index} has an empty final answer")
+    return result
+
+
+def _gsm8k_rows(
+    rows: list[dict[str, Any]],
+    *,
+    split: str,
+    revision: str,
+    include_reference: bool,
+) -> list[dict[str, object]]:
+    converted: list[dict[str, object]] = []
+    for index, row in enumerate(rows):
+        question = row.get("question")
+        answer = row.get("answer")
+        if not isinstance(question, str) or not question.strip():
+            raise ValueError(f"GSM8K {split} row {index} has an empty question")
+        task_id = f"openai-gsm8k-{split}-{index:05d}"
+        converted_row: dict[str, object] = {
+            "id": task_id,
+            "messages": [{"role": "user", "content": GSM8K_PROMPT.replace("{question}", question.strip())}],
+            "ground_truth": _gsm8k_ground_truth(answer, split=split, index=index),
+            # The pinned Open-Instruct/TMAX backend dispatches its symbolic
+            # math verifier from this exact value.
+            "dataset": "math",
+            "verifier_kind": "gsm8k_numeric",
+            "semantic_group_id": task_id,
+            "oellm_source_dataset": "openai/gsm8k",
+            "oellm_source_revision": revision,
+            "oellm_source_split": split,
+        }
+        if include_reference:
+            # Kept only in the evaluation artifact. The training parquet never
+            # contains the reference rationale or an assistant answer.
+            converted_row["question"] = question.strip()
+            converted_row["reference_answer"] = answer
+        converted.append(converted_row)
+    return converted
+
+
+def prepare_gsm8k_dataset(
+    train_source: str | Path,
+    test_source: str | Path,
+    output_dir: str | Path,
+    *,
+    revision: str,
+) -> dict[str, object]:
+    """Create leak-resistant RL train and held-out evaluation artifacts.
+
+    Only the official train split enters the learner input. The test artifact
+    retains the published rationale for offline auditing, but it is never
+    accepted as a training dataset by this helper.
+    """
+    if not revision.strip():
+        raise ValueError("revision must be a non-empty immutable dataset revision")
+    train_source = Path(train_source)
+    test_source = Path(test_source)
+    train_raw = _read_parquet_rows(train_source)
+    test_raw = _read_parquet_rows(test_source)
+    train_rows = _gsm8k_rows(train_raw, split="train", revision=revision, include_reference=False)
+    test_rows = _gsm8k_rows(test_raw, split="test", revision=revision, include_reference=True)
+
+    train_questions = {str(row["messages"][0]["content"]) for row in train_rows}  # type: ignore[index]
+    test_questions = {str(row["messages"][0]["content"]) for row in test_rows}  # type: ignore[index]
+    overlap = train_questions & test_questions
+    if overlap:
+        raise ValueError(f"GSM8K train/test prompt overlap detected: {len(overlap)} rows")
+
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    train_path = destination / "train.parquet"
+    test_path = destination / "test.parquet"
+    write_rows(train_rows, train_path)
+    write_rows(test_rows, test_path)
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "dataset": "openai/gsm8k",
+        "revision": revision,
+        "configuration": "main",
+        "prompt_protocol": GSM8K_PROMPT,
+        "train": {
+            "rows": len(train_rows),
+            "source": str(train_source),
+            "source_sha256": _sha256(train_source),
+            "output": str(train_path),
+            "output_sha256": _sha256(train_path),
+            "contains_reference_reasoning": False,
+        },
+        "test": {
+            "rows": len(test_rows),
+            "source": str(test_source),
+            "source_sha256": _sha256(test_source),
+            "output": str(test_path),
+            "output_sha256": _sha256(test_path),
+            "contains_reference_reasoning": True,
+        },
+        "train_test_prompt_overlap": 0,
+    }
+    manifest_path = destination / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return manifest
 
 
 def make_math_smoke(path: str | Path, count: int = 64) -> None:

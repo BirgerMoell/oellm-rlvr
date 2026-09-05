@@ -16,10 +16,12 @@ from .datasets import (
     make_math_calibration,
     make_math_smoke,
     pack_code_dataset,
+    prepare_gsm8k_dataset,
     sample_code_dataset,
     sample_math_dataset,
 )
 from .gates import evaluate_gates
+from .reasoning_eval import build_blinded_reasoning_audit, compare_reasoning_evals, run_reasoning_eval
 from .schemas import TaskSpec
 from .slurm import render_slurm
 from .store import JsonlTrajectoryStore
@@ -163,6 +165,69 @@ def command_sample_code(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_prepare_gsm8k(args: argparse.Namespace) -> int:
+    _json(
+        prepare_gsm8k_dataset(
+            args.train_source,
+            args.test_source,
+            args.output_dir,
+            revision=args.revision,
+        )
+    )
+    return 0
+
+
+def command_eval_reasoning(args: argparse.Namespace) -> int:
+    _json(
+        run_reasoning_eval(
+            model=args.model,
+            tokenizer=args.tokenizer,
+            dataset=args.dataset,
+            output=args.output,
+            limit=args.limit,
+            limit_seed=args.limit_seed,
+            samples_per_prompt=args.samples_per_prompt,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_new_tokens=args.max_new_tokens,
+            max_model_len=args.max_model_len,
+            batch_size=args.batch_size,
+            tensor_parallel_size=args.tensor_parallel_size,
+            gpu_memory_utilization=args.gpu_memory_utilization,
+            seed=args.seed,
+        )
+    )
+    return 0
+
+
+def command_compare_reasoning(args: argparse.Namespace) -> int:
+    report = compare_reasoning_evals(
+        args.baseline,
+        args.candidate,
+        bootstrap_samples=args.bootstrap_samples,
+        seed=args.seed,
+    )
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    _json(report)
+    return 0
+
+
+def command_reasoning_audit(args: argparse.Namespace) -> int:
+    _json(
+        build_blinded_reasoning_audit(
+            args.baseline,
+            args.candidate,
+            args.output,
+            count=args.count,
+            seed=args.seed,
+        )
+    )
+    return 0
+
+
 def command_verify(args: argparse.Namespace) -> int:
     task = _task(args.task)
     completion = Path(args.completion).read_text()
@@ -255,6 +320,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="maximum sandbox turns per trajectory (default: 6 for the smoke profile)",
     )
     code_sample.set_defaults(handler=command_sample_code)
+
+    gsm8k = sub.add_parser("prepare-gsm8k", help="build disjoint GSM8K RL-train and held-out eval artifacts")
+    gsm8k.add_argument("--train-source", required=True, help="revision-pinned openai/gsm8k main/train parquet")
+    gsm8k.add_argument("--test-source", required=True, help="same revision's main/test parquet")
+    gsm8k.add_argument("--output-dir", required=True)
+    gsm8k.add_argument("--revision", required=True, help="immutable Hugging Face dataset commit")
+    gsm8k.set_defaults(handler=command_prepare_gsm8k)
+
+    reasoning_eval = sub.add_parser("eval-reasoning", help="run resumable vLLM math-reasoning evaluation")
+    reasoning_eval.add_argument("--model", required=True, help="immutable local Hugging Face checkpoint")
+    reasoning_eval.add_argument("--tokenizer", help="optional separate immutable tokenizer path")
+    reasoning_eval.add_argument("--dataset", required=True, help="prepared GSM8K test parquet or compatible JSONL")
+    reasoning_eval.add_argument("--output", required=True, help="append-only prediction JSONL")
+    reasoning_eval.add_argument("--limit", type=int, help="seeded diagnostic subset; omit for the full test split")
+    reasoning_eval.add_argument("--limit-seed", type=int, default=20260905)
+    reasoning_eval.add_argument("--samples-per-prompt", type=int, default=1)
+    reasoning_eval.add_argument("--temperature", type=float, default=0.0)
+    reasoning_eval.add_argument("--top-p", type=float, default=1.0)
+    reasoning_eval.add_argument("--max-new-tokens", type=int, default=1024)
+    reasoning_eval.add_argument("--max-model-len", type=int, default=3072)
+    reasoning_eval.add_argument("--batch-size", type=int, default=64)
+    reasoning_eval.add_argument("--tensor-parallel-size", type=int, default=1)
+    reasoning_eval.add_argument("--gpu-memory-utilization", type=float, default=0.75)
+    reasoning_eval.add_argument("--seed", type=int, default=20260905)
+    reasoning_eval.set_defaults(handler=command_eval_reasoning)
+
+    compare = sub.add_parser("compare-reasoning", help="paired comparison of two reasoning prediction files")
+    compare.add_argument("--baseline", required=True)
+    compare.add_argument("--candidate", required=True)
+    compare.add_argument("--output")
+    compare.add_argument("--bootstrap-samples", type=int, default=5000)
+    compare.add_argument("--seed", type=int, default=20260905)
+    compare.set_defaults(handler=command_compare_reasoning)
+
+    audit = sub.add_parser("make-reasoning-audit", help="create a blinded A/B reasoning-quality audit pack")
+    audit.add_argument("--baseline", required=True)
+    audit.add_argument("--candidate", required=True)
+    audit.add_argument("--output", required=True)
+    audit.add_argument("--count", type=int, default=24)
+    audit.add_argument("--seed", type=int, default=20260905)
+    audit.set_defaults(handler=command_reasoning_audit)
 
     verify = sub.add_parser("verify")
     verify.add_argument("--task", required=True)

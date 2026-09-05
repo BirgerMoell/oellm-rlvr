@@ -8,6 +8,7 @@ from oellm_rlvr.datasets import (
     make_math_calibration,
     make_math_smoke,
     pack_code_dataset,
+    prepare_gsm8k_dataset,
     sample_code_dataset,
     sample_math_dataset,
 )
@@ -40,6 +41,54 @@ def test_math_calibration_spans_eight_groups_and_can_repeat(tmp_path: Path) -> N
 def test_math_calibration_rejects_nonpositive_copies(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="copies must be positive"):
         make_math_calibration(tmp_path / "calibration.jsonl", copies=0)
+
+
+def test_prepare_gsm8k_separates_train_from_reference_eval(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    train_source = tmp_path / "raw-train.parquet"
+    test_source = tmp_path / "raw-test.parquet"
+    pq.write_table(
+        pa.Table.from_pylist(
+            [{"question": "Sam has 2 apples and buys 3. How many?", "answer": "2 + 3 = 5.\n#### 5"}]
+        ),
+        train_source,
+    )
+    pq.write_table(
+        pa.Table.from_pylist(
+            [{"question": "Ana has 1 apple and buys 6. How many?", "answer": "1 + 6 = 7.\n#### 7"}]
+        ),
+        test_source,
+    )
+
+    manifest = prepare_gsm8k_dataset(train_source, test_source, tmp_path / "prepared", revision="abc123")
+    train = pq.read_table(tmp_path / "prepared/train.parquet").to_pylist()[0]
+    test = pq.read_table(tmp_path / "prepared/test.parquet").to_pylist()[0]
+
+    assert train["ground_truth"] == "5"
+    assert train["dataset"] == "math"
+    assert train["messages"] == [
+        {
+            "role": "user",
+            "content": "Solve the following grade-school math problem. Show your reasoning clearly, then put only "
+            "the final numeric answer in \\boxed{...}.\n\nSam has 2 apples and buys 3. How many?",
+        }
+    ]
+    assert "reference_answer" not in train
+    assert test["reference_answer"].endswith("#### 7")
+    assert manifest["train_test_prompt_overlap"] == 0
+    assert manifest["train"]["rows"] == 1
+
+
+def test_prepare_gsm8k_rejects_train_test_overlap(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "raw.parquet"
+    pq.write_table(pa.Table.from_pylist([{"question": "Same question", "answer": "Work.\n#### 9"}]), source)
+    with pytest.raises(ValueError, match="overlap"):
+        prepare_gsm8k_dataset(source, source, tmp_path / "prepared", revision="abc123")
 
 
 def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> None:
