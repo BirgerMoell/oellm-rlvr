@@ -72,10 +72,12 @@ srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CON
   env PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" -m skyrl.train.entrypoints.main_base \
     data.train_data="['$DATA']" data.val_data="[]" \
     trainer.policy.model.path="$MODEL" trainer.strategy=fsdp \
+    trainer.policy.language_model_only=true trainer.ref.language_model_only=true \
     trainer.placement.colocate_all=false \
     trainer.placement.policy_num_nodes=1 trainer.placement.policy_num_gpus_per_node=4 \
     generator.inference_engine.num_engines=4 generator.inference_engine.tensor_parallel_size=1 \
     generator.inference_engine.backend=vllm generator.inference_engine.run_engines_locally=true \
+    generator.inference_engine.language_model_only=true \
     generator.inference_engine.weight_sync_backend=nccl generator.inference_engine.enforce_eager=true \
     generator.inference_engine.gpu_memory_utilization=0.65 \
     generator.inference_engine.engine_init_kwargs.max_model_len=2048 \
