@@ -15,6 +15,7 @@ def main() -> int:
     parser.add_argument("--max-model-len", type=int, default=2048)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--prompt", default="Compute 17 + 25. End with the numeric answer.")
+    parser.add_argument("--output")
     args = parser.parse_args()
 
     model = Path(args.model).resolve(strict=True)
@@ -63,7 +64,12 @@ def main() -> int:
         "generated_tokens": len(output.token_ids),
         "finish_reason": output.finish_reason,
     }
-    print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+    serialized = json.dumps(report, ensure_ascii=False, sort_keys=True)
+    if args.output:
+        destination = Path(args.output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(serialized + "\n")
+    print(serialized)
     return 0 if report["ok"] else 1
 
 

@@ -1,0 +1,16 @@
+diff --git a/src/harbor/environments/singularity/singularity.py b/src/harbor/environments/singularity/singularity.py
+index af84227..027181f 100644
+--- a/src/harbor/environments/singularity/singularity.py
++++ b/src/harbor/environments/singularity/singularity.py
+@@ -739,7 +739,10 @@ class SingularityEnvironment(BaseEnvironment):
+             raise MemoryLimitExceededError(self._memory_limit_exceeded)
+ 
+         resolved_user = self._resolve_user(user)
+-        if resolved_user is not None:
++        lumi_unprivileged = os.environ.get("HARBOR_SINGULARITY_DISABLE_FAKEROOT") == "1"
++        if resolved_user is not None and lumi_unprivileged:
++            self.logger.debug("Ignoring requested user switch in the LUMI unprivileged runtime")
++        elif resolved_user is not None:
+             if isinstance(resolved_user, int):
+                 user_arg = f"$(getent passwd {resolved_user} | cut -d: -f1)"
+             else:

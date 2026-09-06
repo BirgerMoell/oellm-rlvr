@@ -21,7 +21,7 @@ EXPECTED_HARBOR_PATCHES = {
         "b4f9a71b00e7685b5cf4c119d178e30fec5ed2f5b8e732fbcedf1d77ed4fbbe3"
     ),
     "src/harbor/environments/singularity/singularity.py": (
-        "26bfcb2e5e43c6290d0af9423a58b601a69b22f93c51555403d28bc149c90d0e"
+        "4fb7feb51dd078d0769606fdf79570d14b5ed222a8250e027e9e954cc4f5ec4d"
     ),
 }
 
