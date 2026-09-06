@@ -169,22 +169,60 @@ SkyRL no-go decision. More compute will not compensate for a failed token, weigh
 - Select the dry-run result on pipeline correctness. A small benchmark gain is welcome but is not the purpose;
   large regressions are still a failure.
 
-## What must be implemented first
+## Implementation and qualification status
 
-The campaign validator currently marks two training stages ready and eleven required stages as `build_required`.
-The preflight and evaluation components exist, but they need standalone campaign wrappers before they count as
-runnable stages. The critical path is:
+The control plane now implements the first runnable slice of the critical path:
 
-1. add checkpoint fingerprinting, freeze the fast evaluation scorecard, and add a multi-domain task
-   catalogue/profiler;
-2. build the pinned SkyRL AMD Apptainer image and the Harbor SIF task pack in parallel;
-3. add the SkyRL backend adapter and Harbor-to-ATIF/control-plane trajectory bridge;
-4. pass the synchronous 9B agentic one-step gate;
-5. add scheduled environment quotas, domain-relative advantages, capped active sampling, and complete restart
+- `checkpoint-manifest` and `verify-checkpoint-manifest` hash every checkpoint component and reject unapproved
+  external symlink targets;
+- `validate-task-catalog` enforces immutable provenance, verifier IDs, semantic clusters, and train/eval
+  isolation; `profile-tasks` writes Parquet rows, pass-rate histograms, and separate infrastructure errors;
+- `lumi_full_stack_preflight.sbatch` checks every GPU node, two-node Ray placement, hierarchical RCCL transfer,
+  and an offline BF16 vLLM generation from the frozen model;
+- `bootstrap_skyrl_lumi.sh` installs exact SkyRL `skyrl-v0.3.0` and Harbor `v0.22.0` source commits into an
+  isolated scratch overlay without replacing LUMI's torch, vLLM, or RCCL builds;
+- `lumi_skyrl_amd_smoke.sbatch` allocates four learner and four rollout GCDs and attempts four full-weight
+  FSDP/GRPO updates on a local 2B model;
+- `build-harbor-pack` creates four exact function calls, four stateful flows, four terminal edits, and four
+  micro-repository repairs. Local validation proves unchanged tasks fail, oracle solutions pass twice, and
+  private verifier markers never enter the policy surface;
+- `lumi_harbor_task_contract.sbatch` runs Harbor oracle and no-op agents in real Singularity sandboxes. Because
+  nested user namespaces are unavailable on LUMI, the audited launcher routes sandbox commands through a
+  same-node overlapping Slurm step and executes Singularity on the host. `SOAK=1` expands the smoke to 112
+  launches for the 98/100 startup gate.
+
+These are implementation-complete only when their LUMI artifacts pass. Do not infer qualification from the
+presence of a script. The remaining critical path is:
+
+1. freeze the fast independent evaluation scorecard and generate model attempts for the task profiler;
+2. qualify the SkyRL AMD smoke and Harbor 112-launch soak on the current LAIF image;
+3. finish the Harbor ATIF-to-control-plane bridge and complete one synchronous 9B SkyRL + Harbor update;
+4. add scheduled environment quotas, domain-relative advantages, capped active sampling, and complete restart
    state;
-6. add campaign-wide reward replay and paired evaluation reports;
-7. run the six-day dry run, freeze the resulting working revisions, then replace only the parent checkpoint
+5. add campaign-wide reward replay and paired evaluation reports;
+6. run the six-day dry run, freeze the resulting working revisions, then replace only the parent checkpoint
    manifest when the new SFT/DPO model arrives.
+
+### Exact LUMI commands
+
+```bash
+ROOT=/scratch/project_465002530/users/bmoell
+CONTROL_ROOT="$ROOT/oellm-rlvr-src"
+
+bash "$CONTROL_ROOT/scripts/bootstrap_skyrl_lumi.sh" "$CONTROL_ROOT"
+
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr checkpoint-manifest \
+  --model "$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
+  --model-id openeurollm/oellm-9b-256k-sft \
+  --revision 08359ad61333263c067edaf290067fea5b103d34 \
+  --output "$ROOT/oellm-rlvr/checkpoint-freeze/checkpoint-manifest.json"
+
+cd "$CONTROL_ROOT"
+sbatch scripts/lumi_full_stack_preflight.sbatch
+sbatch scripts/lumi_skyrl_amd_smoke.sbatch
+sbatch scripts/lumi_harbor_task_contract.sbatch
+SOAK=1 sbatch scripts/lumi_harbor_task_contract.sbatch
+```
 
 The two TMAX dry-run profiles are already committed:
 

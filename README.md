@@ -55,6 +55,10 @@ Validate and render the proposed full-stack LUMI dry run:
   --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml
 ```
 
+The campaign foundations are executable, not just a schedule. They include checkpoint hashing and replay,
+strict task-catalog validation and pass-rate profiling, a two-node LUMI preflight, a pinned SkyRL/Harbor
+overlay, a four-update SkyRL AMD smoke, and a 16-task Harbor oracle/failure contract.
+
 The standalone `CodeVerifier` defaults to Apptainer. Its local runner refuses to start without `--allow-unsafe-local`; local execution is only for trusted unit-test fixtures, never generated model code.
 
 ## LUMI quick start
@@ -74,6 +78,30 @@ bash "$ROOT/oellm-rlvr-src/scripts/bootstrap_lumi_env.sh" \
 ```
 
 The bootstrap creates a `--system-site-packages` venv inside the current LUMI AI Factory ROCm 7 image. It adds Ray and the few missing Python packages without replacing LUMI's optimized PyTorch, vLLM, DeepSpeed, RCCL, or gfx90a kernels. Do not run the backend's normal `uv sync` on LUMI; that resolver includes CUDA-specific package sources.
+
+Install the separately pinned agentic stack and exercise each boundary:
+
+```bash
+bash "$ROOT/oellm-rlvr-src/scripts/bootstrap_skyrl_lumi.sh" "$ROOT/oellm-rlvr-src"
+
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr checkpoint-manifest \
+  --model "$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
+  --model-id openeurollm/oellm-9b-256k-sft \
+  --revision 08359ad61333263c067edaf290067fea5b103d34 \
+  --output "$ROOT/oellm-rlvr/checkpoint-freeze/checkpoint-manifest.json"
+
+cd "$ROOT/oellm-rlvr-src"
+sbatch scripts/lumi_full_stack_preflight.sbatch
+sbatch scripts/lumi_skyrl_amd_smoke.sbatch
+sbatch scripts/lumi_harbor_task_contract.sbatch
+```
+
+`bootstrap_skyrl_lumi.sh` pins SkyRL `f5bc3b7` and Harbor `4407eb5`, puts caches and builds on project
+scratch, and installs only an overlay around LUMI's native ROCm stack. Harbor does not try to nest Singularity
+inside LAIF: `scripts/lumi-host-launcher-bin/singularity` sends each sandbox launch through an overlapping
+same-node Slurm step, where LUMI's host Singularity runs it. Compute-node execution remains offline. Set
+`SOAK=1` when submitting the Harbor job to run 112 environment launches; the default 32-trial smoke runs one
+oracle and one no-op attempt per task.
 
 Prepare a math smoke dataset and render a job:
 

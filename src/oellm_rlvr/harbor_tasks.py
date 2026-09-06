@@ -69,7 +69,7 @@ def _task_toml(name: str, category: str, sif: str) -> str:
 [task]
 name = "openeurollm/{name}"
 description = "Deterministic OpenEuroLLM RL dry-run task"
-authors = ["OpenEuroLLM contributors"]
+authors = [{{ name = "OpenEuroLLM contributors" }}]
 keywords = ["rlvr", "dry-run", "{category}"]
 
 [metadata]

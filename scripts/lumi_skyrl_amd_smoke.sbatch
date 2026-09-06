@@ -30,7 +30,7 @@ module load lumi-aif-singularity-bindings
 
 BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd,/boot
 VENV_SITE="$(dirname "$PYTHON_BIN")/../lib/python3.12/site-packages"
-PYTHONPATH="$CONTROL_ROOT/src:$SKYRL_ROOT:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
+PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility}
 test -r "$MODEL/config.json"
 test -r "$DATA"
@@ -44,7 +44,7 @@ export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0
 export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
 
-srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" bash -c '
+srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV bash -c '
   set -euo pipefail
   export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
   unset ROCR_VISIBLE_DEVICES

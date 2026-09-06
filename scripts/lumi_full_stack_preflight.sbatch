@@ -46,10 +46,18 @@ test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
 singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export MODEL TOKENIZER CONTROL_ROOT CONTAINER PYTHON_BIN RESULTS_DIR HF_HOME PYTHONPATH
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0 PYTHONUNBUFFERED=1
+export RAY_USAGE_STATS_ENABLED=0 RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
 
 cleanup() {
   if [[ -n "${RAY_STEP_PID:-}" ]]; then
     kill "$RAY_STEP_PID" >/dev/null 2>&1 || true
+    for _ in $(seq 1 15); do
+      if ! kill -0 "$RAY_STEP_PID" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 1
+    done
+    kill -KILL "$RAY_STEP_PID" >/dev/null 2>&1 || true
     wait "$RAY_STEP_PID" >/dev/null 2>&1 || true
   fi
 }
@@ -57,7 +65,7 @@ trap cleanup EXIT
 
 echo "[1/5] Per-node GPU and import checks"
 srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bind=none \
-  singularity exec -B "$BIND" "$CONTAINER" bash -c '
+  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV bash -c '
     set -euo pipefail
     env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" \
       "$CONTROL_ROOT/scripts/preflight_gpu.py" --accelerator rocm --gpus 8 \
@@ -84,13 +92,15 @@ srun --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-
   "$CONTROL_ROOT/scripts/ray_node.sh" "$HEAD_IP" "$RAY_PORT" 8 &
 RAY_STEP_PID=$!
 for _ in $(seq 1 60); do
-  if singularity exec -B "$BIND" "$CONTAINER" env PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" -c \
+  if singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV -u ROCR_VISIBLE_DEVICES \
+    PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" -c \
     "import ray; ray.init(address='$HEAD_IP:$RAY_PORT', logging_level='ERROR'); ray.shutdown()" >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
-singularity exec -B "$BIND" "$CONTAINER" env PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" \
+singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV -u ROCR_VISIBLE_DEVICES \
+  PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" \
   "$CONTROL_ROOT/scripts/probe_ray_cluster.py" --address "$HEAD_IP:$RAY_PORT" \
   --expected-nodes 2 --expected-gpus 16 > "$RESULTS_DIR/ray-cluster.json"
 cleanup
@@ -106,7 +116,7 @@ srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bi
 
 echo "[5/5] Offline BF16 load and one-prompt vLLM generation"
 srun --label --nodes=1 --ntasks=1 -w "$HEAD_NODE" --gpus-per-task=1 --gpu-bind=none \
-  singularity exec -B "$BIND" "$CONTAINER" bash -c '
+  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV bash -c '
     set -euo pipefail
     if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
       export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"

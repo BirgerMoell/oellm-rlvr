@@ -89,11 +89,11 @@ stages:
     day: D0
     lane: foundation
     backend: oellm-rlvr
-    readiness: build_required
+    readiness: ready
     objective: Record model, tokenizer, chat-template, generation-config, and file hashes before any rollout.
-    implementation_tasks:
-      - Add a checkpoint-manifest command that hashes a local Hugging Face snapshot without following external symlinks.
-      - Store the Hub revision and resolved local snapshot in one signed JSON artifact.
+    commands:
+      - oellm-rlvr checkpoint-manifest --model <local-parent> --model-id openeurollm/oellm-9b-256k-sft --revision 08359ad61333263c067edaf290067fea5b103d34 --output <artifacts>/checkpoint-manifest.json
+      - oellm-rlvr verify-checkpoint-manifest --manifest <artifacts>/checkpoint-manifest.json
     artifacts:
       - checkpoint-manifest.json
       - checkpoint-files.sha256
@@ -110,15 +110,11 @@ stages:
     day: D0
     lane: foundation
     backend: oellm-rlvr
-    readiness: build_required
+    readiness: ready
     needs: [checkpoint-freeze]
     objective: Load BF16 weights and verify gfx90a, RCCL, Ray, vLLM, Apptainer, and offline caches.
     commands:
-      - oellm-rlvr doctor --config configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml
-      - sbatch scripts/lumi_hierarchical_weight_transfer_probe.sbatch
-    implementation_tasks:
-      - Add a standalone two-node Slurm preflight that runs the GPU/import check on every node and verifies both Ray nodes and 16 GCDs before exiting.
-      - Add an offline BF16 model-load and one-prompt generation check against the frozen local snapshot.
+      - sbatch scripts/lumi_full_stack_preflight.sbatch
     artifacts:
       - preflight.json
       - package-lock.txt
@@ -165,11 +161,11 @@ stages:
     needs: [cluster-preflight]
     objective: Sample eight outputs per prompt across math, code, structured output, function calling, and agentic tasks.
     commands:
-      - oellm-rlvr profile-tasks --catalog <rl-task-catalog.yaml> --samples-per-prompt 8 --output <profile-dir>
+      - oellm-rlvr validate-task-catalog --catalog <rl-task-catalog.yaml>
+      - oellm-rlvr profile-tasks --catalog <rl-task-catalog.yaml> --attempts <rollout-attempts.parquet> --samples-per-prompt 8 --output <profile-dir>
     implementation_tasks:
-      - Implement the multi-domain task catalog and pass-rate profiler.
-      - Record verifier failures separately from model failures and write semantic-cluster IDs.
-      - Add per-domain and per-language pass-rate-bin reports.
+      - Add rollout adapters that emit exactly eight standardized attempts for every catalogued prompt.
+      - Build and freeze the first decontaminated multi-domain catalog from revision-pinned sources.
     artifacts:
       - task-profile.parquet
       - pass-rate-histograms.json
@@ -240,11 +236,10 @@ stages:
     needs: [cluster-preflight]
     objective: Reproduce the upstream AMD Tinker smoke in a LUMI Apptainer image and verify post-update sampling.
     commands:
-      - sbatch <jobs>/skyrl-amd-smoke.sbatch
+      - bash scripts/bootstrap_skyrl_lumi.sh
+      - sbatch scripts/lumi_skyrl_amd_smoke.sbatch
     implementation_tasks:
-      - Convert the pinned SkyRL AMD Docker recipe to a reproducible Apptainer definition based on the LUMI ROCm image.
-      - Replace Docker device and network assumptions with Slurm-visible gfx90a devices and hsn Ray addresses.
-      - Freeze Python and native package versions without replacing LUMI's working PyTorch, vLLM, or RCCL stack.
+      - Pass the four-update smoke and record the exact overlay freeze plus sampler/learner version evidence.
     artifacts:
       - skyrl-amd-runtime.sif.sha256
       - skyrl-tinker-smoke.json
@@ -267,13 +262,11 @@ stages:
     needs: [checkpoint-freeze]
     objective: Create 16 tiny deterministic tasks covering function calls, state, recovery, terminal use, and repo repair.
     commands:
-      - harbor run -p tasks/dry-run --environment-type singularity --agent oracle
-      - harbor run -p tasks/dry-run --environment-type singularity --agent deliberate-failure
+      - sbatch scripts/lumi_harbor_task_contract.sbatch
+      - SOAK=1 sbatch scripts/lumi_harbor_task_contract.sbatch
     implementation_tasks:
-      - Convert task images to prebuilt SIF files because LUMI compute nodes are offline.
-      - Add four tasks each for exact function calls, stateful two-tool flows, terminal edits, and micro-repository repair.
-      - Add oracle, deliberate-failure, timeout, and reward-replay tests for every task.
       - Export Harbor ATIF trajectories into the oellm-rlvr trajectory contract without exposing hidden tests.
+      - Pass the 112-launch LUMI environment soak and record its startup rate.
     artifacts:
       - harbor-task-pack-v0/
       - harbor-oracle-results.json
