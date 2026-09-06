@@ -192,6 +192,8 @@ The control plane now implements the first runnable slice of the critical path:
   smoke uses SkyRL's supported `mp` inference executor: SkyRL resolves each engine's physical GPU from its Ray
   placement-group bundle and gives vLLM a unique visibility mask. This is required on the current LUMI image,
   whose inherited Ray no-set flags otherwise leave all four Ray-backed vLLM engines able to select GCD 0;
+  generated completions are capped at 128 tokens by default so the four-update qualification reaches its
+  optimizer and checkpoint gates. Set `MAX_GENERATE_LENGTH` at submission time for a longer diagnostic;
 - `build-harbor-pack` creates four exact function calls, four stateful flows, four terminal edits, and four
   micro-repository repairs. Local validation proves unchanged tasks fail, oracle solutions pass twice, and
   private verifier markers never enter the policy surface;

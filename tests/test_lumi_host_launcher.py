@@ -22,3 +22,5 @@ def test_skyrl_smoke_preserves_ray_worker_diagnostics() -> None:
     assert "generator.inference_engine.distributed_executor_backend=mp" in script
     assert "unset VLLM_USE_V1 VLLM_ENABLE_V1_MULTIPROCESSING" in script
     assert "TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1" not in script
+    assert ': "${MAX_GENERATE_LENGTH:=128}"' in script
+    assert 'generator.sampling_params.max_generate_length="$MAX_GENERATE_LENGTH"' in script

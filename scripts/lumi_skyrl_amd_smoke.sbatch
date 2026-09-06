@@ -30,6 +30,7 @@ module load lumi-aif-singularity-bindings
 : "${PYTHON_BIN:=/scratch/project_465002530/users/bmoell/venvs/oellm-skyrl-v030/bin/python}"
 : "${CONTAINER:=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
 : "${RUN_ROOT:=/scratch/project_465002530/users/bmoell/oellm-rlvr/skyrl-smoke/$SLURM_JOB_ID}"
+: "${MAX_GENERATE_LENGTH:=128}"
 
 BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd,/boot
 VENV_SITE="$(dirname "$PYTHON_BIN")/../lib/python3.12/site-packages"
@@ -50,6 +51,7 @@ test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
 singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export PYTHONPATH HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export MODEL DATA CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN RUN_ROOT CONTAINER
+export MAX_GENERATE_LENGTH
 export TOKENIZERS_PARALLELISM=false VLLM_DISABLE_COMPILE_CACHE=1
 # Let SkyRL set both VLLM_USE_V1=1 and its matching
 # VLLM_ENABLE_V1_MULTIPROCESSING=0 runtime default. Exporting VLLM_USE_V1 here
@@ -95,7 +97,7 @@ srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CON
     generator.inference_engine.gpu_memory_utilization=0.90 generator.inference_engine.max_num_seqs=16 \
     generator.inference_engine.engine_init_kwargs.max_model_len=2048 \
     generator.batched=true generator.n_samples_per_prompt=4 \
-    generator.sampling_params.max_generate_length=512 \
+    generator.sampling_params.max_generate_length="$MAX_GENERATE_LENGTH" \
     trainer.algorithm.advantage_estimator=grpo trainer.algorithm.use_kl_loss=false \
     trainer.algorithm.use_kl_in_reward=false trainer.max_training_steps=4 trainer.epochs=1 \
     trainer.train_batch_size=8 trainer.policy_mini_batch_size=8 \
