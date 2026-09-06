@@ -36,8 +36,19 @@ clone_at_commit() {
 
 test -r "$CONTAINER"
 test -r "$CONTROL_ROOT/containers/lumi-skyrl-overlay-requirements.txt"
+test -r "$CONTROL_ROOT/patches/harbor-v0.22.0-lumi-no-fakeroot.patch"
 clone_at_commit "$SKYRL_URL" "$SKYRL_COMMIT" "$SKYRL_ROOT"
 clone_at_commit "$HARBOR_URL" "$HARBOR_COMMIT" "$HARBOR_ROOT"
+# Harbor v0.22.0 unconditionally requests --fakeroot, which forces a user
+# namespace. LUMI provides a supported setuid Singularity runtime instead, so
+# make fakeroot conditional and disable it only in the LUMI batch environment.
+if git -C "$HARBOR_ROOT" apply --check "$CONTROL_ROOT/patches/harbor-v0.22.0-lumi-no-fakeroot.patch"; then
+  git -C "$HARBOR_ROOT" apply "$CONTROL_ROOT/patches/harbor-v0.22.0-lumi-no-fakeroot.patch"
+elif ! git -C "$HARBOR_ROOT" apply --reverse --check \
+  "$CONTROL_ROOT/patches/harbor-v0.22.0-lumi-no-fakeroot.patch"; then
+  echo "Harbor LUMI fakeroot patch is neither applicable nor already applied" >&2
+  exit 1
+fi
 # Harbor's upstream bootstrap tries to install packages from inside each
 # compute-node sandbox. Replace only that file with the audited offline LUMI
 # bootstrap; probe_skyrl_stack.py records and enforces the downstream patch.

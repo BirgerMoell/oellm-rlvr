@@ -1,0 +1,25 @@
+diff --git a/src/harbor/environments/singularity/singularity.py b/src/harbor/environments/singularity/singularity.py
+index a8f7977..2001fac 100644
+--- a/src/harbor/environments/singularity/singularity.py
++++ b/src/harbor/environments/singularity/singularity.py
+@@ -376,6 +376,11 @@ class SingularityEnvironment(BaseEnvironment):
+                 "--workdir",
+                 self._workdir,
+             ]
++            fakeroot_args = []
++            if os.environ.get("HARBOR_SINGULARITY_DISABLE_FAKEROOT") != "1":
++                fakeroot_args.append("--fakeroot")
++            else:
++                self.logger.debug("Disabling --fakeroot for the LUMI setuid runtime")
+             cmd = [
+                 "singularity",
+                 "exec",
+@@ -383,7 +388,7 @@ class SingularityEnvironment(BaseEnvironment):
+                 "--pwd",
+                 self._workdir,
+                 "--writable-tmpfs",
+-                "--fakeroot",
++                *fakeroot_args,
+                 "--containall",
+                 "--pid",
+                 *bind_mounts,

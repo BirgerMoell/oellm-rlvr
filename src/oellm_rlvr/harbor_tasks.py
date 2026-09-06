@@ -85,7 +85,7 @@ timeout_sec = 180.0
 
 [environment]
 docker_image = {json.dumps(sif)}
-workdir = "/app"
+workdir = "/tmp/oellm-task"
 build_timeout_sec = 300.0
 cpus = 1
 memory_mb = 2048

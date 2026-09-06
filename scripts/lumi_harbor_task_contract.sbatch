@@ -23,6 +23,7 @@ module load lumi-aif-singularity-bindings
 : "${RESULTS_ROOT:=/scratch/project_465002530/users/bmoell/oellm-rlvr/harbor-contract}"
 : "${SOAK:=0}"
 : "${N_CONCURRENT:=4}"
+: "${TASK_NAME:=}"
 
 ORACLE_ATTEMPTS=1
 NOP_ATTEMPTS=1
@@ -34,7 +35,8 @@ fi
 RESULTS_DIR="$RESULTS_ROOT/$SLURM_JOB_ID"
 PACK="$RESULTS_DIR/harbor-task-pack-v0"
 JOBS="$RESULTS_DIR/jobs"
-mkdir -p logs "$RESULTS_DIR" "$JOBS"
+HARBOR_LUMI_CACHE_ROOT="$RESULTS_DIR/launcher-cache"
+mkdir -p logs "$RESULTS_DIR" "$JOBS" "$HARBOR_LUMI_CACHE_ROOT"/{singularity,tmp}
 test -r "$CONTAINER"
 test -r "$VENV/pyvenv.cfg"
 singularity exec -B /pfs,/scratch,/appl "$CONTAINER" test -x "$VENV/bin/python"
@@ -51,9 +53,10 @@ VENV_SITE="$VENV/lib/python3.12/site-packages"
 PYTHONPATH="$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 LAUNCHER_PATH="$CONTROL_ROOT/scripts/lumi-host-launcher-bin"
 export PYTHONPATH HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+export HARBOR_LUMI_CACHE_ROOT HARBOR_SINGULARITY_DISABLE_FAKEROOT=1
 
 inside() {
-  singularity exec -B "$BIND" "$CONTAINER" env \
+  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV \
     PATH="$LAUNCHER_PATH:$VENV/bin:/opt/venv/bin:/usr/bin:/bin" \
     PYTHONPATH="$PYTHONPATH" HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
     "$@"
@@ -63,16 +66,24 @@ inside "$VENV/bin/python" -m oellm_rlvr.cli build-harbor-pack --output "$PACK" -
 inside "$VENV/bin/python" -m oellm_rlvr.cli validate-harbor-pack --pack "$PACK"
 sha256sum "$CONTAINER" > "$RESULTS_DIR/task-sif.sha256"
 
-inside "$VENV/bin/harbor" run -p "$PACK" -a oracle -e singularity \
+RUN_PATH="$PACK"
+EXPECTED_TASKS=16
+if [[ -n "$TASK_NAME" ]]; then
+  RUN_PATH="$PACK/$TASK_NAME"
+  test -d "$RUN_PATH"
+  EXPECTED_TASKS=1
+fi
+
+inside "$VENV/bin/harbor" run -p "$RUN_PATH" -a oracle -e singularity \
   -n "$N_CONCURRENT" -k "$ORACLE_ATTEMPTS" -o "$JOBS" --job-name oracle -y -q
 inside "$VENV/bin/python" "$CONTROL_ROOT/scripts/validate_harbor_trials.py" \
-  --root "$JOBS/oracle" --agent oracle --reward 1 --tasks 16 --attempts "$ORACLE_ATTEMPTS" \
+  --root "$JOBS/oracle" --agent oracle --reward 1 --tasks "$EXPECTED_TASKS" --attempts "$ORACLE_ATTEMPTS" \
   --output "$RESULTS_DIR/harbor-oracle-results.json"
 
-inside "$VENV/bin/harbor" run -p "$PACK" -a nop -e singularity \
+inside "$VENV/bin/harbor" run -p "$RUN_PATH" -a nop -e singularity \
   -n "$N_CONCURRENT" -k "$NOP_ATTEMPTS" -o "$JOBS" --job-name nop -y -q
 inside "$VENV/bin/python" "$CONTROL_ROOT/scripts/validate_harbor_trials.py" \
-  --root "$JOBS/nop" --agent nop --reward 0 --tasks 16 --attempts "$NOP_ATTEMPTS" \
+  --root "$JOBS/nop" --agent nop --reward 0 --tasks "$EXPECTED_TASKS" --attempts "$NOP_ATTEMPTS" \
   --output "$RESULTS_DIR/harbor-failure-results.json"
 
 echo "harbor_contract_artifact=$RESULTS_DIR"

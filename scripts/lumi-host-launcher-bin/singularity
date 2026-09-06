@@ -11,6 +11,10 @@ if [[ -z "${SLURM_JOB_ID:-}" || -z "${SLURMD_NODENAME:-}" ]]; then
 fi
 
 export LD_LIBRARY_PATH="/hostlib64:/usr/lib64/slurm:${LD_LIBRARY_PATH:-}"
+export LUA_PATH="/usr/share/lua/5.3/?.lua;/usr/share/lua/5.3/?/init.lua;;"
+export LUA_CPATH="/hostlib64/lua/5.3/?.so;/hostlib64/lua/5.3/?/?.so;;"
+: "${HARBOR_LUMI_CACHE_ROOT:?HARBOR_LUMI_CACHE_ROOT must point to project scratch}"
+
 exec /usr/local/bin/srun \
   --overlap \
   --nodes=1 \
@@ -18,4 +22,11 @@ exec /usr/local/bin/srun \
   --cpus-per-task=1 \
   --chdir="$PWD" \
   --nodelist="$SLURMD_NODENAME" \
+  /usr/bin/env \
+  -u APPTAINER_CONTAINER -u APPTAINER_ENVIRONMENT -u APPTAINER_NAME \
+  -u SINGULARITY_CONTAINER -u SINGULARITY_ENVIRONMENT -u SINGULARITY_NAME \
+  -u BASH_ENV \
+  LD_LIBRARY_PATH=/usr/lib64/slurm:/usr/lib64 \
+  SINGULARITY_CACHEDIR="$HARBOR_LUMI_CACHE_ROOT/singularity" \
+  SINGULARITY_TMPDIR="$HARBOR_LUMI_CACHE_ROOT/tmp" \
   /usr/bin/singularity "$@"

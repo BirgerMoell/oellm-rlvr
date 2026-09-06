@@ -19,6 +19,7 @@ def test_harbor_pack_has_four_tasks_per_capability_and_replays(tmp_path: Path) -
     task_config = tomllib.loads((pack / "function-convert-temperature/task.toml").read_text())
     assert task_config["task"]["authors"] == [{"name": "OpenEuroLLM contributors"}]
     assert task_config["environment"]["docker_image"] == "/immutable/task-runtime.sif"
+    assert task_config["environment"]["workdir"] == "/tmp/oellm-task"
 
     replay = validate_harbor_dryrun_pack(pack)
     assert replay["ok"] is True

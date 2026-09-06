@@ -28,6 +28,7 @@ module load lumi-aif-singularity-bindings
 
 BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd,/boot
 RESULTS_DIR="$RESULTS_ROOT/$SLURM_JOB_ID"
+CACHE_ROOT="$RESULTS_DIR/cache"
 VENV_SITE="$(dirname "$PYTHON_BIN")/../lib/python3.12/site-packages"
 PYTHONPATH="$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 mapfile -t PREFLIGHT_NODES < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
@@ -38,7 +39,7 @@ HEAD_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" getent hosts "$HE
 TRAINER_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$TRAINER_NODE" getent hosts "$TRAINER_NODE" | awk 'NR==1 {print $1}')"
 RAY_PORT="$((21000 + SLURM_JOB_ID % 10000))"
 TRANSFER_PORT="$((32000 + SLURM_JOB_ID % 10000))"
-mkdir -p logs "$RESULTS_DIR"
+mkdir -p logs "$RESULTS_DIR" "$CACHE_ROOT"/{xdg,triton,torchinductor,vllm,tmp,miopen}
 test -r "$MODEL/config.json"
 test -r "$TOKENIZER/tokenizer_config.json"
 test -r "$CONTAINER"
@@ -47,6 +48,10 @@ singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export MODEL TOKENIZER CONTROL_ROOT CONTAINER PYTHON_BIN RESULTS_DIR HF_HOME PYTHONPATH
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0 PYTHONUNBUFFERED=1
 export RAY_USAGE_STATS_ENABLED=0 RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
+export XDG_CACHE_HOME="$CACHE_ROOT/xdg" TRITON_CACHE_DIR="$CACHE_ROOT/triton"
+export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor" VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"
+export MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen" MIOPEN_CUSTOM_CACHE_DIR="$CACHE_ROOT/miopen"
+export TMPDIR="$CACHE_ROOT/tmp" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 
 cleanup() {
   if [[ -n "${RAY_STEP_PID:-}" ]]; then

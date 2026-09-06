@@ -13,7 +13,14 @@ from typing import Any
 
 EXPECTED_SKYRL = "f5bc3b78dfddfb352870d5d7430cd226e5785838"
 EXPECTED_HARBOR = "4407eb5227a2ff4f0d3f16b2eb48849382fdf276"
-EXPECTED_HARBOR_BOOTSTRAP_SHA256 = "1cb240109faf7caa4fd273fab6af035a19e14e679570987e500e4ff6d1ff124f"
+EXPECTED_HARBOR_PATCHES = {
+    "src/harbor/environments/singularity/bootstrap.sh": (
+        "1cb240109faf7caa4fd273fab6af035a19e14e679570987e500e4ff6d1ff124f"
+    ),
+    "src/harbor/environments/singularity/singularity.py": (
+        "dc031a84d55f94767586bfdd97d2f520032e07c59702b31e8af8ce46d0f0f89d"
+    ),
+}
 
 
 def _commit(path: Path) -> str:
@@ -52,16 +59,16 @@ def inspect_stack(skyrl_source: Path, harbor_source: Path, *, require_gpu: bool)
         errors.append(f"Harbor commit mismatch: {commits['harbor']}")
     if dirty_paths["skyrl"]:
         errors.append(f"unexpected SkyRL source changes: {dirty_paths['skyrl']}")
-    allowed_harbor_patch = ["src/harbor/environments/singularity/bootstrap.sh"]
-    if dirty_paths["harbor"] not in ([], allowed_harbor_patch):
+    expected_harbor_paths = sorted(EXPECTED_HARBOR_PATCHES)
+    if dirty_paths["harbor"] != expected_harbor_paths:
         errors.append(f"unexpected Harbor source changes: {dirty_paths['harbor']}")
-    harbor_bootstrap = harbor_source / allowed_harbor_patch[0]
-    harbor_bootstrap_sha256 = hashlib.sha256(harbor_bootstrap.read_bytes()).hexdigest()
-    if (
-        dirty_paths["harbor"] == allowed_harbor_patch
-        and harbor_bootstrap_sha256 != EXPECTED_HARBOR_BOOTSTRAP_SHA256
-    ):
-        errors.append(f"unexpected Harbor bootstrap patch digest: {harbor_bootstrap_sha256}")
+    harbor_patch_sha256 = {
+        path: hashlib.sha256((harbor_source / path).read_bytes()).hexdigest()
+        for path in expected_harbor_paths
+    }
+    for path, expected_digest in EXPECTED_HARBOR_PATCHES.items():
+        if harbor_patch_sha256[path] != expected_digest:
+            errors.append(f"unexpected Harbor patch digest for {path}: {harbor_patch_sha256[path]}")
 
     modules = (
         "skyrl",
@@ -122,7 +129,7 @@ def inspect_stack(skyrl_source: Path, harbor_source: Path, *, require_gpu: bool)
         "ok": not errors,
         "commits": commits,
         "source_changes": dirty_paths,
-        "harbor_bootstrap_sha256": harbor_bootstrap_sha256,
+        "harbor_patch_sha256": harbor_patch_sha256,
         "versions": versions,
         "torch_hip": torch.version.hip,
         "visible_gpus": torch.cuda.device_count(),

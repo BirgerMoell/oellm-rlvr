@@ -99,7 +99,10 @@ sbatch scripts/lumi_harbor_task_contract.sbatch
 `bootstrap_skyrl_lumi.sh` pins SkyRL `f5bc3b7` and Harbor `4407eb5`, puts caches and builds on project
 scratch, and installs only an overlay around LUMI's native ROCm stack. Harbor does not try to nest Singularity
 inside LAIF: `scripts/lumi-host-launcher-bin/singularity` sends each sandbox launch through an overlapping
-same-node Slurm step, where LUMI's host Singularity runs it. Compute-node execution remains offline. Set
+same-node Slurm step, where LUMI's host Singularity runs it. The audited Harbor patch also omits `--fakeroot`
+on LUMI so the supported setuid runtime is used instead of an unavailable user namespace. Compute-node
+execution remains offline. Use `TASK_NAME=terminal-edit-workers sbatch scripts/lumi_harbor_task_contract.sbatch`
+for the two-trial launcher probe. Set
 `SOAK=1` when submitting the Harbor job to run 112 environment launches; the default 32-trial smoke runs one
 oracle and one no-op attempt per task.
 
