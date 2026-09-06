@@ -24,3 +24,19 @@ def test_skyrl_smoke_preserves_ray_worker_diagnostics() -> None:
     assert "TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1" not in script
     assert ': "${MAX_GENERATE_LENGTH:=128}"' in script
     assert 'generator.sampling_params.max_generate_length="$MAX_GENERATE_LENGTH"' in script
+
+
+def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
+    script = Path("scripts/lumi_harbor_agentic_rollout.sbatch").read_text()
+    assert "examples.train_integrations.harbor.entrypoints.main_harbor_generate" in script
+    assert "harbor_trial_config.agent.name=terminus-2" in script
+    assert "harbor_trial_config.environment.type=singularity" in script
+    assert "harbor_trial_config.agent.kwargs.collect_rollout_details=true" in script
+    assert "generator.step_wise_trajectories=true" in script
+    assert "generator.merge_stepwise_output=true" in script
+    assert "generator.inference_engine.distributed_executor_backend=mp" in script
+    assert 'PATH="$LAUNCHER_PATH:' in script
+    assert 'cp -a "$PACK"/repo-* "$ROLLOUT_PACK"/' in script
+    assert "qualify-harbor-rollouts" in script
+    assert "--min-bash-commands-per-trial 1" in script
+    assert "--expected-trials 4" in script

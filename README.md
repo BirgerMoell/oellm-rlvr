@@ -94,6 +94,7 @@ cd "$ROOT/oellm-rlvr-src"
 sbatch scripts/lumi_full_stack_preflight.sbatch
 sbatch scripts/lumi_skyrl_amd_smoke.sbatch
 sbatch scripts/lumi_harbor_task_contract.sbatch
+sbatch scripts/lumi_harbor_agentic_rollout.sbatch
 ```
 
 `bootstrap_skyrl_lumi.sh` pins SkyRL `f5bc3b7` and Harbor `4407eb5`, puts caches and builds on project
@@ -108,6 +109,25 @@ for the two-trial launcher probe. Set
 `SOAK=1` when submitting the Harbor job to run 112 environment launches; the default 32-trial smoke runs one
 oracle and one no-op attempt per task.
 
+`lumi_harbor_agentic_rollout.sbatch` is the first real agent gate. It starts four local vLLM engines, sends the
+four repository-repair tasks through SkyRL's Harbor generator, lets Terminus-2 operate isolated task terminals,
+and runs each deferred verifier. The job is intentionally generation-only: it refuses to pass unless every ATIF
+trace has a real shell action, a linked terminal observation, aligned token IDs and log-probabilities, a finite
+verifier reward, and no leaked private verifier marker. Its default small checkpoint checks mechanics cheaply;
+point `MODEL` at the frozen OpenEuroLLM checkpoint for the checkpoint qualification:
+
+```bash
+sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+MODEL="$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
+  sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+Artifacts are written under `$ROOT/oellm-rlvr/harbor-agent/JOB_ID/`: raw Harbor trials, ATIF trajectories,
+`campaign-index.jsonl`, `qualification.json`, source/checkpoint hashes, compatibility probes, and archived Ray
+logs. A reward of zero is allowed at this gate because it is a policy outcome, not an infrastructure failure.
+Before enabling a learner update, sample each prompt multiple times and require mixed rewards within at least one
+prompt group; otherwise GRPO has zero advantages by construction.
+
 Index a Harbor agent run without flattening its multi-turn trace:
 
 ```bash
@@ -116,6 +136,16 @@ $ROOT/venvs/oellm-rlvr/bin/oellm-rlvr index-harbor-atif \
   --output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
   --run-id RUN_ID --policy-version 0 --learner-version 0 \
   --require-token-ids --require-logprobs
+```
+
+For the stricter executable-agent gate used by the Slurm job:
+
+```bash
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr qualify-harbor-rollouts \
+  --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
+  --index-output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
+  --report-output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/qualification.json" \
+  --run-id RUN_ID --policy-version 0 --learner-version 0 --expected-trials 4
 ```
 
 Each JSONL row binds the trial result and raw `agent/trajectory.json` to SHA-256 digests, verifier reward,

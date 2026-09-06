@@ -240,6 +240,7 @@ sbatch scripts/lumi_full_stack_preflight.sbatch
 sbatch scripts/lumi_skyrl_amd_smoke.sbatch
 sbatch scripts/lumi_harbor_task_contract.sbatch
 SOAK=1 sbatch scripts/lumi_harbor_task_contract.sbatch
+sbatch scripts/lumi_harbor_agentic_rollout.sbatch
 
 $ROOT/venvs/oellm-rlvr/bin/oellm-rlvr index-harbor-atif \
   --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
@@ -247,6 +248,18 @@ $ROOT/venvs/oellm-rlvr/bin/oellm-rlvr index-harbor-atif \
   --run-id RUN_ID --policy-version 0 --learner-version 0 \
   --require-token-ids --require-logprobs
 ```
+
+The agentic rollout job is the learner-off gate between the deterministic Harbor contract and the first agentic
+optimizer update. It uses the pinned upstream SkyRL Harbor generator rather than a project-specific simulation:
+Terminus-2 calls the local vLLM router over the OpenAI-compatible API, parses shell commands, executes them in a
+Harbor Singularity task environment, and returns the external verifier reward plus per-turn token data. The job
+selects the four micro-repository repairs, limits each trial to six turns and 768 output tokens per turn, and
+requires all four raw trials to satisfy `qualify-harbor-rollouts`.
+
+Do not interpret a zero reward as a failed integration. A trial fails this stage only for missing/invalid token
+data, no real terminal action, an unlinked observation, the wrong agent or environment, a Harbor exception, a
+missing verifier result, or a leaked private verifier marker. The subsequent training canary additionally needs
+within-prompt reward variance across repeated samples; without it, GRPO must produce zero gradients.
 
 The two TMAX dry-run profiles are already committed:
 

@@ -24,6 +24,7 @@ from .datasets import (
 )
 from .gates import evaluate_gates
 from .harbor_atif import index_harbor_atif
+from .harbor_qualification import qualify_harbor_rollouts
 from .harbor_tasks import build_harbor_dryrun_pack, validate_harbor_dryrun_pack
 from .reasoning_eval import build_blinded_reasoning_audit, compare_reasoning_evals, run_reasoning_eval
 from .schemas import TaskSpec
@@ -358,6 +359,22 @@ def command_index_harbor_atif(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def command_qualify_harbor_rollouts(args: argparse.Namespace) -> int:
+    report = qualify_harbor_rollouts(
+        args.jobs_root,
+        args.index_output,
+        args.report_output,
+        run_id=args.run_id,
+        policy_version=args.policy_version,
+        learner_version=args.learner_version,
+        expected_trials=args.expected_trials,
+        min_bash_commands_per_trial=args.min_bash_commands_per_trial,
+        min_task_complete_per_trial=args.min_task_complete_per_trial,
+    )
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oellm-rlvr")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -571,6 +588,21 @@ def build_parser() -> argparse.ArgumentParser:
     atif.add_argument("--require-token-ids", action="store_true")
     atif.add_argument("--require-logprobs", action="store_true")
     atif.set_defaults(handler=command_index_harbor_atif)
+
+    qualify_harbor = sub.add_parser(
+        "qualify-harbor-rollouts",
+        help="require real Terminus-2 terminal actions and learner-ready Harbor trajectories",
+    )
+    qualify_harbor.add_argument("--jobs-root", required=True)
+    qualify_harbor.add_argument("--index-output", required=True)
+    qualify_harbor.add_argument("--report-output", required=True)
+    qualify_harbor.add_argument("--run-id", required=True)
+    qualify_harbor.add_argument("--policy-version", type=int, required=True)
+    qualify_harbor.add_argument("--learner-version", type=int, required=True)
+    qualify_harbor.add_argument("--expected-trials", type=int, required=True)
+    qualify_harbor.add_argument("--min-bash-commands-per-trial", type=int, default=1)
+    qualify_harbor.add_argument("--min-task-complete-per-trial", type=int, default=0)
+    qualify_harbor.set_defaults(handler=command_qualify_harbor_rollouts)
     return parser
 
 

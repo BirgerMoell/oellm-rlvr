@@ -99,6 +99,9 @@ def test_index_harbor_atif_preserves_raw_trace_and_counts_only_fresh_llm_steps(t
     assert record["trainable_agent_steps"] == 1
     assert record["llm_call_count"] == 1
     assert record["tool_call_count"] == 2
+    assert record["metadata"]["bash_command_count"] == 0
+    assert record["metadata"]["task_complete_count"] == 0
+    assert record["metadata"]["linked_observation_count"] == 1
     assert record["prompt_tokens"] == 10
     assert record["completion_tokens"] == 2
     assert json.loads((trial / "agent" / "trajectory.json").read_text())["steps"][2]["tool_calls"]
@@ -143,3 +146,27 @@ def test_index_harbor_atif_rejects_misaligned_logprobs(tmp_path: Path) -> None:
     assert report["ok"] is False
     record = json.loads(output.read_text())
     assert any("logprobs do not align" in reason for reason in record["rejection_reasons"])
+
+
+def test_index_harbor_atif_rejects_private_verifier_marker_in_trace(tmp_path: Path) -> None:
+    trial = _write_trial(tmp_path)
+    verifier = trial / "verifier"
+    verifier.mkdir()
+    (verifier / "result.json").write_text(json.dumps({"reward": 1, "marker": "private-secret-marker"}))
+    atif_path = trial / "agent" / "trajectory.json"
+    payload = json.loads(atif_path.read_text())
+    payload["steps"][2]["message"] = "private-secret-marker"
+    atif_path.write_text(json.dumps(payload))
+
+    output = tmp_path / "index.jsonl"
+    report = index_harbor_atif(
+        tmp_path,
+        output,
+        run_id="dryrun-4",
+        policy_version=0,
+        learner_version=0,
+    )
+
+    assert report["ok"] is False
+    record = json.loads(output.read_text())
+    assert "private verifier marker leaked into ATIF trajectory" in record["rejection_reasons"]

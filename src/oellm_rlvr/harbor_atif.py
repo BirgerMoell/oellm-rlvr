@@ -51,6 +51,10 @@ def _inspect_atif(payload: object, *, require_token_ids: bool, require_logprobs:
         "fresh_step_count": 0,
         "llm_call_count": 0,
         "tool_call_count": 0,
+        "bash_command_count": 0,
+        "task_complete_count": 0,
+        "linked_observation_count": 0,
+        "parser_error_count": 0,
         "prompt_tokens": 0,
         "completion_tokens": 0,
         "trainable_agent_steps": 0,
@@ -110,6 +114,7 @@ def _inspect_atif(payload: object, *, require_token_ids: bool, require_logprobs:
         if not isinstance(tool_calls, list):
             errors.append(f"{prefix}.tool_calls must be an array")
             tool_calls = []
+        step_bash_commands = 0
         for tool_index, call in enumerate(tool_calls):
             if not isinstance(call, dict):
                 errors.append(f"{prefix}.tool_calls[{tool_index}] must be an object")
@@ -121,8 +126,15 @@ def _inspect_atif(payload: object, *, require_token_ids: bool, require_logprobs:
                 errors.append(f"duplicate tool_call_id: {call_id}")
             else:
                 known_call_ids.add(call_id)
-            if not isinstance(call.get("function_name"), str) or not isinstance(call.get("arguments"), dict):
+            function_name = call.get("function_name")
+            if not isinstance(function_name, str) or not isinstance(call.get("arguments"), dict):
                 errors.append(f"{prefix}.tool_calls[{tool_index}] has an invalid function or arguments")
+            elif not copied:
+                if function_name == "bash_command":
+                    counters["bash_command_count"] += 1
+                    step_bash_commands += 1
+                elif function_name == "mark_task_complete":
+                    counters["task_complete_count"] += 1
         if not copied:
             counters["tool_call_count"] += len(tool_calls)
 
@@ -139,6 +151,21 @@ def _inspect_atif(payload: object, *, require_token_ids: bool, require_logprobs:
                     source_call_id = result.get("source_call_id")
                     if source_call_id is not None and source_call_id not in known_call_ids:
                         errors.append(f"{prefix}.observation references unknown tool call {source_call_id!r}")
+                    elif source_call_id is not None and not copied:
+                        counters["linked_observation_count"] += 1
+                    content = result.get("content")
+                    if (
+                        source_call_id is None
+                        and step_bash_commands
+                        and not copied
+                        and isinstance(content, str)
+                        and content
+                    ):
+                        # Terminus deliberately emits one unlinked terminal
+                        # observation when a response batches several commands.
+                        counters["linked_observation_count"] += 1
+                    if not copied and isinstance(content, str) and "parsing errors" in content.lower():
+                        counters["parser_error_count"] += 1
 
         if source != "agent":
             continue
@@ -233,6 +260,10 @@ def index_harbor_atif(
             "fresh_step_count": 0,
             "llm_call_count": 0,
             "tool_call_count": 0,
+            "bash_command_count": 0,
+            "task_complete_count": 0,
+            "linked_observation_count": 0,
+            "parser_error_count": 0,
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "trainable_agent_steps": 0,
@@ -253,6 +284,15 @@ def index_harbor_atif(
                     require_logprobs=require_logprobs,
                 )
                 atif_sha256 = _sha256(atif_path)
+                verifier_detail_path = result_path.parent / "verifier" / "result.json"
+                if verifier_detail_path.is_file():
+                    try:
+                        verifier_detail = json.loads(verifier_detail_path.read_text())
+                    except (OSError, json.JSONDecodeError):
+                        verifier_detail = {}
+                    private_marker = verifier_detail.get("marker") if isinstance(verifier_detail, dict) else None
+                    if isinstance(private_marker, str) and private_marker and private_marker in atif_path.read_text():
+                        inspection["errors"].append("private verifier marker leaked into ATIF trajectory")
         reasons.extend(inspection["errors"])
 
         exception = result.get("exception_info")
@@ -313,6 +353,10 @@ def index_harbor_atif(
                 "trajectory_id": inspection["trajectory_id"],
                 "trial_name": result.get("trial_name"),
                 "environment_type": ((result.get("config") or {}).get("environment") or {}).get("type"),
+                "bash_command_count": inspection["bash_command_count"],
+                "task_complete_count": inspection["task_complete_count"],
+                "linked_observation_count": inspection["linked_observation_count"],
+                "parser_error_count": inspection["parser_error_count"],
             },
         )
         records.append(record)
