@@ -69,7 +69,9 @@ export VLLM_DISABLE_COMPILE_CACHE=1
 export VLLM_USE_V1=1
 export OELLM_WEIGHT_TRANSFER={{ config.rollout.weight_transfer | tojson }}
 export NCCL_CUMEM_ENABLE=0
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+{% if config.platform.accelerator == "rocm" %}# Avoid the current LAIF hwloc AMD-SMI discovery SIGFPE in concurrent workers.
+export HWLOC_COMPONENTS=-rsmi
+{% endif %}export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 # Slurm on LUMI still sets ROCR_VISIBLE_DEVICES, but current Ray rejects that
 # deprecated name. Preserve the allocation under the HIP-standard variable.

@@ -49,6 +49,10 @@ export TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1 VLLM_DISABLE_COMPILE_CACHE=1
 export OELLM_PATCH_RAY_ROCM_VISIBILITY=1 OELLM_PATCH_VLLM_MAMBA_ENUM=1
 export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0
+# Ray already owns GPU placement. hwloc's AMD-SMI discovery crashes with
+# SIGFPE in concurrent workers in the current LAIF image, so retain CPU/NUMA
+# discovery while excluding only the redundant RSMI device component.
+export HWLOC_COMPONENTS=-rsmi
 export XDG_CACHE_HOME="$CACHE_ROOT/xdg" TRITON_CACHE_DIR="$CACHE_ROOT/triton"
 export XDG_CONFIG_HOME="$CACHE_ROOT/xdg-config" VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor" VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"

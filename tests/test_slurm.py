@@ -18,6 +18,7 @@ def test_lumi_job_renders_ray_and_rocm_preflight() -> None:
     assert 'export TRITON_CACHE_DIR="$RAY_TMP/triton-cache"' in rendered
     assert 'export XDG_CACHE_HOME="$RAY_TMP/xdg-cache"' in rendered
     assert 'export MIOPEN_USER_DB_PATH="$RAY_TMP/miopen-cache"' in rendered
+    assert "export HWLOC_COMPONENTS=-rsmi" in rendered
     assert 'export JOB_TMPDIR="$RAY_TMP/tmp"' in rendered
     assert "mkdir -p \"$JOB_TMPDIR\" \"$XDG_CACHE_HOME\"" in rendered
     assert 'export TMPDIR="$JOB_TMPDIR"' in rendered
@@ -31,6 +32,7 @@ def test_cuda_job_uses_nv_flag() -> None:
     path = ROOT / "configs/cuda-code-qwen35-2b-smoke.yaml"
     rendered = render_slurm(load_config(path), path)
     assert "singularity exec --nv" in rendered
+    assert "HWLOC_COMPONENTS" not in rendered
 
 
 def test_hierarchical_job_exports_weight_transfer_mode() -> None:

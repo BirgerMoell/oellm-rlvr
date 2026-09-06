@@ -122,6 +122,12 @@ LUMI's `hsn` interfaces in the cross-node qualification profile.
 
 The LAIF `lumi-multitorch-full` image contains a matched ROCm/ROCr userspace and the Libfabric RCCL network plugin. The generated ROCm launch intentionally does not pass Singularity's `--rocm`: that flag replaces image libraries with host libraries and can produce a node-dependent HSA ABI mismatch. CUDA profiles still use `--nv`.
 
+ROCm launches also set `HWLOC_COMPONENTS=-rsmi`. Ray performs the GPU placement, while the AMD-SMI hwloc
+device-discovery component in the current LAIF environment can raise `SIGFPE` when several FSDP workers
+initialize concurrently. This excludes only redundant RSMI discovery and keeps CPU/NUMA topology discovery.
+The syntax follows hwloc's documented runtime component blacklist:
+<https://hwloc.readthedocs.io/en/hwloc-2.14.0/doxygen/html/faq.html>.
+
 Qualify the native transfer communicator before loading a multi-billion-parameter model:
 
 ```bash
