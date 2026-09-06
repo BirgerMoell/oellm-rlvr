@@ -34,12 +34,14 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "harbor_trial_config.agent.name=terminus-2" in script
     assert "harbor_trial_config.environment.type=singularity" in script
     assert "harbor_trial_config.agent.kwargs.collect_rollout_details=true" in script
+    assert "probe_harbor_litellm_vllm.py" in script
     assert "generator.step_wise_trajectories=true" in script
     assert "generator.merge_stepwise_output=true" in script
     assert "generator.inference_engine.distributed_executor_backend=mp" in script
     assert 'PATH="$LAUNCHER_PATH:' in script
-    assert 'cp -a "$PACK"/repo-* "$ROLLOUT_PACK"/' in script
+    assert 'cp -a "${SELECTED_TASKS[@]}" "$ROLLOUT_PACK"/' in script
     assert "qualify-harbor-rollouts" in script
     assert "--min-bash-commands-per-trial 1" in script
-    assert "--expected-trials 4" in script
+    assert 'TASK_GLOB:=repo-repair-clamp' in script
+    assert '--expected-trials "$EXPECTED_TRIALS"' in script
     assert "srun --label --cpu-bind=none --gpu-bind=none" in script

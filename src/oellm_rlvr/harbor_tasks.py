@@ -154,6 +154,11 @@ print(json.dumps({"result": result}, sort_keys=True))
 def _write_common(task: Path, name: str, category: str, sif: str, instruction: str, verifier: str) -> None:
     _write(task / "task.toml", _task_toml(name, category, sif))
     _write(task / "instruction.md", instruction.rstrip() + "\n")
+    # Harbor v0.22.0 derives the initial shell directory from an environment
+    # Dockerfile even when docker_image points at a prebuilt SIF. Without this
+    # declaration it silently defaults to /app and the agent cannot see the
+    # task payload mounted at /tmp/oellm-task.
+    _write(task / "environment/Dockerfile", "FROM scratch\nWORKDIR /tmp/oellm-task\n")
     _write(task / "tests/test.sh", _test_sh(), executable=True)
     _write(task / "tests/verify.py", verifier)
 
@@ -286,6 +291,7 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
             task / "task.toml",
             task / "instruction.md",
             task / "environment",
+            task / "environment/Dockerfile",
             task / "solution/solve.sh",
             task / "tests/test.sh",
             task / "tests/verify.py",
@@ -293,6 +299,8 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
         missing = [str(path.relative_to(pack)) for path in required if not path.exists()]
         if missing:
             raise ValueError(f"task {task.name} is incomplete: {missing}")
+        if (task / "environment/Dockerfile").read_text() != "FROM scratch\nWORKDIR /tmp/oellm-task\n":
+            raise ValueError(f"task {task.name} does not declare Harbor's expected workdir")
         policy_text = (task / "instruction.md").read_text() + "\n" + "\n".join(
             path.read_text(errors="replace") for path in sorted((task / "environment").rglob("*")) if path.is_file()
         )

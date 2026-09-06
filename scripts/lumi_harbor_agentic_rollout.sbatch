@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Real SkyRL -> vLLM -> Terminus-2 -> Singularity -> Harbor verifier rollout.
 # This is generation-only by design: it must pass before learner updates are
-# enabled. The default run exercises all four project-owned repository repairs.
+# enabled. The default canary exercises one project-owned repository repair;
+# set TASK_GLOB='repo-*' only after that strict gate passes.
 #SBATCH --job-name=oellm-agent-rollout
 #SBATCH --account=project_465002530
 #SBATCH --partition=dev-g
@@ -32,6 +33,7 @@ module load lumi-aif-singularity-bindings
 : "${MAX_TOKENS_PER_TURN:=768}"
 : "${MAX_TURNS:=6}"
 : "${TEMPERATURE:=0.7}"
+: "${TASK_GLOB:=repo-repair-clamp}"
 
 PACK="$RUN_ROOT/harbor-task-pack-v0"
 ROLLOUT_PACK="$RUN_ROOT/code-rollout-pack"
@@ -91,8 +93,19 @@ inside() {
 
 inside "$PYTHON_BIN" -m oellm_rlvr.cli build-harbor-pack --output "$PACK" --sif "$CONTAINER"
 inside "$PYTHON_BIN" -m oellm_rlvr.cli validate-harbor-pack --pack "$PACK"
-cp -a "$PACK"/repo-* "$ROLLOUT_PACK"/
-test "$(find "$ROLLOUT_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 4
+inside "$PYTHON_BIN" "$CONTROL_ROOT/scripts/probe_harbor_litellm_vllm.py" \
+  --output "$RUN_ROOT/compatibility/harbor-litellm-vllm.json"
+mapfile -t SELECTED_TASKS < <(find "$PACK" -mindepth 1 -maxdepth 1 -type d -name "$TASK_GLOB" -print | sort)
+EXPECTED_TRIALS="${#SELECTED_TASKS[@]}"
+if [[ "$EXPECTED_TRIALS" -lt 1 ]]; then
+  echo "TASK_GLOB=$TASK_GLOB selected no Harbor tasks" >&2
+  exit 1
+fi
+cp -a "${SELECTED_TASKS[@]}" "$ROLLOUT_PACK"/
+test "$(find "$ROLLOUT_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$EXPECTED_TRIALS"
+printf '%s\n' "$TASK_GLOB" > "$RUN_ROOT/manifests/task-glob.txt"
+printf '%s\n' "$EXPECTED_TRIALS" > "$RUN_ROOT/manifests/expected-trials.txt"
+export EXPECTED_TRIALS
 
 git -C "$CONTROL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/oellm-rlvr.commit"
 git -C "$SKYRL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/skyrl.commit"
@@ -154,7 +167,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task=8 singularity exec 
     generator.rate_limit.max_concurrency=4 \
     trainer.algorithm.max_seq_len="$MAX_MODEL_LEN" trainer.algorithm.advantage_estimator=grpo \
     trainer.algorithm.use_kl_loss=false trainer.algorithm.use_kl_in_reward=false \
-    trainer.train_batch_size=4 trainer.policy_mini_batch_size=4 \
+    trainer.train_batch_size="$EXPECTED_TRIALS" trainer.policy_mini_batch_size="$EXPECTED_TRIALS" \
     trainer.micro_forward_batch_size_per_gpu=1 trainer.micro_train_batch_size_per_gpu=1 \
     trainer.remove_microbatch_padding=false trainer.flash_attn=false \
     trainer.eval_before_train=false trainer.eval_interval=-1 trainer.logger=console \
@@ -166,7 +179,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task=8 singularity exec 
 inside "$PYTHON_BIN" -m oellm_rlvr.cli qualify-harbor-rollouts \
   --jobs-root "$JOBS" --index-output "$RUN_ROOT/campaign-index.jsonl" \
   --report-output "$RUN_ROOT/qualification.json" --run-id "$SLURM_JOB_ID" \
-  --policy-version 0 --learner-version 0 --expected-trials 4 \
+  --policy-version 0 --learner-version 0 --expected-trials "$EXPECTED_TRIALS" \
   --min-bash-commands-per-trial 1
 
 echo "harbor_agentic_rollout_artifact=$RUN_ROOT"
