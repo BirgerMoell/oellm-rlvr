@@ -12,5 +12,8 @@ def test_host_launcher_drops_outer_container_bind_environment() -> None:
 
 def test_skyrl_smoke_preserves_ray_worker_diagnostics() -> None:
     script = Path("scripts/lumi_skyrl_amd_smoke.sbatch").read_text()
-    assert 'RAY_TMPDIR="$RUN_ROOT/ray"' in script
+    assert 'RAY_NODE_TMP="/tmp/oellm-ray-$SLURM_JOB_ID"' in script
+    assert 'RAY_TMPDIR="$RAY_NODE_TMP"' in script
+    assert 'cp -a "$RAY_NODE_TMP"/. "$RUN_ROOT/ray"/' in script
+    assert "trap preserve_ray_logs EXIT" in script
     assert 'mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility,ray}' in script

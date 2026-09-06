@@ -38,7 +38,12 @@ CACHE_ROOT="$RUN_ROOT/cache"
 mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility,ray} \
   "$CACHE_ROOT"/{hf,xdg,triton,torchinductor,vllm,tmp,miopen}
 NODE_TMP="/tmp/oellm-skyrl-$SLURM_JOB_ID"
-mkdir -p "$NODE_TMP"
+RAY_NODE_TMP="/tmp/oellm-ray-$SLURM_JOB_ID"
+mkdir -p "$NODE_TMP" "$RAY_NODE_TMP"
+preserve_ray_logs() {
+  cp -a "$RAY_NODE_TMP"/. "$RUN_ROOT/ray"/ 2>/dev/null || true
+}
+trap preserve_ray_logs EXIT
 test -r "$MODEL/config.json"
 test -r "$DATA"
 test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
@@ -58,10 +63,9 @@ export XDG_CACHE_HOME="$CACHE_ROOT/xdg" TRITON_CACHE_DIR="$CACHE_ROOT/triton"
 export XDG_CONFIG_HOME="$CACHE_ROOT/xdg-config" VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor" VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"
 export MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen" MIOPEN_CUSTOM_CACHE_DIR="$CACHE_ROOT/miopen"
-# Keep general temporary traffic node-local, but preserve Ray/vLLM worker logs
-# with the run artifact so a native engine-core exit remains diagnosable after
-# Slurm releases the node.
-export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RUN_ROOT/ray" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
+# Ray's Unix-domain sockets require a short path, so its live session remains
+# node-local and is copied into the run artifact by the EXIT trap.
+export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RAY_NODE_TMP" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 export HF_HOME="$CACHE_ROOT/hf" HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets"
 
 srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \
