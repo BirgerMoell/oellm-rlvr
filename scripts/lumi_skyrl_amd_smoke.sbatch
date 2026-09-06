@@ -14,6 +14,9 @@
 #SBATCH --error=logs/%j.%x.err
 
 set -euo pipefail
+# Crashes in ROCm/Ray workers can otherwise leave multi-gigabyte core files in
+# the pinned SkyRL source checkout and make the immutability probe fail later.
+ulimit -c 0
 module purge
 module load Local-LAIF
 module load lumi-aif-singularity-bindings
