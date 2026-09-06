@@ -44,7 +44,8 @@ export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0
 export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
 
-srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV bash -c '
+srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \
+  env -u BASH_ENV PYTHONPATH="$PYTHONPATH" bash -c '
   set -euo pipefail
   export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
   unset ROCR_VISIBLE_DEVICES

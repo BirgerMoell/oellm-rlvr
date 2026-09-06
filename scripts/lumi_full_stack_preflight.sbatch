@@ -65,7 +65,7 @@ trap cleanup EXIT
 
 echo "[1/5] Per-node GPU and import checks"
 srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bind=none \
-  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV bash -c '
+  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV PYTHONPATH="$PYTHONPATH" bash -c '
     set -euo pipefail
     env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" \
       "$CONTROL_ROOT/scripts/preflight_gpu.py" --accelerator rocm --gpus 8 \
@@ -116,7 +116,7 @@ srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bi
 
 echo "[5/5] Offline BF16 load and one-prompt vLLM generation"
 srun --label --nodes=1 --ntasks=1 -w "$HEAD_NODE" --gpus-per-task=1 --gpu-bind=none \
-  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV bash -c '
+  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV PYTHONPATH="$PYTHONPATH" bash -c '
     set -euo pipefail
     if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
       export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
