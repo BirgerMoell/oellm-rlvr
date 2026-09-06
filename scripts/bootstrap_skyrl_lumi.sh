@@ -17,6 +17,11 @@ HARBOR_URL=https://github.com/harbor-framework/harbor.git
 HARBOR_COMMIT=4407eb5227a2ff4f0d3f16b2eb48849382fdf276
 BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd
 export PIP_CACHE_DIR="$BUILD_CACHE/pip" TMPDIR="$BUILD_CACHE/tmp"
+# Some LUMI project roots contain administrator-owned Git metadata. Legacy
+# setuptools sdists inspect the nearest repository while building, so trust
+# this exact project root without changing the user's quota-limited ~/.gitconfig.
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory
+export GIT_CONFIG_VALUE_0="$(realpath /scratch/project_465002530)"
 mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
 
 clone_at_commit() {
