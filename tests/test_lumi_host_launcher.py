@@ -8,6 +8,8 @@ def test_host_launcher_drops_outer_container_bind_environment() -> None:
     for variable in ("APPTAINER_BIND", "APPTAINER_BINDPATH", "SINGULARITY_BIND", "SINGULARITY_BINDPATH"):
         assert f"-u {variable}" in launcher
     assert 'SINGULARITY_TMPDIR="$HARBOR_LUMI_CACHE_ROOT/tmp"' in launcher
+    assert "unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE" in launcher
+    assert "--cpu-bind=none" in launcher
 
 
 def test_skyrl_smoke_preserves_ray_worker_diagnostics() -> None:
@@ -40,3 +42,4 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "qualify-harbor-rollouts" in script
     assert "--min-bash-commands-per-trial 1" in script
     assert "--expected-trials 4" in script
+    assert "srun --label --cpu-bind=none --gpu-bind=none" in script

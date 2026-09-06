@@ -15,8 +15,14 @@ export LUA_PATH="/usr/share/lua/5.3/?.lua;/usr/share/lua/5.3/?/init.lua;;"
 export LUA_CPATH="/hostlib64/lua/5.3/?.so;/hostlib64/lua/5.3/?/?.so;;"
 : "${HARBOR_LUMI_CACHE_ROOT:?HARBOR_LUMI_CACHE_ROOT must point to project scratch}"
 
+# A Harbor sandbox can be launched from inside a GPU-owning outer srun step.
+# Do not propagate that step's CPU mask into the one-CPU overlapping step: the
+# inherited mask can name CPUs outside the allocation Slurm assigns here.
+unset SLURM_CPU_BIND SLURM_CPU_BIND_LIST SLURM_CPU_BIND_TYPE SLURM_CPU_BIND_VERBOSE
+
 exec /usr/local/bin/srun \
   --overlap \
+  --cpu-bind=none \
   --nodes=1 \
   --ntasks=1 \
   --cpus-per-task=1 \

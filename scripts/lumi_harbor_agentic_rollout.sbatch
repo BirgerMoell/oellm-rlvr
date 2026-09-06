@@ -101,7 +101,7 @@ sha256sum "$CONTAINER" > "$RUN_ROOT/manifests/task-sif.sha256"
 sha256sum "$MODEL/config.json" > "$RUN_ROOT/manifests/model-config.sha256"
 env | LC_ALL=C sort > "$RUN_ROOT/manifests/environment.txt"
 
-srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \
+srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \
   env -u BASH_ENV PATH="$LAUNCHER_PATH:$(dirname "$PYTHON_BIN"):/opt/venv/bin:/usr/bin:/bin" \
   PYTHONPATH="$PYTHONPATH" bash -c '
   set -euo pipefail
