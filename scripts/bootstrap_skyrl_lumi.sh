@@ -51,6 +51,7 @@ run_python() {
   singularity exec -B "$BIND" "$CONTAINER" env \
     PIP_CACHE_DIR="$PIP_CACHE_DIR" TMPDIR="$TMPDIR" \
     GIT_CEILING_DIRECTORIES="$GIT_CEILING_DIRECTORIES" \
+    PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}" \
     "$VENV/bin/python" "$@"
 }
 
