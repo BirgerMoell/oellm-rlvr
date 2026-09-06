@@ -17,8 +17,11 @@ EXPECTED_HARBOR_PATCHES = {
     "src/harbor/environments/singularity/bootstrap.sh": (
         "1cb240109faf7caa4fd273fab6af035a19e14e679570987e500e4ff6d1ff124f"
     ),
+    "src/harbor/environments/singularity/server.py": (
+        "b4f9a71b00e7685b5cf4c119d178e30fec5ed2f5b8e732fbcedf1d77ed4fbbe3"
+    ),
     "src/harbor/environments/singularity/singularity.py": (
-        "dc031a84d55f94767586bfdd97d2f520032e07c59702b31e8af8ce46d0f0f89d"
+        "26bfcb2e5e43c6290d0af9423a58b601a69b22f93c51555403d28bc149c90d0e"
     ),
 }
 

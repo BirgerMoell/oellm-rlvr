@@ -1,0 +1,41 @@
+diff --git a/src/harbor/environments/singularity/server.py b/src/harbor/environments/singularity/server.py
+index 41512c5..8362d33 100644
+--- a/src/harbor/environments/singularity/server.py
++++ b/src/harbor/environments/singularity/server.py
+@@ -377,6 +377,11 @@ def setup_apt_sources() -> None:
+ def setup_singularity_environment(workdir: str) -> None:
+     """Run all Singularity environment setup."""
+     setup_workdir(workdir)
++    if os.environ.get("HARBOR_SINGULARITY_DISABLE_FAKEROOT") == "1":
++        os.environ["SINGULARITY_WORKDIR"] = workdir
++        logger.info("Skipping privileged container setup for the LUMI setuid runtime")
++        return
++
+     setup_dpkg_for_overlay()
+     setup_common_directories()
+     setup_fake_sudo()
+diff --git a/src/harbor/environments/singularity/singularity.py b/src/harbor/environments/singularity/singularity.py
+index 2001fac..af84227 100644
+--- a/src/harbor/environments/singularity/singularity.py
++++ b/src/harbor/environments/singularity/singularity.py
+@@ -377,10 +377,12 @@ class SingularityEnvironment(BaseEnvironment):
+                 self._workdir,
+             ]
+             fakeroot_args = []
++            container_env_args = []
+             if os.environ.get("HARBOR_SINGULARITY_DISABLE_FAKEROOT") != "1":
+                 fakeroot_args.append("--fakeroot")
+             else:
+                 self.logger.debug("Disabling --fakeroot for the LUMI setuid runtime")
++                container_env_args.extend(["--env", "HARBOR_SINGULARITY_DISABLE_FAKEROOT=1"])
+             cmd = [
+                 "singularity",
+                 "exec",
+@@ -389,6 +391,7 @@ class SingularityEnvironment(BaseEnvironment):
+                 self._workdir,
+                 "--writable-tmpfs",
+                 *fakeroot_args,
++                *container_env_args,
+                 "--containall",
+                 "--pid",
+                 *bind_mounts,

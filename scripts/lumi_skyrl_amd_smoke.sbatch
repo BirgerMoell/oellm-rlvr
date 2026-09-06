@@ -34,6 +34,8 @@ PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/
 CACHE_ROOT="$RUN_ROOT/cache"
 mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility} \
   "$CACHE_ROOT"/{hf,xdg,triton,torchinductor,vllm,tmp,miopen}
+NODE_TMP="/tmp/oellm-skyrl-$SLURM_JOB_ID"
+mkdir -p "$NODE_TMP"
 test -r "$MODEL/config.json"
 test -r "$DATA"
 test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
@@ -48,7 +50,7 @@ export RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
 export XDG_CACHE_HOME="$CACHE_ROOT/xdg" TRITON_CACHE_DIR="$CACHE_ROOT/triton"
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor" VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"
 export MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen" MIOPEN_CUSTOM_CACHE_DIR="$CACHE_ROOT/miopen"
-export TMPDIR="$CACHE_ROOT/tmp" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
+export TMPDIR="$NODE_TMP" RAY_TMPDIR="$NODE_TMP/ray" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 export HF_HOME="$CACHE_ROOT/hf" HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets"
 
 srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \

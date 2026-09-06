@@ -40,6 +40,8 @@ TRAINER_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$TRAINER_NODE" getent host
 RAY_PORT="$((21000 + SLURM_JOB_ID % 10000))"
 TRANSFER_PORT="$((32000 + SLURM_JOB_ID % 10000))"
 mkdir -p logs "$RESULTS_DIR" "$CACHE_ROOT"/{xdg,triton,torchinductor,vllm,tmp,miopen}
+NODE_TMP="/tmp/oellm-preflight-$SLURM_JOB_ID"
+srun --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 mkdir -p "$NODE_TMP"
 test -r "$MODEL/config.json"
 test -r "$TOKENIZER/tokenizer_config.json"
 test -r "$CONTAINER"
@@ -51,7 +53,7 @@ export RAY_USAGE_STATS_ENABLED=0 RAY_EXPERIMENTAL_NOSET_HIP_VISIBLE_DEVICES=1
 export XDG_CACHE_HOME="$CACHE_ROOT/xdg" TRITON_CACHE_DIR="$CACHE_ROOT/triton"
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor" VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"
 export MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen" MIOPEN_CUSTOM_CACHE_DIR="$CACHE_ROOT/miopen"
-export TMPDIR="$CACHE_ROOT/tmp" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
+export TMPDIR="$NODE_TMP" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 
 cleanup() {
   if [[ -n "${RAY_STEP_PID:-}" ]]; then
@@ -116,7 +118,7 @@ srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bi
   singularity exec -B "$BIND" "$CONTAINER" env -u ROCR_VISIBLE_DEVICES \
   /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_hierarchical_weight_transfer.py" \
   --trainer-address "$TRAINER_IP" --relay-address "$HEAD_IP" --master-port "$TRANSFER_PORT" \
-  --trainer-host "$TRAINER_NODE" --leaf-count 7 --timeout 180 \
+  --trainer-host "$TRAINER_NODE" --leaf-count 7 --timeout 300 \
   | tee "$RESULTS_DIR/hierarchical-transfer.log"
 
 echo "[5/5] Offline BF16 load and one-prompt vLLM generation"
