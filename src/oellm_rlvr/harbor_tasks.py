@@ -110,7 +110,7 @@ from pathlib import Path
 
 MARKER = {marker!r}
 parser = argparse.ArgumentParser()
-parser.add_argument("--root", default="/app")
+parser.add_argument("--root", default="/tmp/oellm-task")
 args = parser.parse_args()
 root = Path(args.root)
 sys.path.insert(0, str(root))
@@ -126,7 +126,7 @@ raise SystemExit(0 if result["reward"] == 1 else 1)
 def _test_sh() -> str:
     return '''#!/bin/bash
 set +e
-python3 /tests/verify.py --root /app > /logs/verifier/result.json
+python3 /tests/verify.py --root /tmp/oellm-task > /logs/verifier/result.json
 status=$?
 if [[ $status -eq 0 ]]; then echo 1 > /logs/verifier/reward.txt; else echo 0 > /logs/verifier/reward.txt; fi
 exit 0
@@ -178,7 +178,7 @@ def build_harbor_dryrun_pack(output: str | Path, sif: str) -> dict[str, Any]:
         )
         _write(task / "environment/files/tool_api.py", _function_script())
         call = json.dumps(expected, separators=(",", ":"))
-        _write(task / "solution/solve.sh", f"#!/bin/bash\nset -euo pipefail\ncd \"${{OELLM_TASK_ROOT:-/app}}\"\npython3 tool_api.py '{call}'\n", executable=True)
+        _write(task / "solution/solve.sh", f"#!/bin/bash\nset -euo pipefail\ncd \"${{OELLM_TASK_ROOT:-/tmp/oellm-task}}\"\npython3 tool_api.py '{call}'\n", executable=True)
 
     for name, sku, quantity, delta in STATEFUL_TASKS:
         task = root / f"stateful-{name}"
@@ -217,7 +217,7 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
         _write(task / "environment/files/inventory_tool.py", tool)
         _write(
             task / "solution/solve.sh",
-            f"#!/bin/bash\nset -euo pipefail\ncd \"${{OELLM_TASK_ROOT:-/app}}\"\npython3 inventory_tool.py get {sku}\npython3 inventory_tool.py update {sku} {delta}\n",
+            f"#!/bin/bash\nset -euo pipefail\ncd \"${{OELLM_TASK_ROOT:-/tmp/oellm-task}}\"\npython3 inventory_tool.py get {sku}\npython3 inventory_tool.py update {sku} {delta}\n",
             executable=True,
         )
 
@@ -236,7 +236,7 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
         )
         _write(task / "environment/files/config.json", json.dumps(initial, indent=2, sort_keys=True) + "\n")
         script = (
-            "#!/bin/bash\nset -euo pipefail\ncd \"${OELLM_TASK_ROOT:-/app}\"\n"
+            "#!/bin/bash\nset -euo pipefail\ncd \"${OELLM_TASK_ROOT:-/tmp/oellm-task}\"\n"
             f"python3 -c \"import json; p='config.json'; d=json.load(open(p)); d[{changed!r}]={expected[changed]!r}; "
             "open(p,'w').write(json.dumps(d,indent=2,sort_keys=True)+'\\n')\"\n"
         )
@@ -257,7 +257,7 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
         encoded = b64encode(fixed.encode()).decode()
         _write(
             task / "solution/solve.sh",
-            "#!/bin/bash\nset -euo pipefail\ncd \"${OELLM_TASK_ROOT:-/app}\"\n"
+            "#!/bin/bash\nset -euo pipefail\ncd \"${OELLM_TASK_ROOT:-/tmp/oellm-task}\"\n"
             f"python3 -c 'import base64; open(\"app.py\",\"wb\").write(base64.b64decode(\"{encoded}\"))'\n",
             executable=True,
         )
