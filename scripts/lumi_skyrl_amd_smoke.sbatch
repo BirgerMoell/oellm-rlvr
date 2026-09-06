@@ -35,7 +35,7 @@ BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd,/
 VENV_SITE="$(dirname "$PYTHON_BIN")/../lib/python3.12/site-packages"
 PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 CACHE_ROOT="$RUN_ROOT/cache"
-mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility} \
+mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility,ray} \
   "$CACHE_ROOT"/{hf,xdg,triton,torchinductor,vllm,tmp,miopen}
 NODE_TMP="/tmp/oellm-skyrl-$SLURM_JOB_ID"
 mkdir -p "$NODE_TMP"
@@ -46,6 +46,7 @@ singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export PYTHONPATH HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export MODEL DATA CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN RUN_ROOT CONTAINER
 export TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1 VLLM_DISABLE_COMPILE_CACHE=1
+export VLLM_LOGGING_LEVEL=DEBUG RAY_DEDUP_LOGS=0
 export OELLM_PATCH_RAY_ROCM_VISIBILITY=1 OELLM_PATCH_VLLM_MAMBA_ENUM=1
 export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0
@@ -57,7 +58,10 @@ export XDG_CACHE_HOME="$CACHE_ROOT/xdg" TRITON_CACHE_DIR="$CACHE_ROOT/triton"
 export XDG_CONFIG_HOME="$CACHE_ROOT/xdg-config" VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
 export TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor" VLLM_CACHE_ROOT="$CACHE_ROOT/vllm"
 export MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen" MIOPEN_CUSTOM_CACHE_DIR="$CACHE_ROOT/miopen"
-export TMPDIR="$NODE_TMP" RAY_TMPDIR="$NODE_TMP/ray" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
+# Keep general temporary traffic node-local, but preserve Ray/vLLM worker logs
+# with the run artifact so a native engine-core exit remains diagnosable after
+# Slurm releases the node.
+export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RUN_ROOT/ray" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 export HF_HOME="$CACHE_ROOT/hf" HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets"
 
 srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \

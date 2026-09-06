@@ -184,7 +184,8 @@ The control plane now implements the first runnable slice of the critical path:
 - `lumi_skyrl_amd_smoke.sbatch` allocates four learner and four rollout GCDs and attempts four full-weight
   FSDP/GRPO updates on a local 2B model. The staged Qwen3.5 checkpoint is multimodal, but this is deliberately
   a text-only math gate, so both policy and inference set `language_model_only=true`; this avoids spending most
-  of a GCD on an unused maximum-size vision-encoder warmup;
+  of a GCD on an unused maximum-size vision-encoder warmup. Ray/vLLM worker logs persist below each run's
+  `ray/` directory so native engine failures remain diagnosable after the node is released;
 - `build-harbor-pack` creates four exact function calls, four stateful flows, four terminal edits, and four
   micro-repository repairs. Local validation proves unchanged tasks fail, oracle solutions pass twice, and
   private verifier markers never enter the policy surface;
