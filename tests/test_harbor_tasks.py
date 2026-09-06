@@ -20,6 +20,8 @@ def test_harbor_pack_has_four_tasks_per_capability_and_replays(tmp_path: Path) -
     assert task_config["task"]["authors"] == [{"name": "OpenEuroLLM contributors"}]
     assert task_config["environment"]["docker_image"] == "/immutable/task-runtime.sif"
     assert task_config["environment"]["workdir"] == "/tmp/oellm-task"
+    assert (pack / "terminal-edit-workers/environment/config.json").is_file()
+    assert not (pack / "terminal-edit-workers/environment/files").exists()
 
     replay = validate_harbor_dryrun_pack(pack)
     assert replay["ok"] is True

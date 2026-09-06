@@ -176,7 +176,7 @@ def build_harbor_dryrun_pack(output: str | Path, sif: str) -> dict[str, Any]:
             "Do not create or edit `audit.json` or `result.json` directly.",
             _verifier(assertions, marker),
         )
-        _write(task / "environment/files/tool_api.py", _function_script())
+        _write(task / "environment/tool_api.py", _function_script())
         call = json.dumps(expected, separators=(",", ":"))
         _write(task / "solution/solve.sh", f"#!/bin/bash\nset -euo pipefail\ncd \"${{OELLM_TASK_ROOT:-/tmp/oellm-task}}\"\npython3 tool_api.py '{call}'\n", executable=True)
 
@@ -213,8 +213,8 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
             "Do not directly edit the inventory or audit files.",
             _verifier(assertions, marker),
         )
-        _write(task / "environment/files/inventory.json", json.dumps({sku: quantity}, sort_keys=True) + "\n")
-        _write(task / "environment/files/inventory_tool.py", tool)
+        _write(task / "environment/inventory.json", json.dumps({sku: quantity}, sort_keys=True) + "\n")
+        _write(task / "environment/inventory_tool.py", tool)
         _write(
             task / "solution/solve.sh",
             f"#!/bin/bash\nset -euo pipefail\ncd \"${{OELLM_TASK_ROOT:-/tmp/oellm-task}}\"\npython3 inventory_tool.py get {sku}\npython3 inventory_tool.py update {sku} {delta}\n",
@@ -234,7 +234,7 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
             f"Edit `config.json`: set `{changed}` to `{expected[changed]}` and preserve every other value.",
             _verifier(assertions, marker),
         )
-        _write(task / "environment/files/config.json", json.dumps(initial, indent=2, sort_keys=True) + "\n")
+        _write(task / "environment/config.json", json.dumps(initial, indent=2, sort_keys=True) + "\n")
         script = (
             "#!/bin/bash\nset -euo pipefail\ncd \"${OELLM_TASK_ROOT:-/tmp/oellm-task}\"\n"
             f"python3 -c \"import json; p='config.json'; d=json.load(open(p)); d[{changed!r}]={expected[changed]!r}; "
@@ -253,7 +253,7 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
             "Repair the bug in `app.py`. Keep the public function name and signature unchanged.",
             _verifier(assertions, marker),
         )
-        _write(task / "environment/files/app.py", broken)
+        _write(task / "environment/app.py", broken)
         encoded = b64encode(fixed.encode()).decode()
         _write(
             task / "solution/solve.sh",
@@ -285,7 +285,7 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
         required = [
             task / "task.toml",
             task / "instruction.md",
-            task / "environment/files",
+            task / "environment",
             task / "solution/solve.sh",
             task / "tests/test.sh",
             task / "tests/verify.py",
@@ -294,7 +294,7 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
         if missing:
             raise ValueError(f"task {task.name} is incomplete: {missing}")
         policy_text = (task / "instruction.md").read_text() + "\n" + "\n".join(
-            path.read_text(errors="replace") for path in sorted((task / "environment/files").rglob("*")) if path.is_file()
+            path.read_text(errors="replace") for path in sorted((task / "environment").rglob("*")) if path.is_file()
         )
         private_marker = next(
             line for line in (task / "tests/verify.py").read_text().splitlines() if line.startswith("MARKER = ")
@@ -303,13 +303,13 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
             raise ValueError(f"private verifier marker leaked into policy-visible task {task.name}")
         with tempfile.TemporaryDirectory(prefix=f"{task.name}-wrong-") as temporary:
             wrong = Path(temporary)
-            shutil.copytree(task / "environment/files", wrong, dirs_exist_ok=True)
+            shutil.copytree(task / "environment", wrong, dirs_exist_ok=True)
             wrong_fails = not _run_verifier(task, wrong)
         oracle_results = []
         for _ in range(2):
             with tempfile.TemporaryDirectory(prefix=f"{task.name}-oracle-") as temporary:
                 work = Path(temporary)
-                shutil.copytree(task / "environment/files", work, dirs_exist_ok=True)
+                shutil.copytree(task / "environment", work, dirs_exist_ok=True)
                 environment = {**os.environ, "OELLM_TASK_ROOT": str(work)}
                 solution = subprocess.run(
                     ["bash", str(task / "solution/solve.sh")],
