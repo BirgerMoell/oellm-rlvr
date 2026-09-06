@@ -19,3 +19,6 @@ def test_skyrl_smoke_preserves_ray_worker_diagnostics() -> None:
     assert 'mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility,ray}' in script
     assert "generator.inference_engine.gpu_memory_utilization=0.90" in script
     assert "generator.inference_engine.max_num_seqs=16" in script
+    assert "generator.inference_engine.distributed_executor_backend=mp" in script
+    assert "unset VLLM_USE_V1 VLLM_ENABLE_V1_MULTIPROCESSING" in script
+    assert "TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1" not in script

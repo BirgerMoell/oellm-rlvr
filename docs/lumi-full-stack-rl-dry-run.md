@@ -188,7 +188,10 @@ The control plane now implements the first runnable slice of the critical path:
   `ray/` directory on exit so native engine failures remain diagnosable after the node is released. The live Ray
   directory stays under a short node-local path because its Unix-domain sockets have a 107-byte limit. The
   inference capacity is bounded to 16 sequences per engine (the smoke requires at most eight) rather than
-  profiling vLLM's 1,024-sequence default, and each dedicated rollout GCD may use 90% of memory;
+  profiling vLLM's 1,024-sequence default, and each dedicated rollout GCD may use 90% of memory. The one-node
+  smoke uses SkyRL's supported `mp` inference executor: SkyRL resolves each engine's physical GPU from its Ray
+  placement-group bundle and gives vLLM a unique visibility mask. This is required on the current LUMI image,
+  whose inherited Ray no-set flags otherwise leave all four Ray-backed vLLM engines able to select GCD 0;
 - `build-harbor-pack` creates four exact function calls, four stateful flows, four terminal edits, and four
   micro-repository repairs. Local validation proves unchanged tasks fail, oracle solutions pass twice, and
   private verifier markers never enter the policy surface;

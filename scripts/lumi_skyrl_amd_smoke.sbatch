@@ -50,7 +50,11 @@ test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
 singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export PYTHONPATH HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export MODEL DATA CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN RUN_ROOT CONTAINER
-export TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1 VLLM_DISABLE_COMPILE_CACHE=1
+export TOKENIZERS_PARALLELISM=false VLLM_DISABLE_COMPILE_CACHE=1
+# Let SkyRL set both VLLM_USE_V1=1 and its matching
+# VLLM_ENABLE_V1_MULTIPROCESSING=0 runtime default. Exporting VLLM_USE_V1 here
+# suppresses the second setting in SkyRL's environment preparation.
+unset VLLM_USE_V1 VLLM_ENABLE_V1_MULTIPROCESSING
 export VLLM_LOGGING_LEVEL=DEBUG RAY_DEDUP_LOGS=0
 export OELLM_PATCH_RAY_ROCM_VISIBILITY=1 OELLM_PATCH_VLLM_MAMBA_ENUM=1
 export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
@@ -85,6 +89,7 @@ srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CON
     trainer.placement.policy_num_nodes=1 trainer.placement.policy_num_gpus_per_node=4 \
     generator.inference_engine.num_engines=4 generator.inference_engine.tensor_parallel_size=1 \
     generator.inference_engine.backend=vllm generator.inference_engine.run_engines_locally=true \
+    generator.inference_engine.distributed_executor_backend=mp \
     generator.inference_engine.language_model_only=true \
     generator.inference_engine.weight_sync_backend=nccl generator.inference_engine.enforce_eager=true \
     generator.inference_engine.gpu_memory_utilization=0.90 generator.inference_engine.max_num_seqs=16 \
