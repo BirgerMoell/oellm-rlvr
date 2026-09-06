@@ -12,6 +12,7 @@ import yaml
 from .backend import build_backend_argv, shell_command
 from .backend_rollouts import inspect_backend_rollouts
 from .campaign import load_campaign, render_campaign_markdown
+from .checkpoint import build_checkpoint_manifest, verify_checkpoint_manifest, write_checkpoint_manifest
 from .config import load_config
 from .datasets import (
     make_math_calibration,
@@ -22,10 +23,13 @@ from .datasets import (
     sample_math_dataset,
 )
 from .gates import evaluate_gates
+from .harbor_tasks import build_harbor_dryrun_pack, validate_harbor_dryrun_pack
 from .reasoning_eval import build_blinded_reasoning_audit, compare_reasoning_evals, run_reasoning_eval
 from .schemas import TaskSpec
+from .skyrl_adapter import export_skyrl_math
 from .slurm import render_slurm
 from .store import JsonlTrajectoryStore
+from .task_catalog import load_task_catalog, profile_task_attempts
 from .topology import build_topology
 from .verifiers import ApptainerRunner, CodeVerifier, LocalRunner, MathVerifier
 
@@ -278,6 +282,67 @@ def command_render_campaign(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_checkpoint_manifest(args: argparse.Namespace) -> int:
+    manifest = build_checkpoint_manifest(
+        args.model,
+        model_id=args.model_id,
+        revision=args.revision,
+        allowed_symlink_roots=args.allow_symlink_root,
+        require_components=not args.allow_incomplete,
+    )
+    output, checksums = write_checkpoint_manifest(manifest, args.output, args.checksums_output)
+    _json(
+        {
+            "ok": True,
+            "manifest": str(output),
+            "checksums": str(checksums),
+            "manifest_sha256": manifest["manifest_sha256"],
+            "files": manifest["file_count"],
+            "components": manifest["component_check"],
+        }
+    )
+    return 0
+
+
+def command_verify_checkpoint_manifest(args: argparse.Namespace) -> int:
+    report = verify_checkpoint_manifest(args.manifest)
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
+def command_validate_task_catalog(args: argparse.Namespace) -> int:
+    _json(load_task_catalog(args.catalog).summary())
+    return 0
+
+
+def command_profile_tasks(args: argparse.Namespace) -> int:
+    report = profile_task_attempts(
+        args.catalog,
+        args.attempts,
+        args.output,
+        samples_per_prompt=args.samples_per_prompt,
+    )
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
+def command_export_skyrl_math(args: argparse.Namespace) -> int:
+    _json(export_skyrl_math(args.source, args.output, count=args.count, copies=args.copies))
+    return 0
+
+
+def command_build_harbor_pack(args: argparse.Namespace) -> int:
+    report = build_harbor_dryrun_pack(args.output, args.sif)
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
+def command_validate_harbor_pack(args: argparse.Namespace) -> int:
+    report = validate_harbor_dryrun_pack(args.pack)
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oellm-rlvr")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -414,6 +479,70 @@ def build_parser() -> argparse.ArgumentParser:
     render_campaign.add_argument("--campaign", required=True)
     render_campaign.add_argument("--output")
     render_campaign.set_defaults(handler=command_render_campaign)
+
+    checkpoint = sub.add_parser(
+        "checkpoint-manifest", help="fingerprint a local Hugging Face checkpoint and its tokenizer"
+    )
+    checkpoint.add_argument("--model", required=True, help="local immutable Hugging Face checkpoint directory")
+    checkpoint.add_argument("--model-id", required=True, help="upstream model repository ID")
+    checkpoint.add_argument("--revision", required=True, help="immutable upstream revision or commit")
+    checkpoint.add_argument("--output", required=True, help="output checkpoint-manifest.json")
+    checkpoint.add_argument("--checksums-output", help="output checkpoint-files.sha256")
+    checkpoint.add_argument(
+        "--allow-symlink-root",
+        action="append",
+        default=[],
+        help="explicit immutable cache root permitted for file symlink targets (repeatable)",
+    )
+    checkpoint.add_argument(
+        "--allow-incomplete",
+        action="store_true",
+        help="write a diagnostic manifest even when a required Hugging Face component is absent",
+    )
+    checkpoint.set_defaults(handler=command_checkpoint_manifest)
+
+    verify_checkpoint = sub.add_parser(
+        "verify-checkpoint-manifest", help="replay every checkpoint SHA-256 and the manifest digest"
+    )
+    verify_checkpoint.add_argument("--manifest", required=True)
+    verify_checkpoint.set_defaults(handler=command_verify_checkpoint_manifest)
+
+    validate_catalog = sub.add_parser(
+        "validate-task-catalog", help="validate task provenance, verifier pins, and train/eval isolation"
+    )
+    validate_catalog.add_argument("--catalog", required=True)
+    validate_catalog.set_defaults(handler=command_validate_task_catalog)
+
+    profile = sub.add_parser(
+        "profile-tasks", help="summarize standardized rollout attempts into reward-signal admission gates"
+    )
+    profile.add_argument("--catalog", required=True)
+    profile.add_argument(
+        "--attempts",
+        required=True,
+        help="JSONL or Parquet attempts emitted by a rollout adapter; each row is one verifier outcome",
+    )
+    profile.add_argument("--samples-per-prompt", type=int, default=8)
+    profile.add_argument("--output", required=True, help="output directory")
+    profile.set_defaults(handler=command_profile_tasks)
+
+    skyrl_math = sub.add_parser("export-skyrl-math", help="convert project math rows to SkyRL Gym schema")
+    skyrl_math.add_argument("--source", required=True)
+    skyrl_math.add_argument("--output", required=True)
+    skyrl_math.add_argument("--count", type=int)
+    skyrl_math.add_argument("--copies", type=int, default=1)
+    skyrl_math.set_defaults(handler=command_export_skyrl_math)
+
+    harbor_pack = sub.add_parser("build-harbor-pack", help="build and locally replay the 16-task agentic pack")
+    harbor_pack.add_argument("--output", required=True)
+    harbor_pack.add_argument("--sif", required=True, help="immutable prebuilt SIF used by Harbor on LUMI")
+    harbor_pack.set_defaults(handler=command_build_harbor_pack)
+
+    validate_harbor = sub.add_parser(
+        "validate-harbor-pack", help="rerun oracle, wrong-agent, determinism, and private-marker checks"
+    )
+    validate_harbor.add_argument("--pack", required=True)
+    validate_harbor.set_defaults(handler=command_validate_harbor_pack)
     return parser
 
 

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Route Harbor's Singularity subprocess out of the LAIF container and through
+# Slurm.  The new step starts on the same node, so it uses LUMI's supported
+# host Singularity installation instead of attempting a prohibited nested
+# user namespace.
+set -euo pipefail
+
+if [[ -z "${SLURM_JOB_ID:-}" || -z "${SLURMD_NODENAME:-}" ]]; then
+  echo "LUMI host launcher requires an active Slurm allocation" >&2
+  exit 64
+fi
+
+export LD_LIBRARY_PATH="/hostlib64:/usr/lib64/slurm:${LD_LIBRARY_PATH:-}"
+exec /usr/local/bin/srun \
+  --overlap \
+  --nodes=1 \
+  --ntasks=1 \
+  --cpus-per-task=1 \
+  --chdir="$PWD" \
+  --nodelist="$SLURMD_NODENAME" \
+  /usr/bin/singularity "$@"

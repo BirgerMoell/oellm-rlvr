@@ -30,19 +30,19 @@ def main() -> int:
             errors.append("ROCm profile selected but torch.version.hip is empty")
         if args.accelerator == "cuda" and not torch.version.cuda:
             errors.append("CUDA profile selected but torch.version.cuda is empty")
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - report arbitrary native/import initialization failures
         errors.append(f"torch: {error}")
 
     for module in ("ray", "vllm", "open_instruct"):
         try:
             loaded = importlib.import_module(module)
             details[module] = getattr(loaded, "__version__", "imported")
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - preflight records every import failure
             errors.append(f"{module}: {error}")
     try:
         importlib.import_module("vllm.distributed.weight_transfer.nccl_engine")
         details["weight_transfer"] = "native_nccl_engine"
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - native extension errors vary by backend build
         errors.append(f"vLLM native weight transfer: {error}")
 
     print(json.dumps({"ok": not errors, "details": details, "errors": errors}, sort_keys=True))

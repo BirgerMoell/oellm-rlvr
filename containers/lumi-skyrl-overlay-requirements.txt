@@ -1,0 +1,20 @@
+# Pure-Python/control-plane dependencies only. The LUMI base image owns
+# torch, vLLM, ROCm, RCCL, Transformers, and flash-linear-attention.
+hydra-core==1.3.2
+omegaconf==2.3.1
+ray[default]==2.56.0
+skyrl-gym==0.4.0
+tensordict==0.13.0
+torchdata==0.11.0
+func-timeout==4.3.5
+jaxtyping==0.3.11
+tensorboard==2.20.0
+shortuuid==1.0.13
+toml==0.10.2
+dirhash==0.5.0
+supabase==2.28.2
+pathspec==1.0.3
+platformdirs==4.10.0
+PyJWT==2.10.1
+tenacity==9.1.2
+litellm==1.93.0
