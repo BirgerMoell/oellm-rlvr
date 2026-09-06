@@ -17,3 +17,5 @@ def test_skyrl_smoke_preserves_ray_worker_diagnostics() -> None:
     assert 'cp -a "$RAY_NODE_TMP"/. "$RUN_ROOT/ray"/' in script
     assert "trap preserve_ray_logs EXIT" in script
     assert 'mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility,ray}' in script
+    assert "generator.inference_engine.gpu_memory_utilization=0.90" in script
+    assert "generator.inference_engine.max_num_seqs=16" in script

@@ -186,7 +186,9 @@ The control plane now implements the first runnable slice of the critical path:
   a text-only math gate, so both policy and inference set `language_model_only=true`; this avoids spending most
   of a GCD on an unused maximum-size vision-encoder warmup. Ray/vLLM worker logs persist below each run's
   `ray/` directory on exit so native engine failures remain diagnosable after the node is released. The live Ray
-  directory stays under a short node-local path because its Unix-domain sockets have a 107-byte limit;
+  directory stays under a short node-local path because its Unix-domain sockets have a 107-byte limit. The
+  inference capacity is bounded to 16 sequences per engine (the smoke requires at most eight) rather than
+  profiling vLLM's 1,024-sequence default, and each dedicated rollout GCD may use 90% of memory;
 - `build-harbor-pack` creates four exact function calls, four stateful flows, four terminal edits, and four
   micro-repository repairs. Local validation proves unchanged tasks fail, oracle solutions pass twice, and
   private verifier markers never enter the policy surface;
