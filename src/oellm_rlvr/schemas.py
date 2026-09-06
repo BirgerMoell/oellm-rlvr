@@ -64,3 +64,45 @@ class TrajectoryRecord(StrictModel):
     @property
     def policy_lag(self) -> int:
         return max(0, self.learner_version - self.policy_version)
+
+
+class AgentTrajectoryIndexRecord(StrictModel):
+    """Small campaign index for a raw Harbor ATIF trajectory.
+
+    The ATIF document remains the source of truth for multi-turn messages,
+    actions, observations, and per-token data.  This record contains only the
+    fields needed to select and audit trajectories before learner ingestion.
+    """
+
+    run_id: str
+    trial_id: str
+    task_name: str
+    task_checksum: str | None = None
+    result_path: str
+    result_sha256: str
+    atif_path: str | None = None
+    atif_sha256: str | None = None
+    atif_schema_version: str | None = None
+    agent_name: str
+    agent_version: str | None = None
+    model_name: str | None = None
+    reward: float | None = None
+    reward_components: dict[str, float] = Field(default_factory=dict)
+    policy_version: int = Field(ge=0)
+    learner_version: int = Field(ge=0)
+    policy_lag: int = Field(ge=0)
+    accepted_for_rl: bool
+    rejection_reasons: list[str] = Field(default_factory=list)
+    step_count: int = Field(ge=0)
+    fresh_step_count: int = Field(ge=0)
+    llm_call_count: int = Field(ge=0)
+    tool_call_count: int = Field(ge=0)
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    trainable_agent_steps: int = Field(ge=0)
+    agent_steps_with_token_ids: int = Field(ge=0)
+    agent_steps_with_logprobs: int = Field(ge=0)
+    copied_context_steps: int = Field(ge=0)
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

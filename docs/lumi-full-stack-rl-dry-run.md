@@ -190,15 +190,22 @@ The control plane now implements the first runnable slice of the critical path:
   private verifier markers never enter the policy surface;
 - `lumi_harbor_task_contract.sbatch` runs Harbor oracle and no-op agents in real Singularity sandboxes. Because
   nested user namespaces are unavailable on LUMI, the audited launcher routes sandbox commands through a
-  same-node overlapping Slurm step and executes Singularity on the host. `SOAK=1` expands the smoke to 112
-  launches for the 98/100 startup gate.
+  same-node overlapping Slurm step and executes Singularity on the host. It strips the outer LAIF container's
+  bind-control variables so each `--containall` sandbox receives a private `/tmp`; this is required for concurrent
+  tasks that share the in-container `/tmp/oellm-task` workdir. `SOAK=1` expands the smoke to 112 launches for the
+  98/100 startup gate.
+- `index-harbor-atif` validates each LLM-backed trial's `agent/trajectory.json`, hashes the raw ATIF and Harbor
+  result, checks tool-call/observation links and optional per-token RL fields, excludes copied-context and
+  deterministic-dispatch steps from trainable counts, and writes the small versioned campaign index. The raw
+  multi-turn trace is never flattened or rewritten.
 
 These are implementation-complete only when their LUMI artifacts pass. Do not infer qualification from the
 presence of a script. The remaining critical path is:
 
 1. freeze the fast independent evaluation scorecard and generate model attempts for the task profiler;
 2. qualify the SkyRL AMD smoke and Harbor 112-launch soak on the current LAIF image;
-3. finish the Harbor ATIF-to-control-plane bridge and complete one synchronous 9B SkyRL + Harbor update;
+3. connect the implemented Harbor ATIF campaign index to SkyRL's generator and complete one synchronous 9B
+   SkyRL + Harbor update;
 4. add scheduled environment quotas, domain-relative advantages, capped active sampling, and complete restart
    state;
 5. add campaign-wide reward replay and paired evaluation reports;
@@ -224,6 +231,12 @@ sbatch scripts/lumi_full_stack_preflight.sbatch
 sbatch scripts/lumi_skyrl_amd_smoke.sbatch
 sbatch scripts/lumi_harbor_task_contract.sbatch
 SOAK=1 sbatch scripts/lumi_harbor_task_contract.sbatch
+
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr index-harbor-atif \
+  --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
+  --output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
+  --run-id RUN_ID --policy-version 0 --learner-version 0 \
+  --require-token-ids --require-logprobs
 ```
 
 The two TMAX dry-run profiles are already committed:
@@ -271,8 +284,9 @@ The dry run is successful only when:
 - SkyRL's [agent integration guide](https://docs.skyrl.ai/docs/tutorials/agent-integration) makes the generator the
   boundary for existing harnesses such as Harbor. That is the correct adapter seam for this repository.
 - Harbor's [ATIF specification](https://github.com/harbor-framework/harbor/blob/main/rfcs/0001-trajectory-format.md)
-  carries multi-step actions, observations, rewards, and optional RL fields. Preserve ATIF as the raw agent trace
-  and store the smaller `oellm-rlvr` record as the campaign index.
+  carries multi-step actions, observations, token IDs, and optional logprobs. Preserve ATIF as the raw agent trace,
+  join the external Harbor verifier reward by trial, and store the smaller `oellm-rlvr` record as the campaign
+  index.
 - [verl's ROCm guide](https://verl.readthedocs.io/en/latest/amd_tutorial/amd_quick_start.html) is credible fallback
   evidence but explicitly targets newer AMD architectures and notes downstream inference patches, which is why a
   gfx90a qualification remains mandatory.

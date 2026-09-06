@@ -23,6 +23,7 @@ from .datasets import (
     sample_math_dataset,
 )
 from .gates import evaluate_gates
+from .harbor_atif import index_harbor_atif
 from .harbor_tasks import build_harbor_dryrun_pack, validate_harbor_dryrun_pack
 from .reasoning_eval import build_blinded_reasoning_audit, compare_reasoning_evals, run_reasoning_eval
 from .schemas import TaskSpec
@@ -343,6 +344,20 @@ def command_validate_harbor_pack(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def command_index_harbor_atif(args: argparse.Namespace) -> int:
+    report = index_harbor_atif(
+        args.jobs_root,
+        args.output,
+        run_id=args.run_id,
+        policy_version=args.policy_version,
+        learner_version=args.learner_version,
+        require_token_ids=args.require_token_ids,
+        require_logprobs=args.require_logprobs,
+    )
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oellm-rlvr")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -543,6 +558,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_harbor.add_argument("--pack", required=True)
     validate_harbor.set_defaults(handler=command_validate_harbor_pack)
+
+    atif = sub.add_parser(
+        "index-harbor-atif",
+        help="validate Harbor ATIF traces and write a learner-admission campaign index",
+    )
+    atif.add_argument("--jobs-root", required=True, help="Harbor jobs directory containing trial result.json files")
+    atif.add_argument("--output", required=True, help="destination JSONL campaign index")
+    atif.add_argument("--run-id", required=True)
+    atif.add_argument("--policy-version", type=int, required=True)
+    atif.add_argument("--learner-version", type=int, required=True)
+    atif.add_argument("--require-token-ids", action="store_true")
+    atif.add_argument("--require-logprobs", action="store_true")
+    atif.set_defaults(handler=command_index_harbor_atif)
     return parser
 
 

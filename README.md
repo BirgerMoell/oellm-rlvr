@@ -101,10 +101,29 @@ scratch, and installs only an overlay around LUMI's native ROCm stack. Harbor do
 inside LAIF: `scripts/lumi-host-launcher-bin/singularity` sends each sandbox launch through an overlapping
 same-node Slurm step, where LUMI's host Singularity runs it. The audited Harbor patch also omits `--fakeroot`
 on LUMI so the supported setuid runtime is used instead of an unavailable user namespace. Compute-node
-execution remains offline. Use `TASK_NAME=terminal-edit-workers sbatch scripts/lumi_harbor_task_contract.sbatch`
+execution remains offline. The launcher removes bind-control variables inherited from the outer LAIF container;
+otherwise its host `/tmp` bind defeats Harbor's `--containall` isolation and concurrent trials overwrite one
+another. Use `TASK_NAME=terminal-edit-workers sbatch scripts/lumi_harbor_task_contract.sbatch`
 for the two-trial launcher probe. Set
 `SOAK=1` when submitting the Harbor job to run 112 environment launches; the default 32-trial smoke runs one
 oracle and one no-op attempt per task.
+
+Index a Harbor agent run without flattening its multi-turn trace:
+
+```bash
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr index-harbor-atif \
+  --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
+  --output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
+  --run-id RUN_ID --policy-version 0 --learner-version 0 \
+  --require-token-ids --require-logprobs
+```
+
+Each JSONL row binds the trial result and raw `agent/trajectory.json` to SHA-256 digests, verifier reward,
+checkpoint versions, token coverage, tool-call counts, and an explicit RL admission decision. Copied-context and
+zero-LLM dispatch steps are retained in raw ATIF but excluded from trainable counts. Missing traces, Harbor
+exceptions, invalid rewards, broken tool-call references, and token/logprob misalignment are rejected. Harbor's
+`oracle` and `nop` agents intentionally produce no LLM trace, so their contract jobs validate the sandbox and
+verifier but are not learner-admissible rollouts.
 
 Prepare a math smoke dataset and render a job:
 
