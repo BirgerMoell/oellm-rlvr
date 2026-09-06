@@ -9,12 +9,15 @@ set -euo pipefail
 : "${HARBOR_ROOT:=$SOURCE_ROOT/harbor-v0.22.0}"
 : "${VENV:=/scratch/project_465002530/users/bmoell/venvs/oellm-skyrl-v030}"
 : "${CONTAINER:=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
+: "${BUILD_CACHE:=/scratch/project_465002530/users/bmoell/oellm-rlvr/build-cache}"
 
 SKYRL_URL=https://github.com/NovaSky-AI/SkyRL.git
 SKYRL_COMMIT=f5bc3b78dfddfb352870d5d7430cd226e5785838
 HARBOR_URL=https://github.com/harbor-framework/harbor.git
 HARBOR_COMMIT=4407eb5227a2ff4f0d3f16b2eb48849382fdf276
 BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd
+export PIP_CACHE_DIR="$BUILD_CACHE/pip" TMPDIR="$BUILD_CACHE/tmp"
+mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
 
 clone_at_commit() {
   local url="$1" commit="$2" destination="$3"
@@ -44,7 +47,7 @@ run_python() {
   singularity exec -B "$BIND" "$CONTAINER" "$VENV/bin/python" "$@"
 }
 
-run_python -m pip install --upgrade 'pip<27' 'setuptools>=75.6,<81' wheel
+run_python -m pip install --upgrade 'pip<27' 'setuptools>=77.0.3,<80' wheel
 run_python -m pip install -r "$CONTROL_ROOT/containers/lumi-skyrl-overlay-requirements.txt"
 # The router wheel is architecture-neutral, but its dependency metadata would
 # otherwise replace the LUMI-built vLLM. Install the pinned router alone.
