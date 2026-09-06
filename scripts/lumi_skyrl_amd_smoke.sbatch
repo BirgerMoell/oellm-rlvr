@@ -34,7 +34,8 @@ PYTHONPATH="$CONTROL_ROOT/src:$SKYRL_ROOT:$VENV_SITE:/opt/venv/lib/python3.12/si
 mkdir -p logs "$RUN_ROOT"/{checkpoints,exports,logs,compatibility}
 test -r "$MODEL/config.json"
 test -r "$DATA"
-test -x "$PYTHON_BIN"
+test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
+singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export PYTHONPATH HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
 export MODEL DATA CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN RUN_ROOT CONTAINER
 export TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1 VLLM_DISABLE_COMPILE_CACHE=1

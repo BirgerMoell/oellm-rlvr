@@ -42,7 +42,8 @@ mkdir -p logs "$RESULTS_DIR"
 test -r "$MODEL/config.json"
 test -r "$TOKENIZER/tokenizer_config.json"
 test -r "$CONTAINER"
-test -x "$PYTHON_BIN"
+test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
+singularity exec -B "$BIND" "$CONTAINER" test -x "$PYTHON_BIN"
 export MODEL TOKENIZER CONTROL_ROOT CONTAINER PYTHON_BIN RESULTS_DIR HF_HOME PYTHONPATH
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0 PYTHONUNBUFFERED=1
 

@@ -36,7 +36,8 @@ PACK="$RESULTS_DIR/harbor-task-pack-v0"
 JOBS="$RESULTS_DIR/jobs"
 mkdir -p logs "$RESULTS_DIR" "$JOBS"
 test -r "$CONTAINER"
-test -x "$VENV/bin/python"
+test -r "$VENV/pyvenv.cfg"
+singularity exec -B /pfs,/scratch,/appl "$CONTAINER" test -x "$VENV/bin/python"
 test -x "$CONTROL_ROOT/scripts/lumi-host-launcher-bin/singularity"
 
 # Harbor runs inside LAIF, but its sandbox command is the launcher above. The
