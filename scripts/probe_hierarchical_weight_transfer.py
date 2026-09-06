@@ -24,6 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--role", choices=("trainer", "relay", "leaf"))
     parser.add_argument("--leaf-index", type=int)
     parser.add_argument("--local-device", type=int, default=0)
+    parser.add_argument("--ready-file")
     return parser.parse_args()
 
 
@@ -49,6 +50,18 @@ def _group(address: str, port: int, rank: int):
     return NCCLWeightTransferEngine._stateless_init_process_group(address, port, rank, 2, device=0)
 
 
+def _ready_file(args: argparse.Namespace) -> Path:
+    return Path(args.ready_file or f"/tmp/oellm-transfer-{args.master_port}.ready")
+
+
+def _wait_for_relay(path: Path, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"relay did not become ready within {timeout}s: {path}")
+        time.sleep(0.1)
+
+
 def run_role(args: argparse.Namespace) -> int:
     import torch
 
@@ -59,6 +72,9 @@ def run_role(args: argparse.Namespace) -> int:
         value = torch.tensor([9173], dtype=torch.int64, device="cuda")
     elif args.role == "relay":
         groups = [_group(args.trainer_address, args.master_port, 1)]
+        # Creating the cross-node group can take minutes on a cold LUMI node.
+        # Do not start the leaves' TCPStore timeouts until that link is ready.
+        _ready_file(args).touch()
         groups.extend(
             _group(args.relay_address, args.master_port + leaf_index, 0)
             for leaf_index in range(1, args.leaf_count + 1)
@@ -67,6 +83,7 @@ def run_role(args: argparse.Namespace) -> int:
     else:
         if args.leaf_index is None:
             raise ValueError("leaf role requires --leaf-index")
+        _wait_for_relay(_ready_file(args), args.timeout)
         groups = [_group(args.relay_address, args.master_port + args.leaf_index, 1)]
         value = torch.tensor([-1], dtype=torch.int64, device="cuda")
 
@@ -104,6 +121,9 @@ def run_orchestrator(args: argparse.Namespace) -> int:
     hostname = socket.gethostname()
     assignments = local_roles(hostname, args.trainer_host, args.leaf_count)
     script = str(Path(__file__).resolve())
+    ready_file = _ready_file(args)
+    if hostname != args.trainer_host:
+        ready_file.unlink(missing_ok=True)
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     for role, leaf_index, local_device in assignments:
         command = [
@@ -125,6 +145,8 @@ def run_orchestrator(args: argparse.Namespace) -> int:
             role,
             "--local-device",
             "0",
+            "--ready-file",
+            str(ready_file),
         ]
         if leaf_index is not None:
             command.extend(["--leaf-index", str(leaf_index)])
@@ -159,6 +181,8 @@ def run_orchestrator(args: argparse.Namespace) -> int:
         raise TimeoutError(f"{hostname}: roles {sorted(pending)} exceeded {args.timeout}s")
     if failures:
         raise RuntimeError(f"{hostname}: role failures {failures}")
+    if hostname != args.trainer_host:
+        ready_file.unlink(missing_ok=True)
     print(
         json.dumps(
             {

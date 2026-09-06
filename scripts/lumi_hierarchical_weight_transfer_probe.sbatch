@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=00:10:00
+#SBATCH --time=00:12:00
 #SBATCH --output=logs/%j.%x.out
 #SBATCH --error=logs/%j.%x.err
 
@@ -48,4 +48,4 @@ srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 \
   --master-port "$MASTER_PORT" \
   --trainer-host "$TRAINER_NODE" \
   --leaf-count 7 \
-  --timeout 180
+  --timeout 480

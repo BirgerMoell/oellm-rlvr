@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --time=00:15:00
+#SBATCH --time=00:20:00
 #SBATCH --output=logs/%j.%x.out
 #SBATCH --error=logs/%j.%x.err
 
@@ -119,7 +119,7 @@ srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bi
   singularity exec -B "$BIND" "$CONTAINER" env -u ROCR_VISIBLE_DEVICES \
   /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_hierarchical_weight_transfer.py" \
   --trainer-address "$TRAINER_IP" --relay-address "$HEAD_IP" --master-port "$TRANSFER_PORT" \
-  --trainer-host "$TRAINER_NODE" --leaf-count 7 --timeout 300 \
+  --trainer-host "$TRAINER_NODE" --leaf-count 7 --timeout 480 \
   | tee "$RESULTS_DIR/hierarchical-transfer.log"
 
 echo "[5/5] Offline BF16 load and one-prompt vLLM generation"

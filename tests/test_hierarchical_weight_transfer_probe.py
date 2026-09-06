@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).parents[1] / "scripts" / "probe_hierarchical_weight_transfer.py"
 SBATCH = Path(__file__).parents[1] / "scripts" / "lumi_hierarchical_weight_transfer_probe.sbatch"
 SPEC = importlib.util.spec_from_file_location("probe_hierarchical_weight_transfer", SCRIPT)
@@ -34,6 +36,15 @@ def test_child_environment_isolates_each_role_gpu(monkeypatch) -> None:
     assert "ROCR_VISIBLE_DEVICES" not in env
     assert env["HIP_VISIBLE_DEVICES"] == "6"
     assert env["CUDA_VISIBLE_DEVICES"] == "6"
+
+
+def test_leaf_waits_for_relay_readiness_file(tmp_path: Path) -> None:
+    ready = tmp_path / "relay.ready"
+    ready.touch()
+    MODULE._wait_for_relay(ready, timeout=0)
+
+    with pytest.raises(TimeoutError, match="relay did not become ready"):
+        MODULE._wait_for_relay(tmp_path / "missing.ready", timeout=0)
 
 
 def test_lumi_step_requests_all_gpus_for_each_node_orchestrator() -> None:
