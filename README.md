@@ -126,6 +126,13 @@ sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
   scripts/lumi_harbor_agentic_rollout.sbatch
 ```
 
+The agentic canary does not invoke Lmod on the compute node. It uses LUMI's
+absolute `/usr/bin/singularity` runtime and sets the two values from
+`lumi-aif-singularity-bindings` directly. This prevents an unrelated Lmod or
+module-filesystem stall from consuming an allocation before the first
+preflight log line; the pinned LAIF image and its hash remain the runtime
+boundary.
+
 Artifacts are written under `$ROOT/oellm-rlvr/harbor-agent/JOB_ID/`: raw Harbor trials, ATIF trajectories,
 `campaign-index.jsonl`, `qualification.json`, source/checkpoint hashes, compatibility probes, and archived Ray
 logs. A reward of zero is allowed at this gate because it is a policy outcome, not an infrastructure failure.

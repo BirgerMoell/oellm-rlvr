@@ -17,9 +17,15 @@
 
 set -euo pipefail
 ulimit -c 0
-module purge
-module load Local-LAIF
-module load lumi-aif-singularity-bindings
+
+# Keep the agentic canary independent of Lmod.  On LUMI, both modules used by
+# earlier versions of this job are convenience modules: Local-LAIF only adds a
+# module search path and lumi-aif-singularity-bindings only sets these two
+# variables.  Invoking `module purge` can block in cl_sync_io_wait during a
+# module-filesystem incident before the job writes a single log line.
+export SINGULARITY_BIND="${SINGULARITY_BIND:-/var/spool/slurmd,/pfs,/scratch,/projappl,/project,/flash,/appl,/boot}"
+export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
+: "${SINGULARITY_BIN:=/usr/bin/singularity}"
 
 : "${MODEL:=/scratch/project_465002530/users/bmoell/models/Qwen3.5-2B}"
 : "${CONTROL_ROOT:=$SLURM_SUBMIT_DIR}"
@@ -55,8 +61,9 @@ trap preserve_ray_logs EXIT
 test -r "$MODEL/config.json"
 test -r "$CONTAINER"
 test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
+test -x "$SINGULARITY_BIN"
 test -x "$CONTROL_ROOT/scripts/lumi-host-launcher-bin/singularity"
-singularity exec -B /pfs,/scratch,/appl "$CONTAINER" test -x "$PYTHON_BIN"
+"$SINGULARITY_BIN" exec -B /pfs,/scratch,/appl "$CONTAINER" test -x "$PYTHON_BIN"
 
 # Harbor itself lives in LAIF. Its Singularity subprocess is replaced by the
 # project launcher, which opens an overlapping same-node Slurm step and invokes
@@ -87,7 +94,7 @@ export HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets" PYTHONPYCACHEPREFIX="$CACHE_R
 export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RAY_NODE_TMP"
 
 inside() {
-  singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV \
+  "$SINGULARITY_BIN" exec -B "$BIND" "$CONTAINER" env -u BASH_ENV \
     PATH="$LAUNCHER_PATH:$(dirname "$PYTHON_BIN"):/opt/venv/bin:/usr/bin:/bin" \
     PYTHONPATH="$PYTHONPATH" HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
     "$@"
@@ -131,7 +138,7 @@ sha256sum "$CONTAINER" > "$RUN_ROOT/manifests/task-sif.sha256"
 sha256sum "$MODEL/config.json" > "$RUN_ROOT/manifests/model-config.sha256"
 env | LC_ALL=C sort > "$RUN_ROOT/manifests/environment.txt"
 
-srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" singularity exec -B "$BIND" "$CONTAINER" \
+srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SINGULARITY_BIN" exec -B "$BIND" "$CONTAINER" \
   env -u BASH_ENV PATH="$LAUNCHER_PATH:$(dirname "$PYTHON_BIN"):/opt/venv/bin:/usr/bin:/bin" \
   PYTHONPATH="$PYTHONPATH" bash -c '
   set -euo pipefail
