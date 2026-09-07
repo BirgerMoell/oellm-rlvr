@@ -109,17 +109,21 @@ for the two-trial launcher probe. Set
 `SOAK=1` when submitting the Harbor job to run 112 environment launches; the default 32-trial smoke runs one
 oracle and one no-op attempt per task.
 
-`lumi_harbor_agentic_rollout.sbatch` is the first real agent gate. It starts four local vLLM engines, sends the
-four repository-repair tasks through SkyRL's Harbor generator, lets Terminus-2 operate isolated task terminals,
-and runs each deferred verifier. The job is intentionally generation-only: it refuses to pass unless every ATIF
+`lumi_harbor_agentic_rollout.sbatch` is the first real agent gate. Its default 2-GCD canary starts one local vLLM
+engine and sends `repo-repair-clamp` through SkyRL's Harbor generator while Terminus-2 operates an isolated task
+terminal and Harbor runs the deferred verifier. The job is intentionally generation-only: it refuses to pass unless every ATIF
 trace has a real shell action, a linked terminal observation, aligned token IDs and log-probabilities, a finite
 verifier reward, and no leaked private verifier marker. Its default small checkpoint checks mechanics cheaply;
-point `MODEL` at the frozen OpenEuroLLM checkpoint for the checkpoint qualification:
+point `MODEL` at the frozen OpenEuroLLM checkpoint for checkpoint qualification. After the single-task gate passes,
+request the full 8-GCD topology explicitly for all four repairs:
 
 ```bash
 sbatch scripts/lumi_harbor_agentic_rollout.sbatch
 MODEL="$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
   sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
+  --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
 ```
 
 Artifacts are written under `$ROOT/oellm-rlvr/harbor-agent/JOB_ID/`: raw Harbor trials, ATIF trajectories,
@@ -145,7 +149,7 @@ $ROOT/venvs/oellm-rlvr/bin/oellm-rlvr qualify-harbor-rollouts \
   --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
   --index-output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
   --report-output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/qualification.json" \
-  --run-id RUN_ID --policy-version 0 --learner-version 0 --expected-trials 4
+  --run-id RUN_ID --policy-version 0 --learner-version 0 --expected-trials 1
 ```
 
 Each JSONL row binds the trial result and raw `agent/trajectory.json` to SHA-256 digests, verifier reward,
