@@ -350,7 +350,18 @@ def _field(value: Any, name: str) -> Any:
         candidate = getter(name, None)
         if candidate is not None:
             return candidate
-    return getattr(value, name, None)
+    candidate = getattr(value, name, None)
+    if candidate is not None:
+        return candidate
+    # Pydantic/LiteLLM can retain OpenAI extension fields in model extras:
+    # model_dump() exposes them even though ``get`` and attribute lookup do
+    # not.  The real vLLM 0.22.1 response uses this layout for token IDs.
+    dump = getattr(value, "model_dump", None)
+    if callable(dump):
+        dumped = dump(exclude_none=False)
+        if isinstance(dumped, dict):
+            return dumped.get(name)
+    return None
 
 
 def _integer_token_ids(value: Any) -> list[int] | None:
@@ -411,12 +422,16 @@ def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
 
             self._logger.warning(
                 "vLLM rollout token IDs missing after LiteLLM parsing: "
-                "prompt=%s completion=%s response_keys=%s choice_keys=%s message_keys=%s",
+                "prompt=%s completion=%s response_keys=%s response_provider_keys=%s "
+                "choice_keys=%s choice_provider_keys=%s message_keys=%s message_provider_keys=%s",
                 prompt_ids is not None,
                 completion_ids is not None,
                 keys(response),
+                keys(response_provider),
                 keys(choice),
+                keys(_field(choice, "provider_specific_fields") or {}),
                 keys(message),
+                keys(_field(message, "provider_specific_fields") or {}),
             )
         return prompt_ids, completion_ids
 

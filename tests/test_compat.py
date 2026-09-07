@@ -28,6 +28,17 @@ class _FakeResponse(dict):
         return dict(self)
 
 
+class _DumpOnlyResponse:
+    def __init__(self, value):
+        self.value = value
+
+    def get(self, _name, _default=None):
+        return None
+
+    def model_dump(self, **_kwargs):
+        return self.value
+
+
 class MixedEnum(Enum):
     VALUE = "value"
     CUSTOM = None
@@ -126,6 +137,30 @@ def test_harbor_token_extraction_accepts_message_provider_fields() -> None:
     message = SimpleNamespace(provider_specific_fields={"token_ids": [31, 32]})
     response = _FakeResponse(choices=[SimpleNamespace(message=message)])
     assert llm._extract_token_ids(response) == ([1], [31, 32])
+
+
+def test_harbor_token_extraction_accepts_dump_only_model_extras() -> None:
+    class FakeLLM:
+        def _extract_token_ids(self, _response):
+            return None, None
+
+    wrap_harbor_vllm_token_extraction(FakeLLM)
+    llm = FakeLLM()
+    llm._logger = SimpleNamespace(warning=lambda *_args: None)
+    response = _DumpOnlyResponse(
+        {
+            "prompt_token_ids": [41, 42],
+            "choices": [
+                _DumpOnlyResponse(
+                    {
+                        "provider_specific_fields": {"token_ids": [51, 52]},
+                        "message": _DumpOnlyResponse({}),
+                    }
+                )
+            ],
+        }
+    )
+    assert llm._extract_token_ids(response) == ([41, 42], [51, 52])
 
 
 def test_math_equivalence_timeout_is_safe_in_executor_thread() -> None:
