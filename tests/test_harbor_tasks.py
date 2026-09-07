@@ -35,7 +35,8 @@ def test_harbor_pack_has_four_tasks_per_capability_and_replays(tmp_path: Path) -
     ).read_text()
     repair_instruction = (pack / "repo-repair-clamp/instruction.md").read_text()
     assert "exactly one command, `cat app.py\\n`" in repair_instruction
-    assert "Do not guess or include an edit before seeing that command's output" in repair_instruction
+    assert "If the terminal output already shows the source" in repair_instruction
+    assert "do not run `cat` again" in repair_instruction
     staged = pack / "repo-repair-clamp/environment/files"
     workdir = tmp_path / "sif-workdir"
     workdir.mkdir()
