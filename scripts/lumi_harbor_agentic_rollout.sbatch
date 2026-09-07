@@ -27,7 +27,7 @@ export SINGULARITY_BIND="${SINGULARITY_BIND:-/var/spool/slurmd,/pfs,/scratch,/pr
 export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
 : "${SINGULARITY_BIN:=/usr/bin/singularity}"
 
-: "${MODEL:=/scratch/project_465002530/users/bmoell/models/Qwen3.5-2B}"
+: "${MODEL:=/scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft}"
 : "${CONTROL_ROOT:=$SLURM_SUBMIT_DIR}"
 : "${SOURCE_ROOT:=/scratch/project_465002530/users/bmoell/rl-sources}"
 : "${SKYRL_ROOT:=$SOURCE_ROOT/SkyRL-v0.3.0}"
@@ -41,6 +41,9 @@ export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
 : "${TEMPERATURE:=0.0}"
 : "${TASK_GLOB:=repo-repair-clamp}"
 : "${TOTAL_GPUS:=2}"
+: "${VLLM_ENFORCE_EAGER:=false}"
+: "${VLLM_LOGGING_LEVEL:=INFO}"
+: "${VLLM_DISABLE_COMPILE_CACHE:=1}"
 
 PACK="$RUN_ROOT/harbor-task-pack-v0"
 ROLLOUT_PACK="$RUN_ROOT/code-rollout-pack"
@@ -51,7 +54,8 @@ NODE_TMP="/tmp/oellm-agent-$SLURM_JOB_ID"
 RAY_NODE_TMP="/tmp/oellm-agent-ray-$SLURM_JOB_ID"
 mkdir -p logs "$RUN_ROOT"/{logs,ray,compatibility,manifests,checkpoints,exports} "$JOBS" "$ROLLOUT_PACK" \
   "$CACHE_ROOT"/{hf,xdg,triton,torchinductor,vllm,tmp,miopen} \
-  "$HARBOR_LUMI_CACHE_ROOT"/{singularity,tmp} "$NODE_TMP" "$RAY_NODE_TMP"
+  "$HARBOR_LUMI_CACHE_ROOT"/{singularity,tmp} \
+  "$NODE_TMP"/{triton,torchinductor,vllm,miopen} "$RAY_NODE_TMP"
 
 preserve_ray_logs() {
   cp -a "$RAY_NODE_TMP"/. "$RUN_ROOT/ray"/ 2>/dev/null || true
@@ -77,10 +81,10 @@ LAUNCHER_PATH="$CONTROL_ROOT/scripts/lumi-host-launcher-bin"
 PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 
 export PYTHONPATH CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN MODEL CONTAINER RUN_ROOT
-export PACK ROLLOUT_PACK JOBS MAX_MODEL_LEN MAX_TOKENS_PER_TURN MAX_TURNS TEMPERATURE
+export PACK ROLLOUT_PACK JOBS MAX_MODEL_LEN MAX_TOKENS_PER_TURN MAX_TURNS TEMPERATURE VLLM_ENFORCE_EAGER
 export HARBOR_LUMI_CACHE_ROOT HARBOR_SINGULARITY_DISABLE_FAKEROOT=1
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
-export VLLM_DISABLE_COMPILE_CACHE=1 VLLM_LOGGING_LEVEL=DEBUG VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
+export VLLM_DISABLE_COMPILE_CACHE VLLM_LOGGING_LEVEL VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
 unset VLLM_USE_V1 VLLM_ENABLE_V1_MULTIPROCESSING
 export OELLM_PATCH_RAY_ROCM_VISIBILITY=1 OELLM_PATCH_VLLM_MAMBA_ENUM=1
 export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
@@ -88,9 +92,13 @@ export OELLM_PATCH_HARBOR_VLLM_TOKENS=1
 export OELLM_HARBOR_DIRECT_SINGLE_ENGINE="${OELLM_HARBOR_DIRECT_SINGLE_ENGINE:-1}"
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0 HWLOC_COMPONENTS=-rsmi RAY_DEDUP_LOGS=0
 export XDG_CACHE_HOME="$CACHE_ROOT/xdg" XDG_CONFIG_HOME="$CACHE_ROOT/xdg-config"
-export TRITON_CACHE_DIR="$CACHE_ROOT/triton" TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor"
-export VLLM_CACHE_ROOT="$CACHE_ROOT/vllm" MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen"
-export MIOPEN_CUSTOM_CACHE_DIR="$CACHE_ROOT/miopen" HF_HOME="$CACHE_ROOT/hf"
+# Compilation is deliberately enabled for the full-attention 9B checkpoint.
+# Keep its high-churn compiler artifacts on node-local storage rather than
+# writing every generated kernel to Lustre. The immutable model/HF cache and
+# final rollout evidence remain under RUN_ROOT on shared storage.
+export TRITON_CACHE_DIR="$NODE_TMP/triton" TORCHINDUCTOR_CACHE_DIR="$NODE_TMP/torchinductor"
+export VLLM_CACHE_ROOT="$NODE_TMP/vllm" MIOPEN_USER_DB_PATH="$NODE_TMP/miopen"
+export MIOPEN_CUSTOM_CACHE_DIR="$NODE_TMP/miopen" HF_HOME="$CACHE_ROOT/hf"
 export HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RAY_NODE_TMP"
 
@@ -184,7 +192,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SIN
     generator.inference_engine.backend=vllm generator.inference_engine.run_engines_locally=true \
     generator.inference_engine.distributed_executor_backend=mp \
     generator.inference_engine.language_model_only=true \
-    generator.inference_engine.weight_sync_backend=nccl generator.inference_engine.enforce_eager=true \
+    generator.inference_engine.weight_sync_backend=nccl generator.inference_engine.enforce_eager="$VLLM_ENFORCE_EAGER" \
     generator.inference_engine.gpu_memory_utilization=0.85 generator.inference_engine.max_num_seqs=4 \
     generator.inference_engine.engine_init_kwargs.max_model_len="$MAX_MODEL_LEN" \
     generator.step_wise_trajectories=true generator.merge_stepwise_output=true \

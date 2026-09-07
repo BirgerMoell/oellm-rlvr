@@ -113,14 +113,12 @@ oracle and one no-op attempt per task.
 engine and sends `repo-repair-clamp` through SkyRL's Harbor generator while Terminus-2 operates an isolated task
 terminal and Harbor runs the deferred verifier. The job is intentionally generation-only: it refuses to pass unless every ATIF
 trace has a real shell action, a linked terminal observation, aligned token IDs and log-probabilities, a finite
-verifier reward, and no leaked private verifier marker. Its default small checkpoint checks mechanics cheaply;
-point `MODEL` at the frozen OpenEuroLLM checkpoint for checkpoint qualification. After the single-task gate passes,
-request the full 8-GCD topology explicitly for all four repairs:
+verifier reward, and no leaked private verifier marker. The default is the frozen 9B OpenEuroLLM SFT checkpoint;
+override `MODEL` only for a deliberately different qualification. After the single-task gate passes, request the
+full 8-GCD topology explicitly for all four repairs:
 
 ```bash
 sbatch scripts/lumi_harbor_agentic_rollout.sbatch
-MODEL="$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
-  sbatch scripts/lumi_harbor_agentic_rollout.sbatch
 sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
   --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8,OELLM_HARBOR_DIRECT_SINGLE_ENGINE=0' \
   scripts/lumi_harbor_agentic_rollout.sbatch
@@ -130,6 +128,14 @@ For the one-engine qualification canary, Harbor talks directly to vLLM's data-pl
 vLLM-specific `prompt_token_ids` and `token_ids` values in the intermediate OpenAI router. The direct path refuses
 multi-engine configurations; remove `OELLM_HARBOR_DIRECT_SINGLE_ENGINE=1` only after the selected session-aware
 router has independently passed the token-ID forwarding probe.
+
+The vLLM engine uses compiled execution by default (`VLLM_ENFORCE_EAGER=false`) and writes Triton/Inductor/vLLM
+compiler artifacts to the compute node's `/tmp`. Set `VLLM_ENFORCE_EAGER=true` only as a compatibility fallback.
+`VLLM_LOGGING_LEVEL=INFO` retains startup and throughput evidence without emitting a filesystem write for every
+decode operator. These defaults matter on MI250: the earlier Qwen3.5-2B hybrid canary combined eager execution,
+per-operator DEBUG logging, and fallback GDN/Triton kernels and decoded at roughly 0.6 token/s. That run did prove
+that the direct data plane preserves exact prompt/completion token IDs and aligned log-probabilities; the 9B
+full-attention checkpoint is now the end-to-end qualification target.
 
 The agentic canary does not invoke Lmod on the compute node. It uses LUMI's
 absolute `/usr/bin/singularity` runtime and sets the two values from
