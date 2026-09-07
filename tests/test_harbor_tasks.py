@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
 import tomllib
@@ -24,7 +26,23 @@ def test_harbor_pack_has_four_tasks_per_capability_and_replays(tmp_path: Path) -
         "FROM scratch\nWORKDIR /tmp/oellm-task\n"
     )
     assert (pack / "terminal-edit-workers/environment/config.json").is_file()
-    assert not (pack / "terminal-edit-workers/environment/files").exists()
+    assert (pack / "terminal-edit-workers/environment/files/setup.sh").is_file()
+    assert (pack / "terminal-edit-workers/environment/files/config.json").read_text() == (
+        pack / "terminal-edit-workers/environment/config.json"
+    ).read_text()
+    assert (pack / "repo-repair-clamp/environment/files/app.py").read_text() == (
+        pack / "repo-repair-clamp/environment/app.py"
+    ).read_text()
+    staged = pack / "repo-repair-clamp/environment/files"
+    workdir = tmp_path / "sif-workdir"
+    workdir.mkdir()
+    subprocess.run(
+        ["bash", str(staged / "setup.sh")],
+        check=True,
+        env={**os.environ, "HARBOR_STAGING": str(staged), "WORKDIR": str(workdir)},
+    )
+    assert (workdir / "app.py").read_text() == (staged / "app.py").read_text()
+    assert not (workdir / "setup.sh").exists()
 
     replay = validate_harbor_dryrun_pack(pack)
     assert replay["ok"] is True

@@ -163,6 +163,39 @@ def _write_common(task: Path, name: str, category: str, sif: str, instruction: s
     _write(task / "tests/verify.py", verifier)
 
 
+def _stage_sif_payload(task: Path) -> None:
+    """Stage task files for Harbor's prebuilt-SIF bootstrap.
+
+    Harbor uses ``environment/Dockerfile`` to resolve the shell workdir, but a
+    prebuilt SIF is not rebuilt from that context.  Its Singularity backend
+    only mounts ``environment/files`` at ``/staging/env_files`` and sources a
+    ``setup.sh`` found there.  Mirror the policy-visible task payload into that
+    directory and copy it into the resolved workdir at container startup.
+    """
+
+    environment = task / "environment"
+    staged = environment / "files"
+    if staged.exists():
+        shutil.rmtree(staged)
+    staged.mkdir(parents=True)
+    _write(
+        staged / "setup.sh",
+        r'''#!/bin/bash
+set -euo pipefail
+find "$HARBOR_STAGING" -mindepth 1 -maxdepth 1 ! -name setup.sh -exec cp -a '{}' "$WORKDIR"/ \;
+''',
+        executable=True,
+    )
+    for source in sorted(environment.iterdir()):
+        if source.name in {"Dockerfile", "files"}:
+            continue
+        target = staged / source.name
+        if source.is_dir():
+            shutil.copytree(source, target)
+        else:
+            shutil.copy2(source, target)
+
+
 def build_harbor_dryrun_pack(output: str | Path, sif: str) -> dict[str, Any]:
     root = Path(output)
     root.mkdir(parents=True, exist_ok=True)
@@ -267,6 +300,9 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
             executable=True,
         )
 
+    for task in sorted(path for path in root.iterdir() if path.is_dir()):
+        _stage_sif_payload(task)
+
     return validate_harbor_dryrun_pack(root)
 
 
@@ -292,6 +328,7 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
             task / "instruction.md",
             task / "environment",
             task / "environment/Dockerfile",
+            task / "environment/files/setup.sh",
             task / "solution/solve.sh",
             task / "tests/test.sh",
             task / "tests/verify.py",
@@ -301,6 +338,14 @@ def validate_harbor_dryrun_pack(root: str | Path) -> dict[str, Any]:
             raise ValueError(f"task {task.name} is incomplete: {missing}")
         if (task / "environment/Dockerfile").read_text() != "FROM scratch\nWORKDIR /tmp/oellm-task\n":
             raise ValueError(f"task {task.name} does not declare Harbor's expected workdir")
+        for source in sorted((task / "environment").iterdir()):
+            if source.name in {"Dockerfile", "files"}:
+                continue
+            staged = task / "environment/files" / source.name
+            if not staged.exists():
+                raise ValueError(f"task {task.name} does not stage {source.name} for its prebuilt SIF")
+            if source.is_file() and source.read_bytes() != staged.read_bytes():
+                raise ValueError(f"task {task.name} stages a stale copy of {source.name}")
         policy_text = (task / "instruction.md").read_text() + "\n" + "\n".join(
             path.read_text(errors="replace") for path in sorted((task / "environment").rglob("*")) if path.is_file()
         )
