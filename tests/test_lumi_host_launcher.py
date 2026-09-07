@@ -51,14 +51,15 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "#SBATCH --gpus-per-node=2" in script
     assert "#SBATCH --time=00:30:00" in script
     assert ': "${TOTAL_GPUS:=2}"' in script
-    assert ': "${VLLM_ENFORCE_EAGER:=false}"' in script
+    assert ': "${MAX_TOKENS_PER_TURN:=1024}"' in script
+    assert ': "${OELLM_VLLM_ENFORCE_EAGER:=false}"' in script
     assert ': "${VLLM_LOGGING_LEVEL:=INFO}"' in script
     assert 'TRITON_CACHE_DIR="$NODE_TMP/triton"' in script
     assert 'POLICY_GPUS="${POLICY_GPUS:-$EXPECTED_TRIALS}"' in script
     assert 'NUM_ENGINES="${NUM_ENGINES:-$EXPECTED_TRIALS}"' in script
     assert 'trainer.placement.policy_num_gpus_per_node="$POLICY_GPUS"' in script
     assert 'generator.inference_engine.num_engines="$NUM_ENGINES"' in script
-    assert 'generator.inference_engine.enforce_eager="$VLLM_ENFORCE_EAGER"' in script
+    assert 'generator.inference_engine.enforce_eager="$OELLM_VLLM_ENFORCE_EAGER"' in script
     assert '--expected-gpus "$TOTAL_GPUS"' in script
     assert '--gpus-per-task="$TOTAL_GPUS"' in script
     assert '--expected-trials "$EXPECTED_TRIALS"' in script

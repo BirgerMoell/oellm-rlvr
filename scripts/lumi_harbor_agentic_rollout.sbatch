@@ -36,12 +36,12 @@ export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
 : "${CONTAINER:=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
 : "${RUN_ROOT:=/scratch/project_465002530/users/bmoell/oellm-rlvr/harbor-agent/$SLURM_JOB_ID}"
 : "${MAX_MODEL_LEN:=8192}"
-: "${MAX_TOKENS_PER_TURN:=192}"
+: "${MAX_TOKENS_PER_TURN:=1024}"
 : "${MAX_TURNS:=4}"
 : "${TEMPERATURE:=0.0}"
 : "${TASK_GLOB:=repo-repair-clamp}"
 : "${TOTAL_GPUS:=2}"
-: "${VLLM_ENFORCE_EAGER:=false}"
+: "${OELLM_VLLM_ENFORCE_EAGER:=false}"
 : "${VLLM_LOGGING_LEVEL:=INFO}"
 : "${VLLM_DISABLE_COMPILE_CACHE:=1}"
 
@@ -81,7 +81,8 @@ LAUNCHER_PATH="$CONTROL_ROOT/scripts/lumi-host-launcher-bin"
 PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
 
 export PYTHONPATH CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN MODEL CONTAINER RUN_ROOT
-export PACK ROLLOUT_PACK JOBS MAX_MODEL_LEN MAX_TOKENS_PER_TURN MAX_TURNS TEMPERATURE VLLM_ENFORCE_EAGER
+export PACK ROLLOUT_PACK JOBS MAX_MODEL_LEN MAX_TOKENS_PER_TURN MAX_TURNS TEMPERATURE
+export OELLM_VLLM_ENFORCE_EAGER
 export HARBOR_LUMI_CACHE_ROOT HARBOR_SINGULARITY_DISABLE_FAKEROOT=1
 export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
 export VLLM_DISABLE_COMPILE_CACHE VLLM_LOGGING_LEVEL VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
@@ -192,7 +193,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SIN
     generator.inference_engine.backend=vllm generator.inference_engine.run_engines_locally=true \
     generator.inference_engine.distributed_executor_backend=mp \
     generator.inference_engine.language_model_only=true \
-    generator.inference_engine.weight_sync_backend=nccl generator.inference_engine.enforce_eager="$VLLM_ENFORCE_EAGER" \
+    generator.inference_engine.weight_sync_backend=nccl generator.inference_engine.enforce_eager="$OELLM_VLLM_ENFORCE_EAGER" \
     generator.inference_engine.gpu_memory_utilization=0.85 generator.inference_engine.max_num_seqs=4 \
     generator.inference_engine.engine_init_kwargs.max_model_len="$MAX_MODEL_LEN" \
     generator.step_wise_trajectories=true generator.merge_stepwise_output=true \

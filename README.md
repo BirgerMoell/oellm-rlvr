@@ -129,8 +129,10 @@ vLLM-specific `prompt_token_ids` and `token_ids` values in the intermediate Open
 multi-engine configurations; remove `OELLM_HARBOR_DIRECT_SINGLE_ENGINE=1` only after the selected session-aware
 router has independently passed the token-ID forwarding probe.
 
-The vLLM engine uses compiled execution by default (`VLLM_ENFORCE_EAGER=false`) and writes Triton/Inductor/vLLM
-compiler artifacts to the compute node's `/tmp`. Set `VLLM_ENFORCE_EAGER=true` only as a compatibility fallback.
+The vLLM engine uses compiled execution by default (`OELLM_VLLM_ENFORCE_EAGER=false`) and writes
+Triton/Inductor/vLLM compiler artifacts to the compute node's `/tmp`. Set `OELLM_VLLM_ENFORCE_EAGER=true` only
+as a compatibility fallback. The 9B checkpoint gets a 1,024-token budget per turn: its parent GSM8K evaluation
+averaged 587 generated tokens and a 192-token agent budget caused every response to truncate before valid JSON.
 `VLLM_LOGGING_LEVEL=INFO` retains startup and throughput evidence without emitting a filesystem write for every
 decode operator. These defaults matter on MI250: the earlier Qwen3.5-2B hybrid canary combined eager execution,
 per-operator DEBUG logging, and fallback GDN/Triton kernels and decoded at roughly 0.6 token/s. That run did prove
