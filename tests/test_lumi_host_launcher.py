@@ -45,6 +45,7 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "--min-bash-commands-per-trial 1" in script
     assert 'TASK_GLOB:=repo-repair-clamp' in script
     assert "#SBATCH --gpus-per-node=2" in script
+    assert "#SBATCH --time=00:30:00" in script
     assert ': "${TOTAL_GPUS:=2}"' in script
     assert 'POLICY_GPUS="${POLICY_GPUS:-$EXPECTED_TRIALS}"' in script
     assert 'NUM_ENGINES="${NUM_ENGINES:-$EXPECTED_TRIALS}"' in script
