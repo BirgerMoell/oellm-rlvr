@@ -289,8 +289,10 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
             "repository-repair",
             sif,
             "The shell starts in the task directory and `app.py` is present there. Repair its bug while keeping "
-            "the public function name and signature unchanged. Work concisely: first run `cat app.py`; then make "
-            "the smallest correct edit, verify it, and finish.",
+            "the public function name and signature unchanged. This is deliberately multi-turn: in your first "
+            "response, return the required JSON with exactly one command, `cat app.py\\n`, and set "
+            "`task_complete` to false. Do not guess or include an edit before seeing that command's output. After "
+            "the terminal observation arrives, make the smallest correct edit, verify it, and finish.",
             _verifier(assertions, marker),
         )
         _write(task / "environment/app.py", broken)
