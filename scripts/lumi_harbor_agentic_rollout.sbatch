@@ -36,9 +36,9 @@ export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
 : "${CONTAINER:=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
 : "${RUN_ROOT:=/scratch/project_465002530/users/bmoell/oellm-rlvr/harbor-agent/$SLURM_JOB_ID}"
 : "${MAX_MODEL_LEN:=8192}"
-: "${MAX_TOKENS_PER_TURN:=256}"
-: "${MAX_TURNS:=6}"
-: "${TEMPERATURE:=0.7}"
+: "${MAX_TOKENS_PER_TURN:=192}"
+: "${MAX_TURNS:=4}"
+: "${TEMPERATURE:=0.0}"
 : "${TASK_GLOB:=repo-repair-clamp}"
 : "${TOTAL_GPUS:=2}"
 
@@ -85,6 +85,7 @@ unset VLLM_USE_V1 VLLM_ENABLE_V1_MULTIPROCESSING
 export OELLM_PATCH_RAY_ROCM_VISIBILITY=1 OELLM_PATCH_VLLM_MAMBA_ENUM=1
 export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
 export OELLM_PATCH_HARBOR_VLLM_TOKENS=1
+export OELLM_HARBOR_DIRECT_SINGLE_ENGINE="${OELLM_HARBOR_DIRECT_SINGLE_ENGINE:-1}"
 export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0 HWLOC_COMPONENTS=-rsmi RAY_DEDUP_LOGS=0
 export XDG_CACHE_HOME="$CACHE_ROOT/xdg" XDG_CONFIG_HOME="$CACHE_ROOT/xdg-config"
 export TRITON_CACHE_DIR="$CACHE_ROOT/triton" TORCHINDUCTOR_CACHE_DIR="$CACHE_ROOT/torchinductor"
@@ -153,7 +154,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SIN
     data.train_data="['"$ROLLOUT_PACK"']" data.val_data="[]" \
     harbor_trial_config.trials_dir="$JOBS" \
     harbor_trial_config.agent.name=terminus-2 \
-    harbor_trial_config.agent.override_timeout_sec=900 \
+    harbor_trial_config.agent.override_timeout_sec=1200 \
     harbor_trial_config.agent.kwargs.max_turns="$MAX_TURNS" \
     harbor_trial_config.agent.kwargs.suppress_max_turns_warning=true \
     harbor_trial_config.agent.kwargs.enable_summarize=false \

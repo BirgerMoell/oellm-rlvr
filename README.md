@@ -122,9 +122,14 @@ sbatch scripts/lumi_harbor_agentic_rollout.sbatch
 MODEL="$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
   sbatch scripts/lumi_harbor_agentic_rollout.sbatch
 sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
-  --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8' \
+  --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8,OELLM_HARBOR_DIRECT_SINGLE_ENGINE=0' \
   scripts/lumi_harbor_agentic_rollout.sbatch
 ```
+
+For the one-engine qualification canary, Harbor talks directly to vLLM's data-plane URL. This avoids losing
+vLLM-specific `prompt_token_ids` and `token_ids` values in the intermediate OpenAI router. The direct path refuses
+multi-engine configurations; remove `OELLM_HARBOR_DIRECT_SINGLE_ENGINE=1` only after the selected session-aware
+router has independently passed the token-ID forwarding probe.
 
 The agentic canary does not invoke Lmod on the compute node. It uses LUMI's
 absolute `/usr/bin/singularity` runtime and sets the two values from

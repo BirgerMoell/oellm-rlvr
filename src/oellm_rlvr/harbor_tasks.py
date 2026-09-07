@@ -288,8 +288,9 @@ audit_path.write_text(json.dumps(audit, sort_keys=True)); print(result)
             task.name,
             "repository-repair",
             sif,
-            "Repair the bug in `app.py`. Keep the public function name and signature unchanged. "
-            "Work concisely: inspect the file, make the smallest correct edit, verify it, and finish.",
+            "The shell starts in the task directory and `app.py` is present there. Repair its bug while keeping "
+            "the public function name and signature unchanged. Work concisely: first run `cat app.py`; then make "
+            "the smallest correct edit, verify it, and finish.",
             _verifier(assertions, marker),
         )
         _write(task / "environment/app.py", broken)

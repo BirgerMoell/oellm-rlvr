@@ -20,6 +20,7 @@ from oellm_rlvr.compat import (
     wrap_harbor_vllm_token_extraction,
     wrap_open_instruct_rocm_visibility,
     wrap_open_instruct_streaming_config,
+    wrap_skyrl_harbor_direct_single_engine,
     wrap_swerl_create_backend,
 )
 
@@ -177,6 +178,32 @@ def test_harbor_token_extraction_normalizes_lossless_serialized_ids() -> None:
         choices=[SimpleNamespace(provider_specific_fields={"token_ids": ("71", "72")})],
     )
     assert llm._extract_token_ids(response) == ([61, 62], [71, 72])
+
+
+def test_harbor_generator_can_use_single_engine_directly(monkeypatch) -> None:
+    module = ModuleType("fake_skyrl_harbor_generator")
+    module.logger = SimpleNamespace(info=lambda *_args: None)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+
+    class FakeGenerator:
+        def __init__(self, generator_cfg, harbor_cfg, inference_engine_client, tokenizer, max_seq_len):
+            self.base_url = inference_engine_client.get_endpoint_url()
+            self._harbor_trial_config_template = {
+                "agent": {"kwargs": {"api_base": f"{self.base_url}/v1"}}
+            }
+
+    FakeGenerator.__module__ = module.__name__
+    client = SimpleNamespace(
+        server_urls=["http://10.0.0.8:8000/"],
+        get_endpoint_url=lambda: "http://10.0.0.8:30000",
+    )
+    assert wrap_skyrl_harbor_direct_single_engine(FakeGenerator) is True
+    assert wrap_skyrl_harbor_direct_single_engine(FakeGenerator) is False
+    generator = FakeGenerator(None, None, client, None, 8192)
+    assert generator.base_url == "http://10.0.0.8:8000"
+    assert generator._harbor_trial_config_template["agent"]["kwargs"]["api_base"] == (
+        "http://10.0.0.8:8000/v1"
+    )
 
 
 def test_math_equivalence_timeout_is_safe_in_executor_thread() -> None:

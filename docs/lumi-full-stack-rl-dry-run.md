@@ -253,9 +253,12 @@ The agentic rollout job is the learner-off gate between the deterministic Harbor
 optimizer update. It uses the pinned upstream SkyRL Harbor generator rather than a project-specific simulation:
 Terminus-2 calls the local vLLM router over the OpenAI-compatible API, parses shell commands, executes them in a
 Harbor Singularity task environment, and returns the external verifier reward plus per-turn token data. The job
-defaults to one micro-repository repair on two GCDs, limits the trial to six turns and 768 output tokens per turn,
-and requires its raw trial to satisfy `qualify-harbor-rollouts`. Before model startup it proves that LiteLLM sends
-`return_token_ids=true` and that Harbor preserves both prompt and completion token IDs. Each task declares
+defaults to one micro-repository repair on two GCDs, limits the trial to four turns and 192 output tokens per turn,
+and requires its raw trial to satisfy `qualify-harbor-rollouts`. The one-engine canary sends Harbor directly to the
+vLLM data plane because the pinned intermediate OpenAI router preserves the extension keys but returns null token-ID
+values. Multi-engine use remains gated on a session-aware router that proves it preserves those values. Before model
+startup the compatibility probe proves that LiteLLM sends `return_token_ids=true` and that Harbor preserves both
+prompt and completion token IDs in a representative vLLM-shaped response. Each task declares
 `WORKDIR /tmp/oellm-task` in its environment Dockerfile because Harbor v0.22.0 otherwise ignores the `task.toml`
 workdir for a prebuilt SIF and starts the terminal in `/app`.
 
@@ -263,7 +266,7 @@ Only after the default canary passes, run all four repairs on the full node:
 
 ```bash
 sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
-  --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8' \
+  --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8,OELLM_HARBOR_DIRECT_SINGLE_ENGINE=0' \
   scripts/lumi_harbor_agentic_rollout.sbatch
 ```
 

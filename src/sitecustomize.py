@@ -36,6 +36,14 @@ if os.environ.get("OELLM_PATCH_HARBOR_VLLM_TOKENS") == "1":
         patch_harbor_litellm_module,
     )
 
+if os.environ.get("OELLM_HARBOR_DIRECT_SINGLE_ENGINE") == "1":
+    from oellm_rlvr.compat import patch_skyrl_harbor_generator_module
+
+    install_post_import_patch(
+        "examples.train_integrations.harbor.harbor_generator",
+        patch_skyrl_harbor_generator_module,
+    )
+
 if os.environ.get("OELLM_PATCH_SWERL_APPTAINER_KWARGS") == "1":
     from oellm_rlvr.compat import wrap_swerl_create_backend
 

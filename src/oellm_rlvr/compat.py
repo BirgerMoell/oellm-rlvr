@@ -410,6 +410,46 @@ def _token_value_summary(value: Any) -> str:
     return f"{type(value).__name__}(len={length}, element_types={element_types})"
 
 
+def wrap_skyrl_harbor_direct_single_engine(generator_type: type[Any]) -> bool:
+    """Bypass SkyRL's HTTP router when Harbor has exactly one vLLM engine.
+
+    This is a narrow compatibility path for the one-engine qualification
+    canary. Harbor requires vLLM-specific response fields for RL, while a
+    regular OpenAI proxy may preserve the response schema but replace those
+    extension values with ``None``. Multi-engine campaigns must retain a
+    session-aware router and are deliberately rejected by this wrapper.
+    """
+    original = generator_type.__init__
+    if getattr(original, "_oellm_direct_single_engine", False):
+        return False
+
+    @wraps(original)
+    def direct_single_engine(self: Any, *args: Any, **kwargs: Any) -> None:
+        original(self, *args, **kwargs)
+        inference_client = kwargs.get("inference_engine_client")
+        if inference_client is None and len(args) >= 3:
+            inference_client = args[2]
+        server_urls = getattr(inference_client, "server_urls", None)
+        if not isinstance(server_urls, list) or len(server_urls) != 1:
+            raise RuntimeError(
+                "OELLM_HARBOR_DIRECT_SINGLE_ENGINE requires exactly one vLLM server URL; "
+                f"got {server_urls!r}"
+            )
+        direct_url = str(server_urls[0]).rstrip("/")
+        self.base_url = direct_url
+        self._harbor_trial_config_template["agent"]["kwargs"]["api_base"] = f"{direct_url}/v1"
+        module_logger = sys.modules[generator_type.__module__].logger
+        module_logger.info(f"Harbor direct single-engine data plane enabled: {direct_url} (router bypassed)")
+
+    direct_single_engine._oellm_direct_single_engine = True
+    generator_type.__init__ = direct_single_engine
+    return True
+
+
+def patch_skyrl_harbor_generator_module(module: ModuleType) -> bool:
+    return wrap_skyrl_harbor_direct_single_engine(module.HarborGenerator)
+
+
 def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
     """Preserve vLLM token IDs across LiteLLM response-layout variants.
 
