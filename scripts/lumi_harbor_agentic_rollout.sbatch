@@ -101,11 +101,21 @@ if [[ "$EXPECTED_TRIALS" -lt 1 ]]; then
   echo "TASK_GLOB=$TASK_GLOB selected no Harbor tasks" >&2
   exit 1
 fi
+POLICY_GPUS="${POLICY_GPUS:-$EXPECTED_TRIALS}"
+NUM_ENGINES="${NUM_ENGINES:-$EXPECTED_TRIALS}"
+if [[ "$POLICY_GPUS" -gt 4 ]]; then POLICY_GPUS=4; fi
+if [[ "$NUM_ENGINES" -gt 4 ]]; then NUM_ENGINES=4; fi
+if [[ "$POLICY_GPUS" -lt 1 || "$NUM_ENGINES" -lt 1 ]]; then
+  echo "POLICY_GPUS and NUM_ENGINES must both be positive" >&2
+  exit 1
+fi
 cp -a "${SELECTED_TASKS[@]}" "$ROLLOUT_PACK"/
 test "$(find "$ROLLOUT_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$EXPECTED_TRIALS"
 printf '%s\n' "$TASK_GLOB" > "$RUN_ROOT/manifests/task-glob.txt"
 printf '%s\n' "$EXPECTED_TRIALS" > "$RUN_ROOT/manifests/expected-trials.txt"
-export EXPECTED_TRIALS
+printf '%s\n' "$POLICY_GPUS" > "$RUN_ROOT/manifests/policy-gpus.txt"
+printf '%s\n' "$NUM_ENGINES" > "$RUN_ROOT/manifests/inference-engines.txt"
+export EXPECTED_TRIALS POLICY_GPUS NUM_ENGINES
 
 git -C "$CONTROL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/oellm-rlvr.commit"
 git -C "$SKYRL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/skyrl.commit"
@@ -152,9 +162,9 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task=8 singularity exec 
     trainer.policy.model.path="$MODEL" trainer.strategy=fsdp \
     trainer.policy.language_model_only=true trainer.ref.language_model_only=true \
     trainer.placement.colocate_all=false \
-    trainer.placement.policy_num_nodes=1 trainer.placement.policy_num_gpus_per_node=4 \
+    trainer.placement.policy_num_nodes=1 trainer.placement.policy_num_gpus_per_node="$POLICY_GPUS" \
     generator.inference_engine.served_model_name=oellm-agent \
-    generator.inference_engine.num_engines=4 generator.inference_engine.tensor_parallel_size=1 \
+    generator.inference_engine.num_engines="$NUM_ENGINES" generator.inference_engine.tensor_parallel_size=1 \
     generator.inference_engine.backend=vllm generator.inference_engine.run_engines_locally=true \
     generator.inference_engine.distributed_executor_backend=mp \
     generator.inference_engine.language_model_only=true \
@@ -163,8 +173,8 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task=8 singularity exec 
     generator.inference_engine.engine_init_kwargs.max_model_len="$MAX_MODEL_LEN" \
     generator.step_wise_trajectories=true generator.merge_stepwise_output=true \
     generator.n_samples_per_prompt=1 generator.sampling_params.max_generate_length="$MAX_TOKENS_PER_TURN" \
-    generator.rate_limit.enabled=true generator.rate_limit.trajectories_per_second=4 \
-    generator.rate_limit.max_concurrency=4 \
+    generator.rate_limit.enabled=true generator.rate_limit.trajectories_per_second="$NUM_ENGINES" \
+    generator.rate_limit.max_concurrency="$NUM_ENGINES" \
     trainer.algorithm.max_seq_len="$MAX_MODEL_LEN" trainer.algorithm.advantage_estimator=grpo \
     trainer.algorithm.use_kl_loss=false trainer.algorithm.use_kl_in_reward=false \
     trainer.train_batch_size="$EXPECTED_TRIALS" trainer.policy_mini_batch_size="$EXPECTED_TRIALS" \
