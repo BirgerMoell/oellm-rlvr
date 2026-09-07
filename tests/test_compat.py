@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import json
 import os
 import sys
 import threading
@@ -161,6 +162,21 @@ def test_harbor_token_extraction_accepts_dump_only_model_extras() -> None:
         }
     )
     assert llm._extract_token_ids(response) == ([41, 42], [51, 52])
+
+
+def test_harbor_token_extraction_normalizes_lossless_serialized_ids() -> None:
+    class FakeLLM:
+        def _extract_token_ids(self, _response):
+            return None, None
+
+    wrap_harbor_vllm_token_extraction(FakeLLM)
+    llm = FakeLLM()
+    llm._logger = SimpleNamespace(warning=lambda *_args: None)
+    response = _FakeResponse(
+        prompt_token_ids=json.dumps([61, 62]),
+        choices=[SimpleNamespace(provider_specific_fields={"token_ids": ("71", "72")})],
+    )
+    assert llm._extract_token_ids(response) == ([61, 62], [71, 72])
 
 
 def test_math_equivalence_timeout_is_safe_in_executor_thread() -> None:

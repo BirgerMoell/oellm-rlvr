@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import importlib.abc
 import importlib.machinery
+import json
 import os
 import socket
 import sys
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from enum import Enum
 from functools import wraps
+from operator import index
 from types import ModuleType
 from typing import Any
 
@@ -365,9 +367,47 @@ def _field(value: Any, name: str) -> Any:
 
 
 def _integer_token_ids(value: Any) -> list[int] | None:
-    if isinstance(value, list) and value and all(isinstance(token, int) for token in value):
-        return value
-    return None
+    """Normalize only lossless integer token-ID representations."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)) or not value:
+        return None
+
+    tokens: list[int] = []
+    for token in value:
+        if isinstance(token, bool):
+            return None
+        if isinstance(token, str):
+            if not token.isdecimal():
+                return None
+            normalized = int(token)
+        else:
+            try:
+                normalized = index(token)
+            except TypeError:
+                return None
+        if normalized < 0:
+            return None
+        tokens.append(normalized)
+    return tokens
+
+
+def _token_value_summary(value: Any) -> str:
+    """Describe a token-ID candidate without logging token content."""
+    if value is None:
+        return "None"
+    try:
+        length: int | str = len(value)
+    except TypeError:
+        length = "?"
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        element_types = sorted({type(element).__name__ for element in value[:8]})
+    else:
+        element_types = []
+    return f"{type(value).__name__}(len={length}, element_types={element_types})"
 
 
 def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
@@ -389,10 +429,15 @@ def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
         completion_ids = _integer_token_ids(completion_ids)
 
         response_provider = _field(response, "provider_specific_fields") or {}
+        prompt_candidates = (
+            _field(response, "prompt_token_ids"),
+            _field(response_provider, "prompt_token_ids"),
+        )
         if prompt_ids is None:
-            prompt_ids = _integer_token_ids(_field(response, "prompt_token_ids"))
-        if prompt_ids is None:
-            prompt_ids = _integer_token_ids(_field(response_provider, "prompt_token_ids"))
+            prompt_ids = next(
+                (tokens for value in prompt_candidates if (tokens := _integer_token_ids(value)) is not None),
+                None,
+            )
 
         choices = _field(response, "choices") or []
         choice = choices[0] if choices else None
@@ -423,7 +468,8 @@ def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
             self._logger.warning(
                 "vLLM rollout token IDs missing after LiteLLM parsing: "
                 "prompt=%s completion=%s response_keys=%s response_provider_keys=%s "
-                "choice_keys=%s choice_provider_keys=%s message_keys=%s message_provider_keys=%s",
+                "choice_keys=%s choice_provider_keys=%s message_keys=%s message_provider_keys=%s "
+                "prompt_candidates=%s completion_candidates=%s",
                 prompt_ids is not None,
                 completion_ids is not None,
                 keys(response),
@@ -432,6 +478,8 @@ def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
                 keys(_field(choice, "provider_specific_fields") or {}),
                 keys(message),
                 keys(_field(message, "provider_specific_fields") or {}),
+                [_token_value_summary(value) for value in prompt_candidates],
+                [_token_value_summary(value) for value in candidates],
             )
         return prompt_ids, completion_ids
 
