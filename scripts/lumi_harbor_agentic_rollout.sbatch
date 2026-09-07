@@ -7,10 +7,10 @@
 #SBATCH --account=project_465002530
 #SBATCH --partition=dev-g
 #SBATCH --nodes=1
-#SBATCH --gpus-per-node=8
+#SBATCH --gpus-per-node=2
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=56
-#SBATCH --mem=480G
+#SBATCH --cpus-per-task=14
+#SBATCH --mem=120G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/%j.%x.out
 #SBATCH --error=logs/%j.%x.err
@@ -34,6 +34,7 @@ module load lumi-aif-singularity-bindings
 : "${MAX_TURNS:=6}"
 : "${TEMPERATURE:=0.7}"
 : "${TASK_GLOB:=repo-repair-clamp}"
+: "${TOTAL_GPUS:=2}"
 
 PACK="$RUN_ROOT/harbor-task-pack-v0"
 ROLLOUT_PACK="$RUN_ROOT/code-rollout-pack"
@@ -110,13 +111,18 @@ if [[ "$POLICY_GPUS" -lt 1 || "$NUM_ENGINES" -lt 1 ]]; then
   echo "POLICY_GPUS and NUM_ENGINES must both be positive" >&2
   exit 1
 fi
+if [[ $((POLICY_GPUS + NUM_ENGINES)) -gt "$TOTAL_GPUS" ]]; then
+  echo "policy ($POLICY_GPUS) + inference ($NUM_ENGINES) exceeds allocation ($TOTAL_GPUS)" >&2
+  exit 1
+fi
+HIP_FALLBACK="$(seq -s, 0 $((TOTAL_GPUS - 1)))"
 cp -a "${SELECTED_TASKS[@]}" "$ROLLOUT_PACK"/
 test "$(find "$ROLLOUT_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$EXPECTED_TRIALS"
 printf '%s\n' "$TASK_GLOB" > "$RUN_ROOT/manifests/task-glob.txt"
 printf '%s\n' "$EXPECTED_TRIALS" > "$RUN_ROOT/manifests/expected-trials.txt"
 printf '%s\n' "$POLICY_GPUS" > "$RUN_ROOT/manifests/policy-gpus.txt"
 printf '%s\n' "$NUM_ENGINES" > "$RUN_ROOT/manifests/inference-engines.txt"
-export EXPECTED_TRIALS POLICY_GPUS NUM_ENGINES
+export EXPECTED_TRIALS POLICY_GPUS NUM_ENGINES TOTAL_GPUS HIP_FALLBACK
 
 git -C "$CONTROL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/oellm-rlvr.commit"
 git -C "$SKYRL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/skyrl.commit"
@@ -125,14 +131,15 @@ sha256sum "$CONTAINER" > "$RUN_ROOT/manifests/task-sif.sha256"
 sha256sum "$MODEL/config.json" > "$RUN_ROOT/manifests/model-config.sha256"
 env | LC_ALL=C sort > "$RUN_ROOT/manifests/environment.txt"
 
-srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \
+srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" singularity exec -B "$BIND" "$CONTAINER" \
   env -u BASH_ENV PATH="$LAUNCHER_PATH:$(dirname "$PYTHON_BIN"):/opt/venv/bin:/usr/bin:/bin" \
   PYTHONPATH="$PYTHONPATH" bash -c '
   set -euo pipefail
-  export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+  export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-$HIP_FALLBACK}"
   unset ROCR_VISIBLE_DEVICES
   "$PYTHON_BIN" "$CONTROL_ROOT/scripts/probe_skyrl_stack.py" \
     --skyrl-source "$SKYRL_ROOT" --harbor-source "$HARBOR_ROOT" --require-gpu \
+    --expected-gpus "$TOTAL_GPUS" \
     --output "$RUN_ROOT/compatibility/gpu-imports.json"
   cd "$SKYRL_ROOT"
   "$PYTHON_BIN" -m examples.train_integrations.harbor.entrypoints.main_harbor_generate \

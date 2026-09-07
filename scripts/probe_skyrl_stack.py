@@ -52,7 +52,13 @@ def _version(name: str) -> str | None:
         return None
 
 
-def inspect_stack(skyrl_source: Path, harbor_source: Path, *, require_gpu: bool) -> dict[str, Any]:
+def inspect_stack(
+    skyrl_source: Path,
+    harbor_source: Path,
+    *,
+    require_gpu: bool,
+    expected_gpus: int = 8,
+) -> dict[str, Any]:
     errors: list[str] = []
     commits = {"skyrl": _commit(skyrl_source), "harbor": _commit(harbor_source)}
     dirty_paths = {"skyrl": _dirty_paths(skyrl_source), "harbor": _dirty_paths(harbor_source)}
@@ -114,8 +120,8 @@ def inspect_stack(skyrl_source: Path, harbor_source: Path, *, require_gpu: bool)
         errors.append(f"unexpected vLLM build: {versions['vllm']}")
     if versions["ray"] != "2.56.0":
         errors.append(f"SkyRL overlay requires Ray 2.56.0, got {versions['ray']}")
-    if require_gpu and torch.cuda.device_count() != 8:
-        errors.append(f"expected 8 visible MI250X GCDs, got {torch.cuda.device_count()}")
+    if require_gpu and torch.cuda.device_count() != expected_gpus:
+        errors.append(f"expected {expected_gpus} visible MI250X GCDs, got {torch.cuda.device_count()}")
 
     loaded_maps = Path("/proc/self/maps").read_text(errors="replace")
     cuda_libraries = sorted(
@@ -137,6 +143,7 @@ def inspect_stack(skyrl_source: Path, harbor_source: Path, *, require_gpu: bool)
         "torch_hip": torch.version.hip,
         "visible_gpus": torch.cuda.device_count(),
         "required_gpu_check": require_gpu,
+        "expected_gpus": expected_gpus,
         "imports": imported,
         "loaded_cuda_or_nccl_libraries": cuda_libraries,
         "environment": {
@@ -153,8 +160,14 @@ def main() -> int:
     parser.add_argument("--harbor-source", required=True)
     parser.add_argument("--output")
     parser.add_argument("--require-gpu", action="store_true")
+    parser.add_argument("--expected-gpus", type=int, default=8)
     args = parser.parse_args()
-    report = inspect_stack(Path(args.skyrl_source), Path(args.harbor_source), require_gpu=args.require_gpu)
+    report = inspect_stack(
+        Path(args.skyrl_source),
+        Path(args.harbor_source),
+        require_gpu=args.require_gpu,
+        expected_gpus=args.expected_gpus,
+    )
     if args.output:
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)

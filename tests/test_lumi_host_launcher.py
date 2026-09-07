@@ -44,9 +44,13 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "qualify-harbor-rollouts" in script
     assert "--min-bash-commands-per-trial 1" in script
     assert 'TASK_GLOB:=repo-repair-clamp' in script
+    assert "#SBATCH --gpus-per-node=2" in script
+    assert ': "${TOTAL_GPUS:=2}"' in script
     assert 'POLICY_GPUS="${POLICY_GPUS:-$EXPECTED_TRIALS}"' in script
     assert 'NUM_ENGINES="${NUM_ENGINES:-$EXPECTED_TRIALS}"' in script
     assert 'trainer.placement.policy_num_gpus_per_node="$POLICY_GPUS"' in script
     assert 'generator.inference_engine.num_engines="$NUM_ENGINES"' in script
+    assert '--expected-gpus "$TOTAL_GPUS"' in script
+    assert '--gpus-per-task="$TOTAL_GPUS"' in script
     assert '--expected-trials "$EXPECTED_TRIALS"' in script
     assert "srun --label --cpu-bind=none --gpu-bind=none" in script
