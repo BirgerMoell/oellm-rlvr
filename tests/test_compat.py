@@ -8,6 +8,7 @@ from types import ModuleType, SimpleNamespace
 
 from oellm_rlvr.compat import (
     install_post_import_patch,
+    patch_harbor_litellm_module,
     patch_math_equivalence_module,
     patch_open_instruct_grpo_module,
     patch_open_instruct_vllm_module,
@@ -15,10 +16,16 @@ from oellm_rlvr.compat import (
     patch_vllm_weight_transfer_factory,
     replace_none_enum_value,
     wrap_async_weight_update,
+    wrap_harbor_vllm_token_extraction,
     wrap_open_instruct_rocm_visibility,
     wrap_open_instruct_streaming_config,
     wrap_swerl_create_backend,
 )
+
+
+class _FakeResponse(dict):
+    def model_dump(self, **_kwargs):
+        return dict(self)
 
 
 class MixedEnum(Enum):
@@ -88,6 +95,37 @@ def test_weight_update_is_wrapped_in_transaction() -> None:
     engine = FakeAsyncLLM()
     assert asyncio.run(engine.update_weights("request")) == "done"
     assert engine.calls == [("start", True), ("update", "request"), ("finish",)]
+
+
+def test_harbor_token_extraction_accepts_direct_litellm_fields() -> None:
+    class FakeLLM:
+        def _extract_token_ids(self, _response):
+            return None, None
+
+    assert wrap_harbor_vllm_token_extraction(FakeLLM) is True
+    assert wrap_harbor_vllm_token_extraction(FakeLLM) is False
+    llm = FakeLLM()
+    llm._logger = SimpleNamespace(warning=lambda *_args: None)
+    response = _FakeResponse(
+        prompt_token_ids=[11, 12],
+        choices=[SimpleNamespace(token_ids=[21, 22], message=SimpleNamespace())],
+    )
+    assert llm._extract_token_ids(response) == ([11, 12], [21, 22])
+
+
+def test_harbor_token_extraction_accepts_message_provider_fields() -> None:
+    class FakeLLM:
+        def _extract_token_ids(self, _response):
+            return [1], None
+
+    module = ModuleType("fake_harbor_litellm")
+    module.LiteLLM = FakeLLM
+    assert patch_harbor_litellm_module(module) is True
+    llm = FakeLLM()
+    llm._logger = SimpleNamespace(warning=lambda *_args: None)
+    message = SimpleNamespace(provider_specific_fields={"token_ids": [31, 32]})
+    response = _FakeResponse(choices=[SimpleNamespace(message=message)])
+    assert llm._extract_token_ids(response) == ([1], [31, 32])
 
 
 def test_math_equivalence_timeout_is_safe_in_executor_thread() -> None:

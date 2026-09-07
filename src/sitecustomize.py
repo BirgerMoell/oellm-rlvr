@@ -28,6 +28,14 @@ if os.environ.get("OELLM_PATCH_MATH_EQUIV_THREADS") == "1":
         patch_math_equivalence_module,
     )
 
+if os.environ.get("OELLM_PATCH_HARBOR_VLLM_TOKENS") == "1":
+    from oellm_rlvr.compat import patch_harbor_litellm_module
+
+    install_post_import_patch(
+        "harbor.llms.lite_llm",
+        patch_harbor_litellm_module,
+    )
+
 if os.environ.get("OELLM_PATCH_SWERL_APPTAINER_KWARGS") == "1":
     from oellm_rlvr.compat import wrap_swerl_create_backend
 

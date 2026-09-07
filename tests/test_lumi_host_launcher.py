@@ -35,6 +35,7 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "harbor_trial_config.environment.type=singularity" in script
     assert "harbor_trial_config.agent.kwargs.collect_rollout_details=true" in script
     assert "probe_harbor_litellm_vllm.py" in script
+    assert "OELLM_PATCH_HARBOR_VLLM_TOKENS=1" in script
     assert "generator.step_wise_trajectories=true" in script
     assert "generator.merge_stepwise_output=true" in script
     assert "generator.inference_engine.distributed_executor_backend=mp" in script

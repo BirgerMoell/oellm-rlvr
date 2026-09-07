@@ -342,6 +342,93 @@ def patch_math_equivalence_module(module: ModuleType) -> bool:
     return True
 
 
+def _field(value: Any, name: str) -> Any:
+    if isinstance(value, dict):
+        return value.get(name)
+    getter = getattr(value, "get", None)
+    if callable(getter):
+        candidate = getter(name, None)
+        if candidate is not None:
+            return candidate
+    return getattr(value, name, None)
+
+
+def _integer_token_ids(value: Any) -> list[int] | None:
+    if isinstance(value, list) and value and all(isinstance(token, int) for token in value):
+        return value
+    return None
+
+
+def wrap_harbor_vllm_token_extraction(llm_type: type[Any]) -> bool:
+    """Preserve vLLM token IDs across LiteLLM response-layout variants.
+
+    LiteLLM versions have represented OpenAI-compatible extension fields as
+    direct attributes, choice provider fields, or message provider fields.
+    Harbor v0.22.0 checks only one of those layouts. Keep the upstream method
+    as the first choice, then search the other lossless locations.
+    """
+    original = llm_type._extract_token_ids
+    if getattr(original, "_oellm_vllm_token_layouts", False):
+        return False
+
+    @wraps(original)
+    def compatible_extract(self: Any, response: Any) -> tuple[list[int] | None, list[int] | None]:
+        prompt_ids, completion_ids = original(self, response)
+        prompt_ids = _integer_token_ids(prompt_ids)
+        completion_ids = _integer_token_ids(completion_ids)
+
+        response_provider = _field(response, "provider_specific_fields") or {}
+        if prompt_ids is None:
+            prompt_ids = _integer_token_ids(_field(response, "prompt_token_ids"))
+        if prompt_ids is None:
+            prompt_ids = _integer_token_ids(_field(response_provider, "prompt_token_ids"))
+
+        choices = _field(response, "choices") or []
+        choice = choices[0] if choices else None
+        message = _field(choice, "message") if choice is not None else None
+        candidates = (
+            _field(choice, "token_ids"),
+            _field(_field(choice, "provider_specific_fields") or {}, "token_ids"),
+            _field(message, "token_ids"),
+            _field(_field(message, "provider_specific_fields") or {}, "token_ids"),
+        )
+        if completion_ids is None:
+            completion_ids = next(
+                (tokens for value in candidates if (tokens := _integer_token_ids(value)) is not None),
+                None,
+            )
+
+        if prompt_ids is None or completion_ids is None:
+            def keys(value: Any) -> list[str]:
+                if isinstance(value, dict):
+                    return sorted(str(key) for key in value)
+                dump = getattr(value, "model_dump", None)
+                if callable(dump):
+                    dumped = dump(exclude_none=False)
+                    if isinstance(dumped, dict):
+                        return sorted(str(key) for key in dumped)
+                return []
+
+            self._logger.warning(
+                "vLLM rollout token IDs missing after LiteLLM parsing: "
+                "prompt=%s completion=%s response_keys=%s choice_keys=%s message_keys=%s",
+                prompt_ids is not None,
+                completion_ids is not None,
+                keys(response),
+                keys(choice),
+                keys(message),
+            )
+        return prompt_ids, completion_ids
+
+    compatible_extract._oellm_vllm_token_layouts = True
+    llm_type._extract_token_ids = compatible_extract
+    return True
+
+
+def patch_harbor_litellm_module(module: ModuleType) -> bool:
+    return wrap_harbor_vllm_token_extraction(module.LiteLLM)
+
+
 def wrap_swerl_create_backend(module: ModuleType) -> bool:
     """Keep prepared-Apptainer defaults away from the plain backend."""
     original = module.create_backend
