@@ -253,7 +253,7 @@ The agentic rollout job is the learner-off gate between the deterministic Harbor
 optimizer update. It uses the pinned upstream SkyRL Harbor generator rather than a project-specific simulation:
 Terminus-2 calls the local vLLM router over the OpenAI-compatible API, parses shell commands, executes them in a
 Harbor Singularity task environment, and returns the external verifier reward plus per-turn token data. The job
-defaults to one micro-repository repair on two GCDs, limits the trial to four turns and 192 output tokens per turn,
+defaults to one micro-repository repair on two GCDs, limits the trial to four turns and 1,024 output tokens per turn,
 and requires its raw trial to satisfy `qualify-harbor-rollouts`. The one-engine canary sends Harbor directly to the
 vLLM data plane because the pinned intermediate OpenAI router preserves the extension keys but returns null token-ID
 values. Multi-engine use remains gated on a session-aware router that proves it preserves those values. Before model
@@ -261,6 +261,16 @@ startup the compatibility probe proves that LiteLLM sends `return_token_ids=true
 prompt and completion token IDs in a representative vLLM-shaped response. Each task declares
 `WORKDIR /tmp/oellm-task` in its environment Dockerfile because Harbor v0.22.0 otherwise ignores the `task.toml`
 workdir for a prebuilt SIF and starts the terminal in `/app`.
+
+After a model earns positive reward, profile a repeated group rather than immediately enabling the learner:
+
+```bash
+sbatch --export='ALL,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=0.7,MAX_TURNS=6' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+The job derives the expected trial count from the number of prompts times the number of samples. GRPO is ready
+only when at least one repeated-prompt group contains mixed rewards.
 
 Only after the default canary passes, run all four repairs on the full node:
 

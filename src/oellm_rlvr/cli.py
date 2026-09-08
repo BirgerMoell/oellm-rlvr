@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from .agentic_sft import build_agentic_sft_bridge, validate_agentic_sft_bridge
 from .backend import build_backend_argv, shell_command
 from .backend_rollouts import inspect_backend_rollouts
 from .campaign import load_campaign, render_campaign_markdown
@@ -375,6 +376,18 @@ def command_qualify_harbor_rollouts(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def command_build_agentic_sft_bridge(args: argparse.Namespace) -> int:
+    report = build_agentic_sft_bridge(args.output)
+    _json(report)
+    return 0 if report["validation"]["ok"] else 1
+
+
+def command_validate_agentic_sft_bridge(args: argparse.Namespace) -> int:
+    report = validate_agentic_sft_bridge(args.dataset)
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="oellm-rlvr")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -603,6 +616,20 @@ def build_parser() -> argparse.ArgumentParser:
     qualify_harbor.add_argument("--min-bash-commands-per-trial", type=int, default=1)
     qualify_harbor.add_argument("--min-task-complete-per-trial", type=int, default=0)
     qualify_harbor.set_defaults(handler=command_qualify_harbor_rollouts)
+
+    agentic_bridge = sub.add_parser(
+        "build-agentic-sft-bridge",
+        help="build a verified OpenAI/LlamaFactory multi-turn Terminus-2 SFT bridge",
+    )
+    agentic_bridge.add_argument("--output", required=True, help="output directory")
+    agentic_bridge.set_defaults(handler=command_build_agentic_sft_bridge)
+
+    validate_bridge = sub.add_parser(
+        "validate-agentic-sft-bridge",
+        help="validate exact JSON, turn alternation, commands, and completion in an agentic bridge JSONL",
+    )
+    validate_bridge.add_argument("--dataset", required=True)
+    validate_bridge.set_defaults(handler=command_validate_agentic_sft_bridge)
     return parser
 
 

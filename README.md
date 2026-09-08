@@ -146,6 +146,18 @@ module-filesystem stall from consuming an allocation before the first
 preflight log line; the pinned LAIF image and its hash remain the runtime
 boundary.
 
+To measure the within-prompt reward variance required by GRPO, repeat one task at a nonzero temperature while
+keeping a single inference engine and policy reservation:
+
+```bash
+sbatch --export='ALL,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=0.7,MAX_TURNS=6' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+`EXPECTED_TRIALS` is derived as `prompt count * samples per prompt`, so the strict qualification report covers
+every repetition. Do not treat a mixture of rewards across different prompts as GRPO signal; at least one
+repeated-prompt group must itself contain more than one reward value.
+
 Artifacts are written under `$ROOT/oellm-rlvr/harbor-agent/JOB_ID/`: raw Harbor trials, ATIF trajectories,
 `campaign-index.jsonl`, `qualification.json`, source/checkpoint hashes, compatibility probes, and archived Ray
 logs. A reward of zero is allowed at this gate because it is a policy outcome, not an infrastructure failure.
@@ -178,6 +190,26 @@ zero-LLM dispatch steps are retained in raw ATIF but excluded from trainable cou
 exceptions, invalid rewards, broken tool-call references, and token/logprob misalignment are rejected. Harbor's
 `oracle` and `nop` agents intentionally produce no LLM trace, so their contract jobs validate the sandbox and
 verifier but are not learner-admissible rollouts.
+
+If the frozen parent cannot reliably emit Terminus-2 JSON or change actions after a terminal observation, build
+the project-owned agent-interface SFT bridge before RL:
+
+```bash
+oellm-rlvr build-agentic-sft-bridge --output data/oellm-agentic-bridge-v1
+oellm-rlvr validate-agentic-sft-bridge \
+  --dataset data/oellm-agentic-bridge-v1/agentic_bridge.jsonl
+```
+
+The output is deterministic OpenAI-message JSONL plus a LlamaFactory `dataset_info.json` and a SHA-256 manifest.
+It contains 16 successful multi-turn oracle episodes (52 assistant turns and 36 terminal commands) over function
+calls, stateful tools, terminal edits, and repository repairs. Every learned response is exactly one valid
+Terminus-2 JSON object; every command ends in a newline; observations and the final confirmation are included.
+The format follows [LlamaFactory's official OpenAI/ShareGPT mapping](https://github.com/hiyouga/LlamaFactory/blob/main/data/README.md#openai-format).
+
+This 16-record set is only a format/overfit canary. Its metadata marks every row `sft-bridge-only` and
+`not_for_rl_or_evaluation`: the oracle solutions must never be used to evaluate the bridged model or reused as
+RL prompts. Expand the parameterized task families into disjoint train/calibration/evaluation clusters before a
+production bridge, and rerun the Harbor canary on held-out tasks.
 
 Prepare a math smoke dataset and render a job:
 

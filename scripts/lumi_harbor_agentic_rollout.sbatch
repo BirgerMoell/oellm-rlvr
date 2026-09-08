@@ -40,6 +40,7 @@ export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
 : "${MAX_TURNS:=4}"
 : "${TEMPERATURE:=0.0}"
 : "${TASK_GLOB:=repo-repair-clamp}"
+: "${N_SAMPLES_PER_PROMPT:=1}"
 : "${TOTAL_GPUS:=2}"
 : "${OELLM_VLLM_ENFORCE_EAGER:=false}"
 : "${VLLM_LOGGING_LEVEL:=INFO}"
@@ -115,13 +116,18 @@ inside "$PYTHON_BIN" -m oellm_rlvr.cli validate-harbor-pack --pack "$PACK"
 inside "$PYTHON_BIN" "$CONTROL_ROOT/scripts/probe_harbor_litellm_vllm.py" \
   --output "$RUN_ROOT/compatibility/harbor-litellm-vllm.json"
 mapfile -t SELECTED_TASKS < <(find "$PACK" -mindepth 1 -maxdepth 1 -type d -name "$TASK_GLOB" -print | sort)
-EXPECTED_TRIALS="${#SELECTED_TASKS[@]}"
-if [[ "$EXPECTED_TRIALS" -lt 1 ]]; then
+PROMPT_COUNT="${#SELECTED_TASKS[@]}"
+if [[ "$PROMPT_COUNT" -lt 1 ]]; then
   echo "TASK_GLOB=$TASK_GLOB selected no Harbor tasks" >&2
   exit 1
 fi
-POLICY_GPUS="${POLICY_GPUS:-$EXPECTED_TRIALS}"
-NUM_ENGINES="${NUM_ENGINES:-$EXPECTED_TRIALS}"
+if ! [[ "$N_SAMPLES_PER_PROMPT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "N_SAMPLES_PER_PROMPT must be a positive integer" >&2
+  exit 1
+fi
+EXPECTED_TRIALS=$((PROMPT_COUNT * N_SAMPLES_PER_PROMPT))
+POLICY_GPUS="${POLICY_GPUS:-$PROMPT_COUNT}"
+NUM_ENGINES="${NUM_ENGINES:-$PROMPT_COUNT}"
 if [[ "$POLICY_GPUS" -gt 4 ]]; then POLICY_GPUS=4; fi
 if [[ "$NUM_ENGINES" -gt 4 ]]; then NUM_ENGINES=4; fi
 if [[ "$POLICY_GPUS" -lt 1 || "$NUM_ENGINES" -lt 1 ]]; then
@@ -134,12 +140,14 @@ if [[ $((POLICY_GPUS + NUM_ENGINES)) -gt "$TOTAL_GPUS" ]]; then
 fi
 HIP_FALLBACK="$(seq -s, 0 $((TOTAL_GPUS - 1)))"
 cp -a "${SELECTED_TASKS[@]}" "$ROLLOUT_PACK"/
-test "$(find "$ROLLOUT_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$EXPECTED_TRIALS"
+test "$(find "$ROLLOUT_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$PROMPT_COUNT"
 printf '%s\n' "$TASK_GLOB" > "$RUN_ROOT/manifests/task-glob.txt"
+printf '%s\n' "$PROMPT_COUNT" > "$RUN_ROOT/manifests/prompt-count.txt"
+printf '%s\n' "$N_SAMPLES_PER_PROMPT" > "$RUN_ROOT/manifests/samples-per-prompt.txt"
 printf '%s\n' "$EXPECTED_TRIALS" > "$RUN_ROOT/manifests/expected-trials.txt"
 printf '%s\n' "$POLICY_GPUS" > "$RUN_ROOT/manifests/policy-gpus.txt"
 printf '%s\n' "$NUM_ENGINES" > "$RUN_ROOT/manifests/inference-engines.txt"
-export EXPECTED_TRIALS POLICY_GPUS NUM_ENGINES TOTAL_GPUS HIP_FALLBACK
+export PROMPT_COUNT N_SAMPLES_PER_PROMPT EXPECTED_TRIALS POLICY_GPUS NUM_ENGINES TOTAL_GPUS HIP_FALLBACK
 
 git -C "$CONTROL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/oellm-rlvr.commit"
 git -C "$SKYRL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/skyrl.commit"
@@ -197,12 +205,13 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SIN
     generator.inference_engine.gpu_memory_utilization=0.85 generator.inference_engine.max_num_seqs=4 \
     generator.inference_engine.engine_init_kwargs.max_model_len="$MAX_MODEL_LEN" \
     generator.step_wise_trajectories=true generator.merge_stepwise_output=true \
-    generator.n_samples_per_prompt=1 generator.sampling_params.max_generate_length="$MAX_TOKENS_PER_TURN" \
+    generator.n_samples_per_prompt="$N_SAMPLES_PER_PROMPT" \
+    generator.sampling_params.max_generate_length="$MAX_TOKENS_PER_TURN" \
     generator.rate_limit.enabled=true generator.rate_limit.trajectories_per_second="$NUM_ENGINES" \
     generator.rate_limit.max_concurrency="$NUM_ENGINES" \
     trainer.algorithm.max_seq_len="$MAX_MODEL_LEN" trainer.algorithm.advantage_estimator=grpo \
     trainer.algorithm.use_kl_loss=false trainer.algorithm.use_kl_in_reward=false \
-    trainer.train_batch_size="$EXPECTED_TRIALS" trainer.policy_mini_batch_size="$EXPECTED_TRIALS" \
+    trainer.train_batch_size="$PROMPT_COUNT" trainer.policy_mini_batch_size="$PROMPT_COUNT" \
     trainer.micro_forward_batch_size_per_gpu=1 trainer.micro_train_batch_size_per_gpu=1 \
     trainer.remove_microbatch_padding=false trainer.flash_attn=false \
     trainer.eval_before_train=false trainer.eval_interval=-1 trainer.logger=console \
