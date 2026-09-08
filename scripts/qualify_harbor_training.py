@@ -12,6 +12,7 @@ from typing import Any
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 GRAD_NORM = re.compile(r"(?<![/A-Za-z_])'grad_norm':\s*([-+0-9.eE]+)")
 POLICY_VERSION = re.compile(r"OELLM_HARBOR_POLICY_VERSION=(\d+)")
+POLICY_VERSION_METRIC = re.compile(r"'generate/policy_weight_version':\s*'?([0-9]+(?:\.0+)?)'?")
 
 
 def qualify_training(
@@ -30,7 +31,9 @@ def qualify_training(
     log = ANSI.sub("", log_file.read_text(errors="replace"))
     rollout_report = json.loads(rollout_file.read_text())
     grad_norms = [float(value) for value in GRAD_NORM.findall(log)]
-    policy_versions = [int(value) for value in POLICY_VERSION.findall(log)]
+    marker_versions = [int(value) for value in POLICY_VERSION.findall(log)]
+    metric_versions = [int(float(value)) for value in POLICY_VERSION_METRIC.findall(log)]
+    policy_versions = marker_versions or metric_versions
     completed_policy_steps = log.count("Finished: 'policy_train'")
     completed_weight_syncs = log.count("Finished: 'sync_weights'")
 
@@ -55,7 +58,7 @@ def qualify_training(
         "finite_gradient_metrics": finite_gradients,
         "nonzero_gradient_observed": bool(nonzero_gradients),
         "weight_syncs_completed": completed_weight_syncs >= expected_steps,
-        "post_update_rollout_observed": 0 in policy_versions and any(version >= 1 for version in policy_versions),
+        "post_update_rollout_observed": len(set(policy_versions)) >= 2 and max(policy_versions) > min(policy_versions),
         "training_completed": "Training done!" in log,
         "restartable_hf_export": bool(config_files) and bool(weight_files),
     }
