@@ -158,6 +158,13 @@ sbatch --export='ALL,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=0.7,MAX_TURNS=6' \
 every repetition. Do not treat a mixture of rewards across different prompts as GRPO signal; at least one
 repeated-prompt group must itself contain more than one reward value.
 
+The Qwen3.5-9B control qualified this path on LUMI. Job `21811157` produced eight learner-admissible Harbor
+trajectories from `Qwen/Qwen3.5-9B`, with 27 real Bash commands, no parser errors, and eight verifier rewards of
+`1.0`. This proves grouped sampling and the agentic data plane work, while also showing that
+`repo-repair-clamp` is too easy for this control model: an all-one group has zero GRPO advantage. See
+[`docs/qualification-harbor-agentic-2026-09-07.md`](docs/qualification-harbor-agentic-2026-09-07.md) for the
+frozen configuration, compute accounting, and exact boundary of what remains unqualified.
+
 Artifacts are written under `$ROOT/oellm-rlvr/harbor-agent/JOB_ID/`: raw Harbor trials, ATIF trajectories,
 `campaign-index.jsonl`, `qualification.json`, source/checkpoint hashes, compatibility probes, and archived Ray
 logs. A reward of zero is allowed at this gate because it is a policy outcome, not an infrastructure failure.

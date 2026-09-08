@@ -103,3 +103,20 @@ expected-trial gate rejected the run after one otherwise valid reward-1 trajecto
 project-owned learner-off entrypoint that preserves SkyRL's setup but explicitly expands each prompt into unique
 repetition IDs. The real learner entrypoint is unaffected; this repair makes its pre-training qualification
 faithfully reproduce the grouped sampling shape.
+
+Job `21811157` reran the corrected gate with eight repetitions, temperature `0.7`, six turns, and 512 generated
+tokens per turn. It completed on two MI250 GCDs in 23 minutes 55 seconds (`0.797` GCD-hours). The strict report
+passed all gates: eight trials accepted for RL, 27 Bash commands, linked terminal observations in every trial,
+zero parser errors, and exact token IDs plus aligned log-probabilities. All eight independent repetitions solved
+the repair and received reward `1.0`.
+
+This is a positive rollout-system qualification, but not yet a useful GRPO group. The constant reward vector
+`[1, 1, 1, 1, 1, 1, 1, 1]` produces zero group-relative advantages. The next experiment should keep the same
+Qwen3.5 control and runtime while increasing task difficulty until a repeated-prompt group contains both successes
+and failures. Only after that mixed-reward gate passes should the work proceed to a learner update. In particular,
+this result validates Qwen3.5-9B generation and trajectory collection on LUMI; it does not yet validate loading the
+hybrid `Qwen3_5ForConditionalGeneration` architecture into SkyRL's FSDP learner.
+
+The three Qwen3.5-9B control jobs used `1.567` GCD-hours in total: `0.435` for the deterministic canary,
+`0.335` for the repetition-count failure, and `0.797` for the corrected eight-sample run. The cancelled nested
+Slurm steps shown after the successful parent jobs are Harbor sandbox cleanup, not failed trials.
