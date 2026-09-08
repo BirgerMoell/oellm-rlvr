@@ -34,7 +34,7 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
         'MODEL:=/scratch/project_465002530/users/bmoell/oellm-reasoning-training/'
         'artifacts/models/oellm-9b-256k-sft'
     ) in script
-    assert "examples.train_integrations.harbor.entrypoints.main_harbor_generate" in script
+    assert '"$CONTROL_ROOT/scripts/run_harbor_generate.py"' in script
     assert "harbor_trial_config.agent.name=terminus-2" in script
     assert "harbor_trial_config.environment.type=singularity" in script
     assert "harbor_trial_config.agent.kwargs.collect_rollout_details=true" in script

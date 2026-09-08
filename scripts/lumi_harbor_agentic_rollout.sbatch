@@ -167,7 +167,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SIN
     --expected-gpus "$TOTAL_GPUS" \
     --output "$RUN_ROOT/compatibility/gpu-imports.json"
   cd "$SKYRL_ROOT"
-  "$PYTHON_BIN" -m examples.train_integrations.harbor.entrypoints.main_harbor_generate \
+  "$PYTHON_BIN" "$CONTROL_ROOT/scripts/run_harbor_generate.py" \
     data.train_data="['"$ROLLOUT_PACK"']" data.val_data="[]" \
     harbor_trial_config.trials_dir="$JOBS" \
     harbor_trial_config.agent.name=terminus-2 \

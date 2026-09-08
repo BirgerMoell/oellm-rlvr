@@ -96,3 +96,10 @@ This isolates the previous zero-reward result: the LUMI/SkyRL/Harbor data path c
 learner-admissible agentic trajectory. The frozen OpenEuroLLM SFT parent's failure was policy behavior, not an
 integration failure. A single deterministic success is not yet a training qualification; the next control is an
 eight-sample group at training temperature to establish within-prompt reward variance.
+
+The first repetition attempt, job `21810949`, exposed a bug in SkyRL v0.3.0's debugging-only
+`main_harbor_generate` entrypoint: it hard-codes `repetition_id=0` and ignores `n_samples_per_prompt`. The strict
+expected-trial gate rejected the run after one otherwise valid reward-1 trajectory. The repository now uses a
+project-owned learner-off entrypoint that preserves SkyRL's setup but explicitly expands each prompt into unique
+repetition IDs. The real learner entrypoint is unaffected; this repair makes its pre-training qualification
+faithfully reproduce the grouped sampling shape.
