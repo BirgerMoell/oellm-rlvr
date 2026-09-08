@@ -180,6 +180,24 @@ To measure the within-prompt reward variance required by GRPO, repeat one task a
 keeping a single inference engine and policy reservation:
 
 ```bash
+sbatch --export='ALL,MODEL=/path/to/model,TASK_GLOB=repo-repair-bool,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=1.0,MAX_TURNS=2,MAX_TOKENS_PER_TURN=512' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+Only a learner-admissible group containing both reward 0 and reward 1 should be trained. The two-step canary
+uses the real SkyRL Harbor entrypoint, saves restart state and HF exports, and requires the second rollout batch
+to report a newer sampler weight version:
+
+```bash
+sbatch --export='ALL,MODEL=/path/to/model,TASK_GLOB=repo-repair-bool,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=1.0,MAX_TURNS=2,MAX_TOKENS_PER_TURN=512' \
+  scripts/lumi_harbor_agentic_train.sbatch
+```
+
+See the [Qwen3.5-9B qualification](docs/qualification-harbor-training-2026-09-08.md) for the complete measured
+reference run. The same command is the incoming OpenEuroLLM checkpoint gate, but its task must be selected from
+that checkpoint's own profile rather than copied from Qwen.
+
+```bash
 sbatch --export='ALL,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=0.7,MAX_TURNS=6' \
   scripts/lumi_harbor_agentic_rollout.sbatch
 ```

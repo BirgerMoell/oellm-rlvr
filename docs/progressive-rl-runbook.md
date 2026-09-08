@@ -12,12 +12,12 @@ It is fair to say that the `oellm-rlvr` **RL system works on LUMI**, provided th
 | Reasoning RL on OELLM 9B | Qualified | Job `21750021`: 32/32 non-zero-gradient updates, 2,048 rollouts, synchronized weights, resumable exports, and a positive paired GSM8K diagnostic | Repeat on the incoming frozen checkpoint and use clean multi-domain selection evals |
 | Math RL on OELLM 9B | Qualified | Jobs `21540106` and `21734954`: mixed groups, non-zero gradients, complete saves, and hierarchical learner-to-eight-engine weight sync | Run a broader, re-profiled curriculum and held-out multi-subdomain evaluation |
 | Executable-code RL | Backend qualified; OELLM 9B not qualified | Qwen3.5-2B job `21536745` produced mixed rewards, `grad_norm=0.21`, hidden-test execution, and weight sync | Profile and update the actual incoming 9B checkpoint, then pass held-out code and retention gates |
-| Agentic rollouts | Qualified | Qwen3.5-9B job `21811157`: 8/8 learner-admissible Harbor trajectories, 27 commands, no parser errors, exact token IDs/log-probs | Build mixed-reward tasks and connect them to one SkyRL optimizer step |
-| Agentic RL training | Not yet qualified | The learner-off data plane and Harbor/Singularity contracts pass | Qualify Qwen3.5's SkyRL learner boundary, then complete one synchronous OELLM 9B update and weight sync |
+| Agentic rollouts | Qualified | Qwen3.5-9B jobs `21811157` and `21816376`: exact token IDs/log-probs; the latter produced a trainable 5/8 mixed-reward code group | Re-profile every selected checkpoint and curriculum window |
+| Agentic RL training | Backend qualified; OELLM checkpoint not yet qualified | Qwen3.5-9B job `21816880`: two SkyRL/FSDP optimizer steps, `grad_norm=6.5354` on the mixed group, two post-update syncs, sampler versions 1 then 2, and restartable exports | Profile the incoming OELLM checkpoint, then run the same synchronous gate on one of its mixed groups |
 
 The current system has therefore passed real rollout, verifier, advantage, gradient, optimizer, checkpoint, and
-weight-synchronization boundaries. The unresolved work is concentrated in actual-checkpoint code qualification
-and the SkyRL + Harbor learner connection, not in basic reasoning or math RL.
+weight-synchronization boundaries, including the SkyRL + Harbor learner connection. The unresolved work is
+concentrated in profiling and qualifying the incoming OpenEuroLLM checkpoint, not the underlying agentic backend.
 
 ## The checkpoint sequence
 

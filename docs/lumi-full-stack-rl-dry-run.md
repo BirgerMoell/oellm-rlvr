@@ -207,14 +207,18 @@ The control plane now implements the first runnable slice of the critical path:
   result, checks tool-call/observation links and optional per-token RL fields, excludes copied-context and
   deterministic-dispatch steps from trainable counts, and writes the small versioned campaign index. The raw
   multi-turn trace is never flattened or rewritten.
+- `lumi_harbor_agentic_train.sbatch` runs the upstream SkyRL Harbor trainer for two synchronous full-weight
+  FSDP/GRPO updates. Job `21816880` qualified this boundary with Qwen3.5-9B: 16 valid Harbor trajectories,
+  mixed binary rewards, `grad_norm=6.5354` on the first update, policy versions 1 then 2, completed learner-to-vLLM
+  synchronization, distributed restart checkpoints, and HF exports. The second group was saturated at 8/8 and
+  correctly produced a zero gradient; production scheduling must re-profile or replace saturated groups.
 
 These are implementation-complete only when their LUMI artifacts pass. Do not infer qualification from the
 presence of a script. The remaining critical path is:
 
 1. freeze the fast independent evaluation scorecard and generate model attempts for the task profiler;
-2. qualify the SkyRL AMD smoke and Harbor 112-launch soak on the current LAIF image;
-3. connect the implemented Harbor ATIF campaign index to SkyRL's generator and complete one synchronous 9B
-   SkyRL + Harbor update;
+2. complete the Harbor 112-launch soak on the current LAIF image;
+3. profile the incoming OpenEuroLLM checkpoint and repeat the qualified synchronous 9B SkyRL + Harbor update;
 4. add scheduled environment quotas, domain-relative advantages, capped active sampling, and complete restart
    state;
 5. add campaign-wide reward replay and paired evaluation reports;

@@ -209,7 +209,7 @@ srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SIN
     trainer.micro_forward_batch_size_per_gpu=1 trainer.micro_train_batch_size_per_gpu=1 \
     trainer.max_prompt_length=4096 trainer.remove_microbatch_padding=false trainer.flash_attn=false \
     trainer.policy.optimizer_config.lr=1.0e-6 trainer.eval_before_train=false trainer.eval_interval=-1 \
-    trainer.ckpt_interval="$TRAIN_STEPS" trainer.hf_save_interval="$TRAIN_STEPS" trainer.max_ckpts_to_keep=2 \
+    trainer.ckpt_interval="$TRAIN_STEPS" trainer.hf_save_interval="$TRAIN_STEPS" trainer.max_ckpts_to_keep=1 \
     trainer.logger=console trainer.project_name=oellm-harbor-agentic \
     trainer.run_name="lumi-$SLURM_JOB_ID" trainer.resume_mode=null \
     trainer.ckpt_path="$RUN_ROOT/checkpoints" trainer.export_path="$RUN_ROOT/exports" \
