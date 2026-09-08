@@ -55,6 +55,36 @@ Validate and render the proposed full-stack LUMI dry run:
   --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml
 ```
 
+For the production-shaped checkpoint chain—reasoning, then math, then code, then agentic—use the
+[progressive RL runbook](docs/progressive-rl-runbook.md) and its machine-validated campaign:
+
+```bash
+.venv/bin/oellm-rlvr validate-campaign \
+  --campaign campaigns/lumi-oellm9b-progressive-rl.yaml
+.venv/bin/oellm-rlvr render-campaign \
+  --campaign campaigns/lumi-oellm9b-progressive-rl.yaml
+```
+
+Bind any frozen incoming checkpoint to a validated reasoning, math, or code template without hand-editing its
+artifact paths:
+
+```bash
+.venv/bin/oellm-rlvr materialize-config \
+  --template configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml \
+  --run-name oellm9b-reasoning-01 \
+  --model-id <repository@revision> --model-path <local-checkpoint> \
+  --dataset <profiled-training-pool> --output-root <campaign-root> \
+  --output <campaign-root>/configs/reasoning.yaml
+```
+
+After eight-sample profiling, build current-policy difficulty pools without relying on static source labels:
+
+```bash
+.venv/bin/oellm-rlvr build-curriculum-pools \
+  --profile <profile-dir>/task-profile.parquet \
+  --output <profile-dir>/curriculum-pools.json
+```
+
 The campaign foundations are executable, not just a schedule. They include checkpoint hashing and replay,
 strict task-catalog validation and pass-rate profiling, a two-node LUMI preflight, a pinned SkyRL/Harbor
 overlay, a four-update SkyRL AMD smoke, and a 16-task Harbor oracle/failure contract.

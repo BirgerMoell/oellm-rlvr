@@ -118,6 +118,88 @@ def _read_attempts(path: str | Path) -> list[ProfileAttempt]:
     return [ProfileAttempt.model_validate(row) for row in rows]
 
 
+def _read_profile_rows(path: str | Path) -> list[dict[str, Any]]:
+    source = Path(path)
+    if source.suffix == ".parquet":
+        try:
+            import pyarrow.parquet as pq
+        except ImportError as error:
+            raise RuntimeError("Parquet input requires pyarrow (install oellm-rlvr[data])") from error
+        return pq.read_table(source).to_pylist()
+    rows: list[dict[str, Any]] = []
+    with source.open() as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            value = json.loads(line)
+            if not isinstance(value, dict):
+                raise TypeError(f"profile line {line_number} is not a JSON object")
+            rows.append(value)
+    return rows
+
+
+def build_curriculum_pools(profile_path: str | Path, output_path: str | Path) -> dict[str, Any]:
+    rows = _read_profile_rows(profile_path)
+    required = {"task_id", "domain", "pass_rate", "infrastructure_errors"}
+    buckets: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    seen: set[str] = set()
+    for index, row in enumerate(rows):
+        missing = sorted(required - row.keys())
+        if missing:
+            raise ValueError(f"profile row {index} is missing: {', '.join(missing)}")
+        task_id = str(row["task_id"])
+        if task_id in seen:
+            raise ValueError(f"duplicate profiled task ID: {task_id}")
+        seen.add(task_id)
+        domain = str(row["domain"])
+        pass_rate = float(row["pass_rate"])
+        errors = int(row["infrastructure_errors"])
+        if not 0 <= pass_rate <= 1:
+            raise ValueError(f"profile task {task_id} has pass_rate outside [0, 1]")
+        if errors:
+            bucket = "infrastructure_reject"
+        elif pass_rate == 0:
+            bucket = "impossible"
+        elif pass_rate < 0.25:
+            bucket = "hard"
+        elif pass_rate < 0.625:
+            bucket = "medium"
+        elif pass_rate < 1:
+            bucket = "easy"
+        else:
+            bucket = "saturated"
+        buckets[domain][bucket].append(task_id)
+
+    bucket_order = ("easy", "medium", "hard", "saturated", "impossible", "infrastructure_reject")
+    by_domain = {
+        domain: {bucket: sorted(values.get(bucket, [])) for bucket in bucket_order}
+        for domain, values in sorted(buckets.items())
+    }
+    counts = {
+        domain: {bucket: len(values[bucket]) for bucket in bucket_order}
+        for domain, values in by_domain.items()
+    }
+    report = {
+        "ok": True,
+        "source_profile": str(profile_path),
+        "tasks": len(rows),
+        "policy": {
+            "easy": "0.625 <= pass_rate < 1.0",
+            "medium": "0.25 <= pass_rate < 0.625",
+            "hard": "0.0 < pass_rate < 0.25",
+            "saturated": "pass_rate == 1.0; exclude from group-relative updates",
+            "impossible": "pass_rate == 0.0; route to SFT/data repair/later checkpoint",
+            "infrastructure_reject": "one or more verifier/environment errors; repair before reuse",
+        },
+        "by_domain": by_domain,
+        "counts": counts,
+    }
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    return report
+
+
 def _bin(pass_rate: float) -> str:
     if pass_rate == 0:
         return "0"

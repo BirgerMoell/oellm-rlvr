@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -212,3 +213,39 @@ def load_config(path: str | Path) -> RunConfig:
     if system_prompt and not Path(system_prompt).is_absolute():
         config.task.system_prompt_file = str((config_path.parent / system_prompt).resolve())
     return config
+
+
+def materialize_config(
+    template: str | Path,
+    output: str | Path,
+    *,
+    run_name: str,
+    model_id: str,
+    model_path: str,
+    output_root: str,
+    dataset_path: str | None = None,
+) -> RunConfig:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", run_name):
+        raise ValueError("run_name must contain only lowercase letters, digits, underscores, and hyphens")
+
+    config = load_config(template)
+    raw = config.model_dump(mode="json")
+    raw["name"] = run_name
+    raw["model"]["name_or_path"] = model_id
+    raw["model"]["local_path"] = model_path
+    if dataset_path is not None:
+        if len(raw["datasets"]) != 1:
+            raise ValueError("--dataset can only replace a template containing exactly one dataset")
+        raw["datasets"][0]["path"] = dataset_path
+
+    root = output_root.rstrip("/")
+    raw["output"]["directory"] = f"{root}/outputs/{run_name}"
+    raw["output"]["rollout_directory"] = f"{root}/rollouts/{run_name}"
+    raw["output"]["experiment_name"] = run_name.replace("-", "_")
+    raw["training"]["checkpoint_state_directory"] = f"{root}/outputs/{run_name}-state"
+
+    materialized = RunConfig.model_validate(raw)
+    destination = Path(output)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(yaml.safe_dump(materialized.model_dump(mode="json"), sort_keys=False))
+    return materialized

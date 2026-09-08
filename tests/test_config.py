@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from oellm_rlvr.config import load_config
+from oellm_rlvr.config import load_config, materialize_config
 from oellm_rlvr.topology import build_topology
 
 ROOT = Path(__file__).parents[1]
@@ -74,3 +74,35 @@ def test_hierarchical_transfer_requires_multiple_tp1_engines() -> None:
     tensor_parallel["rollout"]["tensor_parallel_size"] = 2
     with pytest.raises(ValidationError, match="requires tensor_parallel_size=1"):
         config_type.model_validate(tensor_parallel)
+
+
+def test_materialize_config_binds_checkpoint_dataset_and_outputs(tmp_path: Path) -> None:
+    destination = tmp_path / "reasoning.yaml"
+    config = materialize_config(
+        ROOT / "configs/lumi-dryrun-reasoning-oellm9b-16step.yaml",
+        destination,
+        run_name="candidate-reasoning-01",
+        model_id="openeurollm/candidate@abc123",
+        model_path="/scratch/project_465002530/models/candidate",
+        output_root="/scratch/project_465002530/campaigns/candidate-01",
+        dataset_path="/scratch/project_465002530/data/reasoning-train.parquet",
+    )
+
+    assert destination.exists()
+    assert config.model.local_path == "/scratch/project_465002530/models/candidate"
+    assert config.datasets[0].path.endswith("reasoning-train.parquet")
+    assert config.output.directory.endswith("/outputs/candidate-reasoning-01")
+    assert config.training.checkpoint_state_directory.endswith("/outputs/candidate-reasoning-01-state")
+    assert load_config(destination) == config
+
+
+def test_materialize_config_rejects_unsafe_run_name(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="run_name"):
+        materialize_config(
+            ROOT / "configs/lumi-dryrun-reasoning-oellm9b-16step.yaml",
+            tmp_path / "run.yaml",
+            run_name="../escape",
+            model_id="org/model",
+            model_path="/model",
+            output_root="/campaign",
+        )

@@ -1,0 +1,448 @@
+version: 1
+name: OpenEuroLLM 9B progressive RL campaign
+objective: >-
+  Train one frozen OpenEuroLLM 9B checkpoint through a gated reasoning, math, code, and agentic sequence on
+  LUMI. Re-profile reward signal at every checkpoint boundary, move from easy to harder tasks without dropping
+  easier or previously learned verified domains, and use Qwen3.5-9B only as a data, verifier, and runtime control.
+starting_checkpoint: <frozen-open-eurollm-9b-sft-or-dpo-parent>
+replacement_checkpoint: <selected-agentic-candidate>
+control_checkpoints:
+  - Qwen/Qwen3.5-9B
+hard_ceiling_gcd_hours: 1200
+
+repositories:
+  - name: tmax-reproduction
+    url: https://github.com/OpenEuroLLM/tmax-reproduction
+    ref: 3f80d37042402b8363f39c9535723b0d4cb8de54
+    commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+    decision: primary
+    role: qualified reasoning, math, and executable-code learner on LUMI
+  - name: skyrl
+    url: https://github.com/NovaSky-AI/SkyRL
+    ref: skyrl-v0.3.0
+    commit: f5bc3b78dfddfb352870d5d7430cd226e5785838
+    decision: primary
+    role: agentic learner candidate
+  - name: harbor
+    url: https://github.com/harbor-framework/harbor
+    ref: v0.22.0
+    commit: 4407eb5227a2ff4f0d3f16b2eb48849382fdf276
+    decision: primary
+    role: agent harness, isolated tasks, verifiers, and ATIF trajectory records
+
+stages:
+  - id: checkpoint-freeze
+    title: Freeze the OpenEuroLLM parent
+    day: D0
+    lane: foundation
+    backend: oellm-rlvr
+    readiness: ready
+    objective: Fingerprint the exact parent, tokenizer, chat template, and generation configuration.
+    input_checkpoint: <incoming-local-parent>
+    output_checkpoint: <frozen-parent>
+    commands:
+      - oellm-rlvr checkpoint-manifest --model <incoming-local-parent> --model-id <upstream-id> --revision <revision> --output <campaign>/parent/checkpoint-manifest.json
+      - oellm-rlvr verify-checkpoint-manifest --manifest <campaign>/parent/checkpoint-manifest.json
+    artifacts:
+      - parent/checkpoint-manifest.json
+      - parent/checkpoint-files.sha256
+    gates:
+      - All checkpoint and tokenizer hashes replay exactly.
+      - The chat template emits the intended think-tag and answer structure before training.
+    resources:
+      nodes: 0
+      expected_gcd_hours: 0
+      hard_ceiling_gcd_hours: 0
+
+  - id: qwen-data-control
+    title: Qualify tasks and rewards with Qwen3.5-9B
+    day: D0-D1
+    lane: foundation
+    backend: oellm-rlvr+tmax+harbor
+    readiness: build_required
+    needs: [checkpoint-freeze]
+    objective: >-
+      Generate eight learner-off attempts per candidate prompt with Qwen3.5-9B, replay every verifier, and reject
+      broken, ambiguous, leaked, or infrastructure-dependent tasks before exposing them to the OELLM parent.
+    input_checkpoint: Qwen/Qwen3.5-9B
+    commands:
+      - MODEL=<qwen-local> N_SAMPLES_PER_PROMPT=8 TEMPERATURE=0.7 sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+      - oellm-rlvr profile-tasks --catalog <catalog> --attempts <qwen-attempts> --samples-per-prompt 8 --output <campaign>/profiles/qwen
+    implementation_tasks:
+      - Add learner-off TMAX rollout adapters that normalize reasoning, math, and executable-code outcomes into ProfileAttempt rows.
+      - Expand the Harbor control from one easy repository repair to the frozen easy/medium/hard agentic task candidates.
+    artifacts:
+      - profiles/qwen/task-profile.parquet
+      - profiles/qwen/verifier-error-report.json
+      - profiles/qwen/reward-replay.json
+    gates:
+      - Verifier and environment errors are below 2 percent in every domain.
+      - Every deterministic reward replays exactly and hidden tests never reach model-visible context.
+      - Qwen results are used to debug tasks, not to assign OELLM difficulty bins or select an OELLM checkpoint.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 48
+      hard_ceiling_gcd_hours: 96
+
+  - id: parent-profile
+    title: Profile the frozen OELLM parent and assign curriculum bins
+    day: D1
+    lane: foundation
+    backend: oellm-rlvr+tmax+harbor
+    readiness: build_required
+    needs: [qwen-data-control]
+    objective: >-
+      Sample the frozen parent eight times per prompt and bin tasks by its own empirical pass rate: easy is 5-7/8,
+      medium is 2-4/8, hard is 1/8, and 0/8 or 8/8 is held out of group-relative training.
+    input_checkpoint: <frozen-parent>
+    commands:
+      - oellm-rlvr profile-tasks --catalog <qwen-qualified-catalog> --attempts <parent-attempts> --samples-per-prompt 8 --output <campaign>/profiles/parent
+      - oellm-rlvr build-curriculum-pools --profile <campaign>/profiles/parent/task-profile.parquet --output <campaign>/profiles/parent/curriculum-pools.json
+    implementation_tasks:
+      - Finish the standardized learner-off rollout adapters from the Qwen control stage.
+    artifacts:
+      - profiles/parent/task-profile.parquet
+      - profiles/parent/curriculum-pools.json
+      - profiles/parent/held-out-zero-and-one-groups.json
+    gates:
+      - At least 60 percent of selected prompts have reward variation within their eight-sample group.
+      - Each training domain has easy and medium prompts; hard prompts enter only when at least one in eight samples passes.
+      - The OELLM parent profile, rather than Qwen accuracy or source difficulty labels, determines the bins.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 32
+      hard_ceiling_gcd_hours: 64
+
+  - id: reasoning-train
+    title: Reasoning RL foundation
+    day: D2
+    lane: single_turn
+    backend: tmax-reproduction
+    readiness: ready
+    needs: [parent-profile]
+    objective: Teach concise, checkable reasoning and answer completion before adding specialized math or tools.
+    input_checkpoint: <frozen-parent>
+    output_checkpoint: <reasoning-candidate>
+    curriculum:
+      - id: warmup
+        fraction: 0.20
+        mixture: {reasoning_easy: 0.65, reasoning_medium: 0.30, reasoning_hard: 0.05}
+        admission: Current checkpoint scores 1-7/8; use easy-heavy batches until every update has mixed rewards.
+      - id: core
+        fraction: 0.60
+        mixture: {reasoning_easy: 0.30, reasoning_medium: 0.50, reasoning_hard: 0.20}
+        admission: Re-profile at the boundary and migrate newly saturated prompts out of training.
+      - id: challenge
+        fraction: 0.20
+        mixture: {reasoning_easy: 0.20, reasoning_medium: 0.40, reasoning_hard: 0.40}
+        admission: Hard tasks must retain at least one success in eight; cap active resampling.
+    commands:
+      - oellm-rlvr materialize-config --template configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml --run-name oellm9b-reasoning-01 --model-id <parent-id@revision> --model-path <frozen-parent> --dataset <reasoning-pool> --output-root <campaign> --output <campaign>/configs/reasoning.yaml
+      - oellm-rlvr render-slurm --config <campaign>/configs/reasoning.yaml --output <campaign>/jobs/reasoning.sbatch
+      - sbatch <campaign>/jobs/reasoning.sbatch
+    artifacts:
+      - outputs/oellm9b-reasoning-01/
+      - rollouts/oellm9b-reasoning-01/
+      - outputs/oellm9b-reasoning-01-state/
+    gates:
+      - At least 95 percent of updates have finite non-zero gradients.
+      - Mixed-reward prompt groups exceed 60 percent and infrastructure errors remain below 2 percent.
+      - A frozen paired evaluation improves correctness without worsening repetition, truncation, or think-tag balance beyond tolerance.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 16
+      hard_ceiling_gcd_hours: 48
+
+  - id: reasoning-select
+    title: Select or reject the reasoning checkpoint
+    day: D2
+    lane: evaluation
+    backend: oellm-rlvr+oellm-eval
+    readiness: ready
+    needs: [reasoning-train]
+    objective: Compare parent and candidate on locked reasoning plus multilingual, instruction, safety, and long-context retention slices.
+    input_checkpoint: <reasoning-candidate>
+    output_checkpoint: <reasoning-selected>
+    commands:
+      - MODEL=<reasoning-candidate> TAG=<campaign>-reasoning sbatch scripts/lumi_reasoning_eval.sbatch
+      - oellm-rlvr compare-reasoning --baseline <parent-predictions> --candidate <reasoning-predictions> --output <campaign>/eval/reasoning-comparison.json
+    artifacts:
+      - eval/reasoning-comparison.json
+      - eval/reasoning-retention.json
+      - reasoning-selected/checkpoint-selection.json
+    gates:
+      - Use the candidate only when the paired primary delta is positive and retention limits pass; otherwise carry the parent forward.
+      - Selection never uses training reward or the Qwen control score.
+    resources:
+      nodes: 1
+      expected_gcd_hours: 4
+      hard_ceiling_gcd_hours: 16
+
+  - id: math-train
+    title: Broaden into verified mathematics
+    day: D3-D4
+    lane: single_turn
+    backend: tmax-reproduction
+    readiness: ready
+    needs: [reasoning-select]
+    objective: Improve diverse mathematical problem solving while continuously replaying the selected reasoning behavior.
+    input_checkpoint: <reasoning-selected>
+    output_checkpoint: <math-candidate>
+    curriculum:
+      - id: warmup
+        fraction: 0.20
+        mixture: {reasoning_replay: 0.25, math_easy: 0.50, math_medium: 0.20, math_hard: 0.05}
+        admission: Use the reasoning-selected checkpoint's fresh eight-sample profile.
+      - id: core
+        fraction: 0.60
+        mixture: {reasoning_replay: 0.20, math_easy: 0.25, math_medium: 0.40, math_hard: 0.15}
+        admission: Re-profile every saved boundary and replace saturated or impossible prompts.
+      - id: challenge
+        fraction: 0.20
+        mixture: {reasoning_replay: 0.25, math_easy: 0.15, math_medium: 0.35, math_hard: 0.25}
+        admission: Preserve easy and reasoning replay; never let hard-only batches starve the gradient.
+    commands:
+      - oellm-rlvr materialize-config --template configs/lumi-math-oellm9b-256k-sft-pilot-2node.yaml --run-name oellm9b-math-01 --model-id <reasoning-selected-id> --model-path <reasoning-selected> --dataset <math-curriculum> --output-root <campaign> --output <campaign>/configs/math.yaml
+      - oellm-rlvr render-slurm --config <campaign>/configs/math.yaml --output <campaign>/jobs/math.sbatch
+      - sbatch <campaign>/jobs/math.sbatch
+    artifacts:
+      - outputs/oellm9b-math-01/
+      - rollouts/oellm9b-math-01/
+      - outputs/oellm9b-math-01-state/
+    gates:
+      - At least 95 percent of updates have finite non-zero gradients and at least 60 percent of groups are mixed.
+      - Performance improves across multiple held-out mathematical subdomains, not only the easiest source family.
+      - The reasoning-selection score remains within one absolute point.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 48
+      hard_ceiling_gcd_hours: 128
+
+  - id: math-select
+    title: Select or reject the math checkpoint
+    day: D4
+    lane: evaluation
+    backend: oellm-eval
+    readiness: build_required
+    needs: [math-train]
+    objective: Select the math candidate using frozen, contamination-controlled math and all previous retention gates.
+    input_checkpoint: <math-candidate>
+    output_checkpoint: <math-selected>
+    commands:
+      - oellm-eval schedule --models <reasoning-selected>,<math-candidate> --task_groups <math-and-retention-scorecard>
+    implementation_tasks:
+      - Freeze a compact multilingual math scorecard with row-level paired results and semantic-cluster exclusions.
+    artifacts:
+      - eval/math-comparison.json
+      - math-selected/checkpoint-selection.json
+    gates:
+      - Carry math-candidate forward only when the multi-subdomain gain passes and prior reasoning/retention gates remain within tolerance.
+    resources:
+      nodes: 1
+      expected_gcd_hours: 8
+      hard_ceiling_gcd_hours: 24
+
+  - id: code-train
+    title: Add executable code RL
+    day: D5-D7
+    lane: single_turn
+    backend: tmax-reproduction+slurm-apptainer
+    readiness: ready
+    needs: [math-select]
+    objective: Train code generation against hidden tests in isolated sandboxes while replaying verified math and reasoning tasks.
+    input_checkpoint: <math-selected>
+    output_checkpoint: <code-candidate>
+    curriculum:
+      - id: warmup
+        fraction: 0.25
+        mixture: {reasoning_math_replay: 0.25, code_easy: 0.55, code_medium: 0.15, code_hard: 0.05}
+        admission: Start with short single-file tasks that the current checkpoint passes 1-7/8 times.
+      - id: core
+        fraction: 0.50
+        mixture: {reasoning_math_replay: 0.20, code_easy: 0.25, code_medium: 0.40, code_hard: 0.15}
+        admission: Re-profile pass rates and tool-format failures before increasing task horizon.
+      - id: challenge
+        fraction: 0.25
+        mixture: {reasoning_math_replay: 0.25, code_easy: 0.15, code_medium: 0.35, code_hard: 0.25}
+        admission: Hard tasks must reach the hidden verifier in at least one of eight attempts.
+    commands:
+      - oellm-rlvr materialize-config --template configs/lumi-dryrun-code-oellm9b-4step.yaml --run-name oellm9b-code-01 --model-id <math-selected-id> --model-path <math-selected> --dataset <code-curriculum>/train.parquet --output-root <campaign> --output <campaign>/configs/code.yaml
+      - oellm-rlvr render-slurm --config <campaign>/configs/code.yaml --output <campaign>/jobs/code.sbatch
+      - sbatch <campaign>/jobs/code.sbatch
+    artifacts:
+      - outputs/oellm9b-code-01/
+      - rollouts/oellm9b-code-01/
+      - code-verifier-replay.json
+    gates:
+      - At least 95 percent of updates have finite non-zero gradients and verifier/environment errors remain below 2 percent.
+      - Hidden tests are absent from prompts, seed files, and pre-submission observations.
+      - Held-out executable-code pass rate improves while selected math/reasoning gates remain within tolerance.
+    resources:
+      nodes: 4
+      expected_gcd_hours: 96
+      hard_ceiling_gcd_hours: 240
+
+  - id: code-select
+    title: Select or reject the code checkpoint
+    day: D7
+    lane: evaluation
+    backend: oellm-eval+oellm-rlvr
+    readiness: build_required
+    needs: [code-train]
+    objective: Replay hidden verifiers and compare code, reasoning, math, multilingual, and safety behavior before agentic RL.
+    input_checkpoint: <code-candidate>
+    output_checkpoint: <code-selected>
+    commands:
+      - oellm-eval schedule --models <math-selected>,<code-candidate> --task_groups <code-and-retention-scorecard>
+    implementation_tasks:
+      - Add paired executable-code evaluation records that preserve sandbox and hidden-test identities without leaking tests.
+    artifacts:
+      - eval/code-comparison.json
+      - eval/code-reward-replay.json
+      - code-selected/checkpoint-selection.json
+    gates:
+      - Carry code-candidate forward only when held-out code improves and all deterministic rewards replay.
+      - Prior reasoning/math regression stays within the frozen limit.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 16
+      hard_ceiling_gcd_hours: 48
+
+  - id: agentic-profile
+    title: Establish mixed agentic reward groups
+    day: D8
+    lane: agentic
+    backend: skyrl+harbor
+    readiness: build_required
+    needs: [code-select]
+    objective: >-
+      Run learner-off Harbor groups on Qwen3.5-9B for contract debugging and on code-selected for the actual
+      easy/medium/hard bins; admit only tasks with token-accurate traces and mixed current-policy rewards.
+    input_checkpoint: <code-selected>
+    commands:
+      - MODEL=<qwen-local> TASK_GLOB=<agentic-candidates> N_SAMPLES_PER_PROMPT=8 TEMPERATURE=0.7 sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+      - MODEL=<code-selected> TASK_GLOB=<agentic-candidates> N_SAMPLES_PER_PROMPT=8 TEMPERATURE=0.7 sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+    implementation_tasks:
+      - Add harder held-out Harbor variants so Qwen3.5-9B is not uniformly reward one.
+      - Emit task IDs and repetition IDs directly into ProfileAttempt rows and curriculum pools.
+    artifacts:
+      - profiles/agentic-qwen/
+      - profiles/agentic-oellm/
+      - agentic-curriculum-pools.json
+    gates:
+      - Every admitted trajectory has exact completion token IDs, aligned log-probabilities, linked observations, and replayable reward.
+      - At least 60 percent of admitted code-selected prompt groups contain both reward zero and reward one.
+      - Qwen and OELLM profiles remain separate; only the OELLM profile controls its training mix.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 32
+      hard_ceiling_gcd_hours: 80
+
+  - id: qwen-agentic-one-step
+    title: Qualify the SkyRL learner with Qwen3.5-9B
+    day: D8-D9
+    lane: agentic
+    backend: skyrl+harbor
+    readiness: build_required
+    needs: [agentic-profile]
+    objective: Prove one finite optimizer update, weight synchronization, and post-update Harbor rollout using the control architecture.
+    input_checkpoint: Qwen/Qwen3.5-9B
+    output_checkpoint: <qwen-agentic-control-step-1>
+    commands:
+      - sbatch <campaign>/jobs/qwen35-9b-agentic-one-step.sbatch
+    implementation_tasks:
+      - Validate SkyRL FSDP loading and loss masking for the hybrid Qwen3_5ForConditionalGeneration architecture on ROCm.
+      - Connect the qualified grouped Harbor trajectories to one synchronous learner update and checksum the changed weights.
+    artifacts:
+      - qwen-agentic-control-step-1/
+      - qwen-agentic-pre-and-post.atif.jsonl
+      - qwen-agentic-weight-sync.json
+    gates:
+      - A finite non-zero gradient changes the policy checksum and the post-update sampler serves exactly that version.
+      - Token IDs and loss masks round-trip without retokenization drift.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 16
+      hard_ceiling_gcd_hours: 48
+
+  - id: agentic-train
+    title: Train the progressive agentic curriculum
+    day: D9-D12
+    lane: agentic
+    backend: skyrl+harbor
+    readiness: build_required
+    needs: [qwen-agentic-one-step]
+    objective: Add structured actions, functions, stateful tools, terminal work, and repository repair without dropping verified code/math/reasoning.
+    input_checkpoint: <code-selected>
+    output_checkpoint: <agentic-candidate>
+    curriculum:
+      - id: warmup
+        fraction: 0.25
+        mixture: {code_math_replay: 0.25, structured_actions: 0.30, function_calling: 0.25, terminal_easy: 0.15, repo_easy: 0.05}
+        admission: Begin with short deterministic environments and current-policy mixed groups.
+      - id: core
+        fraction: 0.50
+        mixture: {code_math_replay: 0.20, structured_actions: 0.15, function_calling: 0.20, stateful_tools: 0.20, terminal_tasks: 0.15, repo_repair: 0.10}
+        admission: Re-profile each environment independently and normalize advantages within domain.
+      - id: challenge
+        fraction: 0.25
+        mixture: {code_math_replay: 0.25, stateful_tools: 0.15, terminal_tasks: 0.20, repo_repair: 0.25, recovery_tasks: 0.10, structured_actions: 0.05}
+        admission: Increase horizon only after environment errors stay below 2 percent and mixed rewards persist.
+    commands:
+      - sbatch <campaign>/jobs/oellm9b-agentic-one-step.sbatch
+      - sbatch <campaign>/jobs/oellm9b-agentic-curriculum.sbatch
+    implementation_tasks:
+      - Generalize the learner-off Harbor entrypoint into the pinned synchronous SkyRL training entrypoint.
+      - Persist optimizer, sampler, RNG, curriculum, environment queue, and policy-version state for restart.
+      - Add per-environment quotas and domain-relative advantage normalization without merging incomparable reward scales.
+    artifacts:
+      - agentic-candidate/
+      - agentic-rollouts.atif.jsonl
+      - agentic-training-state/
+      - agentic-reward-replay.json
+    gates:
+      - The first synchronous OELLM step has a finite non-zero gradient and exact post-update weight sync before scaling.
+      - At least 95 percent of scaled updates have non-zero finite gradients and policy lag stays at most four.
+      - Environment/verifier failures remain below 2 percent and every deterministic reward replays.
+      - Frozen reasoning, math, and code retention remains within the stage limits.
+    resources:
+      nodes: 4
+      expected_gcd_hours: 128
+      hard_ceiling_gcd_hours: 320
+
+  - id: final-select
+    title: Select the final RL checkpoint
+    day: D12-D13
+    lane: evaluation
+    backend: oellm-eval+harbor
+    readiness: build_required
+    needs: [agentic-train]
+    objective: Compare every selected boundary and promote only a reproducible all-domain improvement over the frozen parent.
+    input_checkpoint: <agentic-candidate>
+    output_checkpoint: <selected-agentic-candidate>
+    commands:
+      - oellm-eval schedule --models <frozen-parent>,<reasoning-selected>,<math-selected>,<code-selected>,<agentic-candidate> --task_groups <frozen-rl-release-scorecard>
+    implementation_tasks:
+      - Finish the campaign-wide paired scorecard, Harbor replay report, and automatic checkpoint-selection record.
+    artifacts:
+      - eval/final-paired-scorecard.json
+      - eval/campaign-reward-replay.json
+      - selected-agentic-candidate/checkpoint-selection.json
+    gates:
+      - Agentic and code capabilities improve over the frozen parent while reasoning/math gains are retained.
+      - Multilingual, instruction-following, safety, direct-mode, and long-context regressions stay inside frozen limits.
+      - The selected checkpoint, all manifests, and all deterministic rewards replay from a clean checkout.
+    resources:
+      nodes: 2
+      expected_gcd_hours: 24
+      hard_ceiling_gcd_hours: 64
+
+campaign_gates:
+  - Training stages form the strict checkpoint chain reasoning-train, math-train, code-train, then agentic-train.
+  - Qwen3.5-9B is a control for task and runtime correctness; no Qwen metric selects OpenEuroLLM data or checkpoints.
+  - Every checkpoint is re-profiled because difficulty is current-policy pass rate, not a permanent source label.
+  - Zero-of-eight and eight-of-eight groups do not enter group-relative updates; hard prompts need at least one current-policy success.
+  - Every later stage mixes verified replay from earlier stages and must pass their frozen retention evaluations.
+  - At least 95 percent of optimizer updates have finite non-zero gradients and all sampler versions are attributable.
+  - Environment and verifier errors stay below 2 percent, hidden tests remain private, and deterministic rewards replay exactly.
+  - Required stages remain below the 1200 GCD-hour campaign ceiling; each stage stops at its own gate rather than consuming the next stage's budget.

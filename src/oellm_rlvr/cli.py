@@ -14,7 +14,7 @@ from .backend import build_backend_argv, shell_command
 from .backend_rollouts import inspect_backend_rollouts
 from .campaign import load_campaign, render_campaign_markdown
 from .checkpoint import build_checkpoint_manifest, verify_checkpoint_manifest, write_checkpoint_manifest
-from .config import load_config
+from .config import load_config, materialize_config
 from .datasets import (
     make_math_calibration,
     make_math_smoke,
@@ -32,7 +32,7 @@ from .schemas import TaskSpec
 from .skyrl_adapter import export_skyrl_math
 from .slurm import render_slurm
 from .store import JsonlTrajectoryStore
-from .task_catalog import load_task_catalog, profile_task_attempts
+from .task_catalog import build_curriculum_pools, load_task_catalog, profile_task_attempts
 from .topology import build_topology
 from .verifiers import ApptainerRunner, CodeVerifier, LocalRunner, MathVerifier
 
@@ -74,6 +74,30 @@ def command_render_slurm(args: argparse.Namespace) -> int:
         print(output)
     else:
         print(rendered, end="")
+    return 0
+
+
+def command_materialize_config(args: argparse.Namespace) -> int:
+    config = materialize_config(
+        args.template,
+        args.output,
+        run_name=args.run_name,
+        model_id=args.model_id,
+        model_path=args.model_path,
+        output_root=args.output_root,
+        dataset_path=args.dataset,
+    )
+    _json(
+        {
+            "ok": True,
+            "output": args.output,
+            "name": config.name,
+            "model_id": config.model.name_or_path,
+            "model_path": config.model.local_path,
+            "dataset": config.datasets[0].path if len(config.datasets) == 1 else None,
+            "checkpoint_state_directory": config.training.checkpoint_state_directory,
+        }
+    )
     return 0
 
 
@@ -329,6 +353,11 @@ def command_profile_tasks(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def command_build_curriculum_pools(args: argparse.Namespace) -> int:
+    _json(build_curriculum_pools(args.profile, args.output))
+    return 0
+
+
 def command_export_skyrl_math(args: argparse.Namespace) -> int:
     _json(export_skyrl_math(args.source, args.output, count=args.count, copies=args.copies))
     return 0
@@ -525,6 +554,19 @@ def build_parser() -> argparse.ArgumentParser:
     render_campaign.add_argument("--output")
     render_campaign.set_defaults(handler=command_render_campaign)
 
+    materialize = sub.add_parser(
+        "materialize-config",
+        help="bind a validated run template to a frozen checkpoint, dataset, and isolated output root",
+    )
+    materialize.add_argument("--template", required=True)
+    materialize.add_argument("--output", required=True)
+    materialize.add_argument("--run-name", required=True)
+    materialize.add_argument("--model-id", required=True)
+    materialize.add_argument("--model-path", required=True)
+    materialize.add_argument("--output-root", required=True)
+    materialize.add_argument("--dataset", help="replace the template's single dataset path")
+    materialize.set_defaults(handler=command_materialize_config)
+
     checkpoint = sub.add_parser(
         "checkpoint-manifest", help="fingerprint a local Hugging Face checkpoint and its tokenizer"
     )
@@ -570,6 +612,14 @@ def build_parser() -> argparse.ArgumentParser:
     profile.add_argument("--samples-per-prompt", type=int, default=8)
     profile.add_argument("--output", required=True, help="output directory")
     profile.set_defaults(handler=command_profile_tasks)
+
+    curriculum_pools = sub.add_parser(
+        "build-curriculum-pools",
+        help="assign profiled tasks to current-policy easy, medium, hard, saturated, and impossible pools",
+    )
+    curriculum_pools.add_argument("--profile", required=True, help="task-profile Parquet or JSONL")
+    curriculum_pools.add_argument("--output", required=True, help="output curriculum-pools JSON")
+    curriculum_pools.set_defaults(handler=command_build_curriculum_pools)
 
     skyrl_math = sub.add_parser("export-skyrl-math", help="convert project math rows to SkyRL Gym schema")
     skyrl_math.add_argument("--source", required=True)

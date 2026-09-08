@@ -38,6 +38,23 @@ class StageResources(StrictModel):
         return self
 
 
+class CurriculumWindow(StrictModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    fraction: float = Field(gt=0, le=1)
+    mixture: dict[str, float] = Field(min_length=1)
+    admission: str
+
+    @model_validator(mode="after")
+    def check_mixture(self) -> CurriculumWindow:
+        non_positive = sorted(name for name, weight in self.mixture.items() if weight <= 0)
+        if non_positive:
+            raise ValueError(f"curriculum mixture weights must be positive: {', '.join(non_positive)}")
+        total = sum(self.mixture.values())
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"curriculum mixture weights must sum to 1; found {total:g}")
+        return self
+
+
 class CampaignStage(StrictModel):
     id: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
     title: str
@@ -48,6 +65,9 @@ class CampaignStage(StrictModel):
     required: bool = True
     needs: list[str] = Field(default_factory=list)
     objective: str
+    input_checkpoint: str | None = None
+    output_checkpoint: str | None = None
+    curriculum: list[CurriculumWindow] = Field(default_factory=list)
     commands: list[str] = Field(default_factory=list)
     implementation_tasks: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(min_length=1)
@@ -64,6 +84,14 @@ class CampaignStage(StrictModel):
             raise ValueError("contingency stages must set required=false")
         if not self.required and self.readiness != "contingency":
             raise ValueError("only contingency stages may set required=false")
+        if self.curriculum:
+            ids = [window.id for window in self.curriculum]
+            duplicates = sorted(name for name, count in Counter(ids).items() if count > 1)
+            if duplicates:
+                raise ValueError(f"duplicate curriculum window IDs: {', '.join(duplicates)}")
+            fraction = sum(window.fraction for window in self.curriculum)
+            if abs(fraction - 1.0) > 1e-6:
+                raise ValueError(f"curriculum window fractions must sum to 1; found {fraction:g}")
         return self
 
 
@@ -73,6 +101,7 @@ class CampaignConfig(StrictModel):
     objective: str
     starting_checkpoint: str
     replacement_checkpoint: str
+    control_checkpoints: list[str] = Field(default_factory=list)
     hard_ceiling_gcd_hours: float = Field(gt=0)
     repositories: list[RepositoryPin] = Field(min_length=1)
     stages: list[CampaignStage] = Field(min_length=1)
@@ -147,12 +176,16 @@ def render_campaign_markdown(campaign: CampaignConfig) -> str:
             f"{summary['required_hard_ceiling_gcd_hours']:g} hard-ceiling GCD-hours"
         ),
         f"- Campaign ceiling: {campaign.hard_ceiling_gcd_hours:g} GCD-hours",
+    ]
+    if campaign.control_checkpoints:
+        lines.append(f"- Control checkpoints: {', '.join(f'`{item}`' for item in campaign.control_checkpoints)}")
+    lines.extend([
         "",
         "## Stages",
         "",
         "| Stage | Day | Lane | Backend | Readiness | Needs | Expected / ceiling GCDh |",
         "|---|---:|---|---|---|---|---:|",
-    ]
+    ])
     for stage in campaign.stages:
         needs = ", ".join(stage.needs) or "—"
         budget = f"{stage.resources.expected_gcd_hours:g} / {stage.resources.hard_ceiling_gcd_hours:g}"
@@ -160,6 +193,36 @@ def render_campaign_markdown(campaign: CampaignConfig) -> str:
             f"| `{stage.id}` | {stage.day} | {stage.lane} | {stage.backend} | "
             f"{stage.readiness} | {needs} | {budget} |"
         )
+
+    detailed = [
+        stage
+        for stage in campaign.stages
+        if stage.input_checkpoint or stage.output_checkpoint or stage.curriculum
+    ]
+    if detailed:
+        lines.extend(["", "## Checkpoint flow and curricula", ""])
+        for stage in detailed:
+            lines.append(f"### `{stage.id}` — {stage.title}")
+            lines.append("")
+            if stage.input_checkpoint:
+                lines.append(f"- Input checkpoint: `{stage.input_checkpoint}`")
+            if stage.output_checkpoint:
+                lines.append(f"- Output checkpoint: `{stage.output_checkpoint}`")
+            if stage.curriculum:
+                lines.extend([
+                    "- Curriculum:",
+                    "",
+                    "  | Window | Fraction | Mixture | Admission |",
+                    "  |---|---:|---|---|",
+                ])
+                for window in stage.curriculum:
+                    mixture = ", ".join(
+                        f"{name}={weight:.0%}" for name, weight in window.mixture.items()
+                    )
+                    lines.append(
+                        f"  | `{window.id}` | {window.fraction:.0%} | {mixture} | {window.admission} |"
+                    )
+            lines.append("")
 
     build_required = [stage for stage in campaign.stages if stage.required and stage.readiness == "build_required"]
     lines.extend(["", "## Work required before launch", ""])

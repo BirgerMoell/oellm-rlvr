@@ -7,7 +7,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from oellm_rlvr.task_catalog import load_task_catalog, profile_task_attempts
+from oellm_rlvr.task_catalog import build_curriculum_pools, load_task_catalog, profile_task_attempts
 
 
 def _task(task_id: str, *, split: str = "train", cluster: str | None = None, language: str = "en") -> dict:
@@ -95,3 +95,34 @@ def test_profile_separates_infrastructure_failures(tmp_path: Path) -> None:
     assert report["verifier_environment_error_rate"] == 0.125
     errors = json.loads((tmp_path / "profile/verifier-error-report.json").read_text())
     assert errors["by_status"] == {"environment_error": 1}
+
+
+def test_curriculum_pools_use_current_policy_pass_rate(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.jsonl"
+    rows = [
+        {"task_id": "easy", "domain": "math", "pass_rate": 0.75, "infrastructure_errors": 0},
+        {"task_id": "medium", "domain": "math", "pass_rate": 0.5, "infrastructure_errors": 0},
+        {"task_id": "hard", "domain": "math", "pass_rate": 0.125, "infrastructure_errors": 0},
+        {"task_id": "saturated", "domain": "code", "pass_rate": 1.0, "infrastructure_errors": 0},
+        {"task_id": "impossible", "domain": "code", "pass_rate": 0.0, "infrastructure_errors": 0},
+        {"task_id": "broken", "domain": "code", "pass_rate": 0.5, "infrastructure_errors": 1},
+    ]
+    profile.write_text("".join(json.dumps(row) + "\n" for row in rows))
+
+    report = build_curriculum_pools(profile, tmp_path / "pools.json")
+
+    assert report["by_domain"]["math"]["easy"] == ["easy"]
+    assert report["by_domain"]["math"]["medium"] == ["medium"]
+    assert report["by_domain"]["math"]["hard"] == ["hard"]
+    assert report["by_domain"]["code"]["saturated"] == ["saturated"]
+    assert report["by_domain"]["code"]["impossible"] == ["impossible"]
+    assert report["by_domain"]["code"]["infrastructure_reject"] == ["broken"]
+
+
+def test_curriculum_pools_reject_duplicate_task_ids(tmp_path: Path) -> None:
+    profile = tmp_path / "profile.jsonl"
+    row = {"task_id": "same", "domain": "math", "pass_rate": 0.5, "infrastructure_errors": 0}
+    profile.write_text(json.dumps(row) + "\n" + json.dumps(row) + "\n")
+
+    with pytest.raises(ValueError, match="duplicate profiled task ID"):
+        build_curriculum_pools(profile, tmp_path / "pools.json")
