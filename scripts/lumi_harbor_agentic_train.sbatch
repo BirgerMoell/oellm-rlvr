@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# Two real SkyRL GRPO updates from multi-turn Harbor trajectories on LUMI.
+# The second rollout batch must observe the weight version synced after step 1.
+# Run the learner-off profiler first and select one task with mixed rewards.
+#SBATCH --job-name=oellm-agent-train
+#SBATCH --account=project_465002530
+#SBATCH --partition=dev-g
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=8
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=56
+#SBATCH --mem=480G
+#SBATCH --time=02:00:00
+#SBATCH --output=logs/%j.%x.out
+#SBATCH --error=logs/%j.%x.err
+
+set -euo pipefail
+ulimit -c 0
+
+export SINGULARITY_BIND="${SINGULARITY_BIND:-/var/spool/slurmd,/pfs,/scratch,/projappl,/project,/flash,/appl,/boot}"
+export SLURM_MPI_TYPE="${SLURM_MPI_TYPE:-pmi2}"
+: "${SINGULARITY_BIN:=/usr/bin/singularity}"
+
+: "${MODEL:=/scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft}"
+: "${CONTROL_ROOT:=$SLURM_SUBMIT_DIR}"
+: "${SOURCE_ROOT:=/scratch/project_465002530/users/bmoell/rl-sources}"
+: "${SKYRL_ROOT:=$SOURCE_ROOT/SkyRL-v0.3.0}"
+: "${HARBOR_ROOT:=$SOURCE_ROOT/harbor-v0.22.0}"
+: "${PYTHON_BIN:=/scratch/project_465002530/users/bmoell/venvs/oellm-skyrl-v030/bin/python}"
+: "${CONTAINER:=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
+: "${RUN_ROOT:=/scratch/project_465002530/users/bmoell/oellm-rlvr/harbor-train/$SLURM_JOB_ID}"
+: "${MAX_MODEL_LEN:=8192}"
+: "${MAX_TOKENS_PER_TURN:=512}"
+: "${MAX_TURNS:=3}"
+: "${TEMPERATURE:=1.0}"
+: "${TASK_GLOB:=function-scale-recipe}"
+: "${N_SAMPLES_PER_PROMPT:=8}"
+: "${TRAIN_STEPS:=2}"
+: "${POLICY_GPUS:=4}"
+: "${NUM_ENGINES:=1}"
+: "${TOTAL_GPUS:=8}"
+: "${OELLM_VLLM_ENFORCE_EAGER:=false}"
+: "${VLLM_LOGGING_LEVEL:=INFO}"
+: "${VLLM_DISABLE_COMPILE_CACHE:=1}"
+
+PACK="$RUN_ROOT/harbor-task-pack-v0"
+TRAIN_PACK="$RUN_ROOT/train-pack"
+JOBS="$RUN_ROOT/jobs"
+CACHE_ROOT="$RUN_ROOT/cache"
+HARBOR_LUMI_CACHE_ROOT="$RUN_ROOT/launcher-cache"
+NODE_TMP="/tmp/oellm-agent-train-$SLURM_JOB_ID"
+RAY_NODE_TMP="/tmp/oellm-agent-train-ray-$SLURM_JOB_ID"
+mkdir -p logs "$RUN_ROOT"/{logs,ray,compatibility,manifests,checkpoints,exports} "$JOBS" "$TRAIN_PACK" \
+  "$CACHE_ROOT"/{hf,xdg,triton,torchinductor,vllm,tmp,miopen} \
+  "$HARBOR_LUMI_CACHE_ROOT"/{singularity,tmp} \
+  "$NODE_TMP"/{triton,torchinductor,vllm,miopen} "$RAY_NODE_TMP"
+
+preserve_ray_logs() {
+  cp -a "$RAY_NODE_TMP"/. "$RUN_ROOT/ray"/ 2>/dev/null || true
+}
+trap preserve_ray_logs EXIT
+
+test -r "$MODEL/config.json"
+test -r "$CONTAINER"
+test -r "$(dirname "$PYTHON_BIN")/../pyvenv.cfg"
+test -x "$SINGULARITY_BIN"
+test -x "$CONTROL_ROOT/scripts/lumi-host-launcher-bin/singularity"
+test -r "$CONTROL_ROOT/scripts/run_harbor_train.py"
+test -r "$CONTROL_ROOT/scripts/qualify_harbor_training.py"
+"$SINGULARITY_BIN" exec -B /pfs,/scratch,/appl "$CONTAINER" test -x "$PYTHON_BIN"
+
+BIND=/pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd,/boot,/tmp
+BIND+=,/usr/bin/srun:/usr/local/bin/srun,/usr/lib64:/hostlib64,/usr/lib64/slurm:/usr/lib64/slurm
+BIND+=,/etc/slurm:/etc/slurm,/etc/passwd:/etc/passwd,/etc/group:/etc/group,/run/munge:/run/munge
+BIND+=,/usr/share/lua:/usr/share/lua
+VENV_SITE="$(dirname "$PYTHON_BIN")/../lib/python3.12/site-packages"
+LAUNCHER_PATH="$CONTROL_ROOT/scripts/lumi-host-launcher-bin"
+PYTHONPATH="$SKYRL_ROOT:$HARBOR_ROOT/src:$CONTROL_ROOT/src:$VENV_SITE:/opt/venv/lib/python3.12/site-packages:${PYTHONPATH:-}"
+
+export PYTHONPATH CONTROL_ROOT SOURCE_ROOT SKYRL_ROOT HARBOR_ROOT PYTHON_BIN MODEL CONTAINER RUN_ROOT
+export PACK TRAIN_PACK JOBS MAX_MODEL_LEN MAX_TOKENS_PER_TURN MAX_TURNS TEMPERATURE
+export OELLM_VLLM_ENFORCE_EAGER
+export HARBOR_LUMI_CACHE_ROOT HARBOR_SINGULARITY_DISABLE_FAKEROOT=1
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
+export VLLM_DISABLE_COMPILE_CACHE VLLM_LOGGING_LEVEL VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
+unset VLLM_USE_V1 VLLM_ENABLE_V1_MULTIPROCESSING
+export OELLM_PATCH_RAY_ROCM_VISIBILITY=1 OELLM_PATCH_VLLM_MAMBA_ENUM=1
+export OELLM_PATCH_VLLM_WEIGHT_UPDATE=1 OELLM_PATCH_MATH_EQUIV_THREADS=1
+export OELLM_PATCH_HARBOR_VLLM_TOKENS=1 OELLM_HARBOR_DIRECT_SINGLE_ENGINE=1
+export NCCL_SOCKET_IFNAME=hsn NCCL_CUMEM_ENABLE=0 HWLOC_COMPONENTS=-rsmi RAY_DEDUP_LOGS=0
+export XDG_CACHE_HOME="$CACHE_ROOT/xdg" XDG_CONFIG_HOME="$CACHE_ROOT/xdg-config"
+export TRITON_CACHE_DIR="$NODE_TMP/triton" TORCHINDUCTOR_CACHE_DIR="$NODE_TMP/torchinductor"
+export VLLM_CACHE_ROOT="$NODE_TMP/vllm" MIOPEN_USER_DB_PATH="$NODE_TMP/miopen"
+export MIOPEN_CUSTOM_CACHE_DIR="$NODE_TMP/miopen" HF_HOME="$CACHE_ROOT/hf"
+export HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
+export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RAY_NODE_TMP"
+
+inside() {
+  "$SINGULARITY_BIN" exec -B "$BIND" "$CONTAINER" env -u BASH_ENV \
+    PATH="$LAUNCHER_PATH:$(dirname "$PYTHON_BIN"):/opt/venv/bin:/usr/bin:/bin" \
+    PYTHONPATH="$PYTHONPATH" HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    "$@"
+}
+
+inside "$PYTHON_BIN" -m oellm_rlvr.cli build-harbor-pack --output "$PACK" --sif "$CONTAINER"
+inside "$PYTHON_BIN" -m oellm_rlvr.cli validate-harbor-pack --pack "$PACK"
+inside "$PYTHON_BIN" "$CONTROL_ROOT/scripts/probe_harbor_litellm_vllm.py" \
+  --output "$RUN_ROOT/compatibility/harbor-litellm-vllm.json"
+mapfile -t SELECTED_TASKS < <(find "$PACK" -mindepth 1 -maxdepth 1 -type d -name "$TASK_GLOB" -print | sort)
+PROMPT_COUNT="${#SELECTED_TASKS[@]}"
+if [[ "$PROMPT_COUNT" -ne 1 ]]; then
+  echo "TASK_GLOB=$TASK_GLOB must select exactly one profiled Harbor task; found $PROMPT_COUNT" >&2
+  exit 1
+fi
+for value_name in N_SAMPLES_PER_PROMPT TRAIN_STEPS POLICY_GPUS NUM_ENGINES TOTAL_GPUS; do
+  value="${!value_name}"
+  if ! [[ "$value" =~ ^[1-9][0-9]*$ ]]; then
+    echo "$value_name must be a positive integer" >&2
+    exit 1
+  fi
+done
+if [[ "$NUM_ENGINES" -ne 1 ]]; then
+  echo "the lossless Harbor token path currently requires NUM_ENGINES=1" >&2
+  exit 1
+fi
+if [[ $((POLICY_GPUS + NUM_ENGINES)) -gt "$TOTAL_GPUS" ]]; then
+  echo "policy ($POLICY_GPUS) + inference ($NUM_ENGINES) exceeds allocation ($TOTAL_GPUS)" >&2
+  exit 1
+fi
+EXPECTED_TRIALS=$((PROMPT_COUNT * N_SAMPLES_PER_PROMPT * TRAIN_STEPS))
+HIP_FALLBACK="$(seq -s, 0 $((TOTAL_GPUS - 1)))"
+cp -a "${SELECTED_TASKS[@]}" "$TRAIN_PACK"/
+test "$(find "$TRAIN_PACK" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$PROMPT_COUNT"
+printf '%s\n' "$TASK_GLOB" > "$RUN_ROOT/manifests/task-glob.txt"
+printf '%s\n' "$PROMPT_COUNT" > "$RUN_ROOT/manifests/prompt-count.txt"
+printf '%s\n' "$N_SAMPLES_PER_PROMPT" > "$RUN_ROOT/manifests/samples-per-prompt.txt"
+printf '%s\n' "$TRAIN_STEPS" > "$RUN_ROOT/manifests/training-steps.txt"
+printf '%s\n' "$EXPECTED_TRIALS" > "$RUN_ROOT/manifests/expected-trials.txt"
+printf '%s\n' "$POLICY_GPUS" > "$RUN_ROOT/manifests/policy-gpus.txt"
+printf '%s\n' "$NUM_ENGINES" > "$RUN_ROOT/manifests/inference-engines.txt"
+export PROMPT_COUNT N_SAMPLES_PER_PROMPT TRAIN_STEPS EXPECTED_TRIALS POLICY_GPUS NUM_ENGINES TOTAL_GPUS HIP_FALLBACK
+
+git -C "$CONTROL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/oellm-rlvr.commit"
+git -C "$SKYRL_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/skyrl.commit"
+git -C "$HARBOR_ROOT" rev-parse HEAD > "$RUN_ROOT/manifests/harbor.commit"
+sha256sum "$CONTAINER" > "$RUN_ROOT/manifests/task-sif.sha256"
+sha256sum "$MODEL/config.json" > "$RUN_ROOT/manifests/model-config.sha256"
+env | LC_ALL=C sort > "$RUN_ROOT/manifests/environment.txt"
+
+srun --label --cpu-bind=none --gpu-bind=none --gpus-per-task="$TOTAL_GPUS" "$SINGULARITY_BIN" exec -B "$BIND" "$CONTAINER" \
+  env -u BASH_ENV PATH="$LAUNCHER_PATH:$(dirname "$PYTHON_BIN"):/opt/venv/bin:/usr/bin:/bin" \
+  PYTHONPATH="$PYTHONPATH" bash -c '
+  set -euo pipefail
+  export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-$HIP_FALLBACK}"
+  unset ROCR_VISIBLE_DEVICES
+  "$PYTHON_BIN" "$CONTROL_ROOT/scripts/probe_skyrl_stack.py" \
+    --skyrl-source "$SKYRL_ROOT" --harbor-source "$HARBOR_ROOT" --require-gpu \
+    --expected-gpus "$TOTAL_GPUS" \
+    --output "$RUN_ROOT/compatibility/gpu-imports.json"
+  cd "$SKYRL_ROOT"
+  "$PYTHON_BIN" "$CONTROL_ROOT/scripts/run_harbor_train.py" \
+    data.train_data="['"$TRAIN_PACK"']" data.val_data="[]" \
+    harbor_trial_config.trials_dir="$JOBS" \
+    harbor_trial_config.agent.name=terminus-2 \
+    harbor_trial_config.agent.override_timeout_sec=1200 \
+    harbor_trial_config.agent.kwargs.max_turns="$MAX_TURNS" \
+    harbor_trial_config.agent.kwargs.suppress_max_turns_warning=true \
+    harbor_trial_config.agent.kwargs.enable_summarize=false \
+    harbor_trial_config.agent.kwargs.collect_rollout_details=true \
+    harbor_trial_config.agent.kwargs.record_terminal_session=false \
+    harbor_trial_config.agent.kwargs.temperature="$TEMPERATURE" \
+    harbor_trial_config.agent.kwargs.model_info.max_input_tokens="$MAX_MODEL_LEN" \
+    harbor_trial_config.agent.kwargs.model_info.max_output_tokens="$MAX_TOKENS_PER_TURN" \
+    harbor_trial_config.agent.kwargs.model_info.input_cost_per_token=0.0 \
+    harbor_trial_config.agent.kwargs.model_info.output_cost_per_token=0.0 \
+    harbor_trial_config.agent.kwargs.llm_kwargs.max_tokens="$MAX_TOKENS_PER_TURN" \
+    harbor_trial_config.agent.kwargs.llm_kwargs.timeout=300 \
+    harbor_trial_config.agent.kwargs.llm_kwargs.max_retries=0 \
+    harbor_trial_config.environment.type=singularity \
+    harbor_trial_config.environment.override_cpus=1 \
+    harbor_trial_config.environment.override_memory_mb=4096 \
+    harbor_trial_config.environment.override_storage_mb=4096 \
+    harbor_trial_config.environment.suppress_override_warnings=true \
+    harbor_trial_config.environment.kwargs.singularity_image_cache_dir="$HARBOR_LUMI_CACHE_ROOT/singularity" \
+    harbor_trial_config.environment.kwargs.singularity_no_mount=home,tmp,bind-paths \
+    trainer.policy.model.path="$MODEL" trainer.strategy=fsdp \
+    trainer.policy.language_model_only=true trainer.ref.language_model_only=true \
+    trainer.placement.colocate_all=false \
+    trainer.placement.policy_num_nodes=1 trainer.placement.policy_num_gpus_per_node="$POLICY_GPUS" \
+    generator.inference_engine.served_model_name=oellm-agent \
+    generator.inference_engine.num_engines="$NUM_ENGINES" generator.inference_engine.tensor_parallel_size=1 \
+    generator.inference_engine.backend=vllm generator.inference_engine.run_engines_locally=true \
+    generator.inference_engine.distributed_executor_backend=mp \
+    generator.inference_engine.language_model_only=true \
+    generator.inference_engine.weight_sync_backend=nccl \
+    generator.inference_engine.enforce_eager="$OELLM_VLLM_ENFORCE_EAGER" \
+    generator.inference_engine.gpu_memory_utilization=0.85 generator.inference_engine.max_num_seqs=8 \
+    generator.inference_engine.engine_init_kwargs.max_model_len="$MAX_MODEL_LEN" \
+    generator.step_wise_trajectories=true generator.merge_stepwise_output=true \
+    generator.use_cache_salt=true generator.batched=false \
+    generator.n_samples_per_prompt="$N_SAMPLES_PER_PROMPT" \
+    generator.sampling_params.max_generate_length="$MAX_TOKENS_PER_TURN" \
+    generator.rate_limit.enabled=true generator.rate_limit.trajectories_per_second=1 \
+    generator.rate_limit.max_concurrency=1 \
+    trainer.algorithm.max_seq_len="$MAX_MODEL_LEN" trainer.algorithm.advantage_estimator=grpo \
+    trainer.algorithm.use_kl_loss=false trainer.algorithm.use_kl_in_reward=false \
+    trainer.max_training_steps="$TRAIN_STEPS" trainer.epochs="$TRAIN_STEPS" \
+    trainer.train_batch_size="$PROMPT_COUNT" trainer.policy_mini_batch_size="$PROMPT_COUNT" \
+    trainer.micro_forward_batch_size_per_gpu=1 trainer.micro_train_batch_size_per_gpu=1 \
+    trainer.max_prompt_length=4096 trainer.remove_microbatch_padding=false trainer.flash_attn=false \
+    trainer.policy.optimizer_config.lr=1.0e-6 trainer.eval_before_train=false trainer.eval_interval=-1 \
+    trainer.ckpt_interval="$TRAIN_STEPS" trainer.hf_save_interval="$TRAIN_STEPS" trainer.max_ckpts_to_keep=2 \
+    trainer.logger=console trainer.project_name=oellm-harbor-agentic \
+    trainer.run_name="lumi-$SLURM_JOB_ID" trainer.resume_mode=null \
+    trainer.ckpt_path="$RUN_ROOT/checkpoints" trainer.export_path="$RUN_ROOT/exports" \
+    trainer.log_path="$RUN_ROOT/logs"
+' 2>&1 | tee "$RUN_ROOT/logs/training.log"
+
+inside "$PYTHON_BIN" -m oellm_rlvr.cli qualify-harbor-rollouts \
+  --jobs-root "$JOBS" --index-output "$RUN_ROOT/campaign-index.jsonl" \
+  --report-output "$RUN_ROOT/rollout-qualification.json" --run-id "$SLURM_JOB_ID" \
+  --policy-version 0 --learner-version 0 --expected-trials "$EXPECTED_TRIALS" \
+  --min-bash-commands-per-trial 1
+
+inside "$PYTHON_BIN" "$CONTROL_ROOT/scripts/qualify_harbor_training.py" \
+  --log "$RUN_ROOT/logs/training.log" \
+  --rollout-report "$RUN_ROOT/rollout-qualification.json" \
+  --export-root "$RUN_ROOT/exports" \
+  --output "$RUN_ROOT/training-qualification.json" \
+  --expected-steps "$TRAIN_STEPS"
+
+echo "harbor_agentic_training_artifact=$RUN_ROOT"

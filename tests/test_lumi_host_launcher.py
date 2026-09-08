@@ -68,3 +68,25 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert '--gpus-per-task="$TOTAL_GPUS"' in script
     assert '--expected-trials "$EXPECTED_TRIALS"' in script
     assert "srun --label --cpu-bind=none --gpu-bind=none" in script
+
+
+def test_agentic_training_runs_real_harbor_learner_and_strict_gate() -> None:
+    script = Path("scripts/lumi_harbor_agentic_train.sbatch").read_text()
+    assert '"$CONTROL_ROOT/scripts/run_harbor_train.py"' in script
+    assert '"$CONTROL_ROOT/scripts/run_harbor_generate.py"' not in script
+    assert "harbor_trial_config.agent.name=terminus-2" in script
+    assert "harbor_trial_config.environment.type=singularity" in script
+    assert "generator.step_wise_trajectories=true" in script
+    assert "generator.merge_stepwise_output=true" in script
+    assert 'generator.n_samples_per_prompt="$N_SAMPLES_PER_PROMPT"' in script
+    assert 'trainer.max_training_steps="$TRAIN_STEPS"' in script
+    assert 'trainer.train_batch_size="$PROMPT_COUNT"' in script
+    assert 'trainer.policy_mini_batch_size="$PROMPT_COUNT"' in script
+    assert "trainer.policy.optimizer_config.lr=1.0e-6" in script
+    assert "qualify-harbor-rollouts" in script
+    assert "qualify_harbor_training.py" in script
+    assert 'EXPECTED_TRIALS=$((PROMPT_COUNT * N_SAMPLES_PER_PROMPT * TRAIN_STEPS))' in script
+    assert 'TASK_GLOB:=function-scale-recipe' in script
+    assert ': "${N_SAMPLES_PER_PROMPT:=8}"' in script
+    assert ': "${TRAIN_STEPS:=2}"' in script
+    assert "#SBATCH --gpus-per-node=8" in script
