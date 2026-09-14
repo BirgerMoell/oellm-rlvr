@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 math = ["sympy>=1.12"]
 data = ["pyarrow>=16"]
+eval = ["lingua-language-detector==2.2.0"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]

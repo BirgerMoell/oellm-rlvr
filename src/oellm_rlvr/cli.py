@@ -27,6 +27,7 @@ from .gates import evaluate_gates
 from .harbor_atif import index_harbor_atif
 from .harbor_qualification import qualify_harbor_rollouts
 from .harbor_tasks import build_harbor_dryrun_pack, validate_harbor_dryrun_pack
+from .language_audit import audit_reasoning_languages
 from .opd import preflight_opd, prepare_opd_dataset
 from .reasoning_eval import build_blinded_reasoning_audit, compare_reasoning_evals, run_reasoning_eval
 from .schemas import TaskSpec
@@ -252,6 +253,17 @@ def command_compare_reasoning(args: argparse.Namespace) -> int:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     _json(report)
+    return 0
+
+
+def command_audit_reasoning_languages(args: argparse.Namespace) -> int:
+    _json(
+        audit_reasoning_languages(
+            args.predictions,
+            args.output,
+            minimum_confidence=args.minimum_confidence,
+        )
+    )
     return 0
 
 
@@ -537,6 +549,15 @@ def build_parser() -> argparse.ArgumentParser:
     reasoning_eval.add_argument("--gpu-memory-utilization", type=float, default=0.75)
     reasoning_eval.add_argument("--seed", type=int, default=20260905)
     reasoning_eval.set_defaults(handler=command_eval_reasoning)
+
+    language_audit = sub.add_parser(
+        "audit-reasoning-languages",
+        help="diagnose whether reasoning prose follows each prompt's target language",
+    )
+    language_audit.add_argument("--predictions", required=True)
+    language_audit.add_argument("--output", required=True)
+    language_audit.add_argument("--minimum-confidence", type=float, default=0.55)
+    language_audit.set_defaults(handler=command_audit_reasoning_languages)
 
     compare = sub.add_parser("compare-reasoning", help="paired comparison of two reasoning prediction files")
     compare.add_argument("--baseline", required=True)
