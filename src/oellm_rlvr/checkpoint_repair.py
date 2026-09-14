@@ -129,7 +129,8 @@ def repair_qwen35_text_checkpoint(
         seen: set[str] = set()
         for source_file in source_files:
             with safe_open(source_file, framework="pt", device="cpu") as handle:
-                for source_key in handle:
+                # safetensors.safe_open exposes keys() but is not itself iterable.
+                for source_key in handle.keys():  # noqa: SIM118
                     destination_key = qwen35_text_key(source_key)
                     if destination_key in seen:
                         raise ValueError(f"duplicate destination tensor key: {destination_key}")
