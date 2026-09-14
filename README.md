@@ -82,7 +82,7 @@ For the production-shaped checkpoint chain—reasoning, then math, then code, th
 ```
 
 The [multilingual progressive RL programme](docs/openeurollm-multilingual-progressive-rl.md) extends that
-sequence to OpenEuroLLM's canonical 36 languages and 42 language/script variants. Its
+sequence to OpenEuroLLM's canonical 36 languages and 43 language/script variants. Its
 [source inventory](campaigns/openeurollm-multilingual-rl-sources.yaml) records which reasoning, math, code, and
 agentic inputs are already staged or qualified and which still require localization, verifier, license, or
 contamination work.

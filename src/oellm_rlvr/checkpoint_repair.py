@@ -46,11 +46,13 @@ def repair_qwen35_text_checkpoint(
     output_dir: str | Path,
     *,
     max_shard_bytes: int = 4 * 1024**3,
+    cast_dtype: str | None = None,
 ) -> dict[str, Any]:
     """Create an atomic text-only Qwen3.5 checkpoint with corrected keys.
 
-    Tensor values and dtypes are preserved. The output is sharded so the
-    conversion never needs to retain the full checkpoint in host memory.
+    Tensor values and dtypes are preserved unless ``cast_dtype`` is supplied.
+    The output is sharded so the conversion never needs to retain the full
+    checkpoint in host memory.
     """
     try:
         from safetensors import safe_open
@@ -66,6 +68,10 @@ def repair_qwen35_text_checkpoint(
         raise FileExistsError(output)
     if max_shard_bytes < 1:
         raise ValueError("max_shard_bytes must be positive")
+    supported_casts = {"bfloat16", "float16", "float32"}
+    if cast_dtype is not None and cast_dtype not in supported_casts:
+        raise ValueError(f"cast_dtype must be one of {sorted(supported_casts)}, found {cast_dtype!r}")
+    target_dtype = getattr(__import__("torch"), cast_dtype) if cast_dtype else None
 
     config_path = source / "config.json"
     config = json.loads(config_path.read_text())
@@ -83,7 +89,8 @@ def repair_qwen35_text_checkpoint(
     tensors: dict[str, Any] = {}
     tensor_bytes = 0
     total_bytes = 0
-    dtype_counts: Counter[str] = Counter()
+    source_dtype_counts: Counter[str] = Counter()
+    output_dtype_counts: Counter[str] = Counter()
     source_key_count = 0
 
     def flush() -> None:
@@ -107,13 +114,16 @@ def repair_qwen35_text_checkpoint(
                     if destination_key in seen:
                         raise ValueError(f"duplicate destination tensor key: {destination_key}")
                     tensor = handle.get_tensor(source_key)
+                    source_dtype_counts[str(tensor.dtype)] += 1
+                    if target_dtype is not None and tensor.is_floating_point():
+                        tensor = tensor.to(target_dtype)
                     size = tensor.numel() * tensor.element_size()
                     if tensors and tensor_bytes + size > max_shard_bytes:
                         flush()
                     tensors[destination_key] = tensor
                     tensor_bytes += size
                     total_bytes += size
-                    dtype_counts[str(tensor.dtype)] += 1
+                    output_dtype_counts[str(tensor.dtype)] += 1
                     seen.add(destination_key)
                     source_key_count += 1
         flush()
@@ -146,12 +156,16 @@ def repair_qwen35_text_checkpoint(
                 shutil.copytree(child, destination)
             else:
                 shutil.copy2(child, destination)
-        config["dtype"] = "bfloat16"
+        if cast_dtype is not None:
+            config["dtype"] = cast_dtype
         (temporary / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
 
         manifest = {
             "schema": "oellm-qwen35-text-checkpoint-repair-v1",
-            "operation": f"{QWEN35_VLM_TEXT_PREFIX}* -> {QWEN35_CAUSAL_TEXT_PREFIX}*",
+            "operation": (
+                f"{QWEN35_VLM_TEXT_PREFIX}* -> {QWEN35_CAUSAL_TEXT_PREFIX}*"
+                + (f"; floating tensors -> {cast_dtype}" if cast_dtype else "")
+            ),
             "source": str(source),
             "source_files": {
                 path.name: {"bytes": path.stat().st_size, "sha256": source_hashes[path.name]}
@@ -165,8 +179,14 @@ def repair_qwen35_text_checkpoint(
             "source_tensor_keys": source_key_count,
             "output_tensor_keys": len(weight_map),
             "tensor_value_bytes": total_bytes,
-            "tensor_dtypes": dict(sorted(dtype_counts.items())),
-            "config_changes": {"dtype": [str(json.loads(config_path.read_text()).get("dtype")), "bfloat16"]},
+            "source_tensor_dtypes": dict(sorted(source_dtype_counts.items())),
+            "output_tensor_dtypes": dict(sorted(output_dtype_counts.items())),
+            "config_changes": {
+                "dtype": [
+                    str(json.loads(config_path.read_text()).get("dtype")),
+                    str(config.get("dtype")),
+                ]
+            },
         }
         (temporary / "repair-manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"

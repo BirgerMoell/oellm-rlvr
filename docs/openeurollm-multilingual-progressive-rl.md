@@ -20,7 +20,7 @@ Qwen3.5-9B is the data and infrastructure control; it is not the production pare
 selector. Production starts from the frozen OpenEuroLLM SFT/DPO checkpoint.
 
 Use the canonical OpenEuroLLM language file as the source of truth. It currently defines 36 macro-languages
-and 42 language/script or written-standard variants: the 24 EU official languages, three co-official languages,
+and 43 language/script or written-standard variants: the 24 EU official languages, three co-official languages,
 seven languages of candidate member states, Icelandic, and Norwegian. Dataset builders must ingest that file
 rather than copy a language list into each campaign.
 
@@ -48,8 +48,8 @@ The machine-readable inventory is in
 
 | Stage | Sources already available | Coverage and role | Gap before production |
 |---|---|---|---|
-| Think-interface bridge | `openeurollm/Dolci-Think-SFT-translated`; `openeurollm/reasoning-traces-multilingual`; decontaminated English Dolci Think | About 1.0M translated rows in 12 languages; the smaller pilot has 3,425 accepted translations over 99 source problems and 37 non-English labels. Use only a filtered, verified subset to teach tags and in-language traces. The pilot and English Dolci snapshots are already staged on LUMI. | Map every row to the canonical 36/42 contract; native review, independent answer checking, PII/safety screening, and missing-language generation. Do not call the 99-problem pilot a production corpus. |
-| General reasoning RLVR | `open-thought/reasoning-gym`; Apple's Multilingual Reasoning Gym; NVIDIA `Nemotron-RL-ReasoningGym-v1` | More than 100 procedural, algorithmically scored task families; the multilingual fork provides parallel generation for 10+ languages. | Add project-owned templates for all 36 languages/42 variants, validate every scorer, reserve generator/template/seed clusters for evaluation, and exclude any embedded benchmark-derived tasks. |
+| Think-interface bridge | `openeurollm/Dolci-Think-SFT-translated`; `openeurollm/reasoning-traces-multilingual`; decontaminated English Dolci Think | About 1.0M translated rows in 12 languages; the smaller pilot has 3,425 accepted translations over 99 source problems and 37 non-English labels. Use only a filtered, verified subset to teach tags and in-language traces. The pilot and English Dolci snapshots are already staged on LUMI. | Map every row to the canonical 36/43 contract; native review, independent answer checking, PII/safety screening, and missing-language generation. Do not call the 99-problem pilot a production corpus. |
+| General reasoning RLVR | `open-thought/reasoning-gym`; Apple's Multilingual Reasoning Gym; NVIDIA `Nemotron-RL-ReasoningGym-v1` | More than 100 procedural, algorithmically scored task families; the multilingual fork provides parallel generation for 10+ languages. | Add project-owned templates for all 36 languages/43 variants, validate every scorer, reserve generator/template/seed clusters for evaluation, and exclude any embedded benchmark-derived tasks. |
 | Math RLVR | `birgermoell/oellm-math-rlvr` at `0ffc9d6c`; optional NVIDIA math RL sources after license/decontamination review | 1M deterministic prompts, including 10k semantic problems rendered in all 24 EU official languages; exact/rational answers and explicit semantic groups. The pinned parquet is staged on LUMI. | Extend the generators to the other 12 OpenEuroLLM macro-languages and required script variants. Add symbolic, geometry, probability, and proof-verification families rather than only translating more arithmetic. |
 | Code RLVR | `birgermoell/oellm-code-rlvr` at `e1cae771`; NVIDIA competitive-coding data as a separately licensed optional pool | 100k Apache-2.0 procedural Python tasks with 10–13 hidden tests, but currently English-only. Hidden tests are language-neutral and must stay model-invisible. | Stage the full source on LUMI, translate only natural-language problem surfaces into 36 languages, re-run examples and hidden tests, add non-Python and debugging families, and hold out entire generator families/seeds. |
 | Agentic RL | Qualified SkyRL + Harbor stack; NVIDIA function-calling, conversational tool-use, calendar, workplace, terminal, and SWE task sources | The LUMI stack has completed real Qwen3.5-9B Harbor rollouts and SkyRL optimizer steps. Public sources provide thousands of function/SWE tasks, but are predominantly English and require their own environment adapters. | Localize user/tool surfaces; prebuild network-free SIFs; pin repositories and tool state; require oracle/failing-agent/model contracts; create native European public-service and workplace tasks; keep release benchmarks entirely out of training. |
@@ -101,7 +101,7 @@ Use prompt-group quotas rather than raw-row sampling. For the production stages:
 - 30% is distributed uniformly over the 35 non-English macro-languages, guaranteeing a minimum exposure floor;
 - 30% is weighted by project priorities and measured weakness, capped so high-resource languages cannot crowd
   out low-resource ones;
-- every 64-update window covers all 36 macro-languages; every 256-update window covers all 42 internal variants;
+- every 64-update window covers all 36 macro-languages; every 256-update window covers all 43 internal variants;
 - report rewards, pass rates, answer-language consistency, length, and errors by language and language family.
 
 Run 20%, 50%, and 80% non-English canaries from an identical parent before fixing these production weights. The
@@ -239,7 +239,7 @@ and training window.
 
 ## Two-week implementation order
 
-1. Add a canonical-language loader and 36/42 coverage validator to `oellm-rlvr`.
+1. Add a canonical-language loader and 36/43 coverage validator to `oellm-rlvr`.
 2. Freeze training/evaluation seed ranges and semantic clusters for the existing math and code generators.
 3. Import and pin Reasoning Gym; choose 20–30 task families without benchmark-derived content; add translations
    and scorer replay tests for all target variants.

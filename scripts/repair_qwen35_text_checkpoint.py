@@ -14,11 +14,13 @@ def main() -> None:
     parser.add_argument("--source", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--max-shard-gib", type=float, default=4.0)
+    parser.add_argument("--cast-dtype", choices=("bfloat16", "float16", "float32"))
     args = parser.parse_args()
     manifest = repair_qwen35_text_checkpoint(
         args.source,
         args.output,
         max_shard_bytes=int(args.max_shard_gib * 1024**3),
+        cast_dtype=args.cast_dtype,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
 

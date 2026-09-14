@@ -2,8 +2,9 @@ version: 1
 audited_at: 2026-09-14
 target_languages:
   source: https://github.com/OpenEuroLLM/training-data-catalogue/blob/main/languages
+  revision: 2f3bdf8457d76cf032440b76a3dc86ea69c72405
   macro_languages: 36
-  internal_variants: 42
+  internal_variants: 43
   policy: Fetch and pin this file when a campaign is frozen; do not maintain an independent list.
 
 sources:
@@ -34,6 +35,7 @@ sources:
   - id: open-thought/reasoning-gym
     stage: reasoning_rl
     source: https://github.com/open-thought/reasoning-gym
+    revision: 49b07130b3fcd12f2d064bba7c43869543a0e7e7
     license: apache-2.0
     coverage: 100-plus procedural task families; primarily English upstream
     lumi_status: adapter_present_in_harbor_v0.22.0
@@ -42,8 +44,9 @@ sources:
   - id: apple-aiml-research/ml-multilingual-reasoning-gym
     stage: reasoning_rl
     source: https://github.com/apple-aiml-research/ml-multilingual-reasoning-gym
-    license: verify_at_pin
-    coverage: 10-plus languages; 90-plus procedural task families
+    revision: 260d3e6a883bcc5be24cbd1c1d7e9dfcf1efeae4
+    license: Apple Sample Code License
+    coverage: 14 languages; 92 procedural task families; six canonical OpenEuroLLM macro-languages
     lumi_status: not_staged
     disposition: candidate_translation_layer_not_full_oellm_coverage
 
@@ -61,7 +64,7 @@ sources:
     coverage: 1,000,000 rows; all 24 EU official languages; 10,000 aligned semantic groups
     lumi_status: staged
     lumi_path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/sources/oellm-math-rlvr-0ffc9d6c.parquet
-    disposition: ready_for_eu24_pilot_extend_to_canonical_36_42
+    disposition: ready_for_eu24_pilot_extend_to_canonical_36_43
 
   - id: birgermoell/oellm-code-rlvr
     revision: e1cae7711049e3b5ff021fb3e9c752424882998c
