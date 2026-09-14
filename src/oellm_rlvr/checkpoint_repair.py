@@ -9,9 +9,29 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-
 QWEN35_VLM_TEXT_PREFIX = "model.language_model."
 QWEN35_CAUSAL_TEXT_PREFIX = "model."
+QWEN35_INFERENCE_METADATA_FILES = frozenset(
+    {
+        "added_tokens.json",
+        "chat_template.jinja",
+        "generation_config.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "tokenizer.json",
+        "tokenizer.model",
+        "tokenizer_config.json",
+        "vocab.json",
+    }
+)
+QWEN35_INFERENCE_METADATA_DIRS = frozenset({"chat_templates"})
+
+
+def is_qwen35_inference_metadata(path: Path) -> bool:
+    """Return whether a root checkpoint entry belongs in an inference export."""
+    return path.name in QWEN35_INFERENCE_METADATA_FILES or (
+        path.is_dir() and path.name in QWEN35_INFERENCE_METADATA_DIRS
+    )
 
 
 def qwen35_text_key(source_key: str) -> str:
@@ -109,7 +129,7 @@ def repair_qwen35_text_checkpoint(
         seen: set[str] = set()
         for source_file in source_files:
             with safe_open(source_file, framework="pt", device="cpu") as handle:
-                for source_key in handle.keys():
+                for source_key in handle:
                     destination_key = qwen35_text_key(source_key)
                     if destination_key in seen:
                         raise ValueError(f"duplicate destination tensor key: {destination_key}")
@@ -148,14 +168,16 @@ def repair_qwen35_text_checkpoint(
                 json.dumps(index, indent=2, sort_keys=True) + "\n"
             )
 
+        copied_metadata: list[str] = []
         for child in source.iterdir():
-            if child.name == "model.safetensors.index.json" or child.suffix == ".safetensors":
+            if not is_qwen35_inference_metadata(child):
                 continue
             destination = temporary / child.name
             if child.is_dir():
                 shutil.copytree(child, destination)
             else:
                 shutil.copy2(child, destination)
+            copied_metadata.append(child.name)
         if cast_dtype is not None:
             config["dtype"] = cast_dtype
         (temporary / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
@@ -187,6 +209,7 @@ def repair_qwen35_text_checkpoint(
                     str(config.get("dtype")),
                 ]
             },
+            "copied_inference_metadata": sorted(copied_metadata),
         }
         (temporary / "repair-manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
