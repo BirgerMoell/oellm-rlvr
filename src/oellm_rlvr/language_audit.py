@@ -30,7 +30,7 @@ _LINGUA_NAMES = {
     "lt": "LITHUANIAN",
     "mk": "MACEDONIAN",
     "nl": "DUTCH",
-    "no": "NORWEGIAN_BOKMAL",
+    "no": "BOKMAL",
     "pl": "POLISH",
     "pt": "PORTUGUESE",
     "ro": "ROMANIAN",
@@ -44,7 +44,7 @@ _LINGUA_NAMES = {
     "uk": "UKRAINIAN",
 }
 _NAME_TO_CODE = {name: code for code, name in _LINGUA_NAMES.items()}
-_NAME_TO_CODE["NORWEGIAN_NYNORSK"] = "no"
+_NAME_TO_CODE["NYNORSK"] = "no"
 _ACCEPTABLE_EQUIVALENTS = {
     "bs": {"bs", "hr", "sr"},
     "hr": {"bs", "hr", "sr"},
@@ -71,7 +71,7 @@ def _build_detector() -> Any:
             "language audit requires lingua-language-detector (install oellm-rlvr[eval])"
         ) from error
     languages = [getattr(Language, name) for name in sorted(set(_LINGUA_NAMES.values()))]
-    languages.append(Language.NORWEGIAN_NYNORSK)
+    languages.append(Language.NYNORSK)
     return LanguageDetectorBuilder.from_languages(*languages).with_low_accuracy_mode().build()
 
 
