@@ -39,3 +39,12 @@ def test_hierarchical_job_exports_weight_transfer_mode() -> None:
     path = ROOT / "configs/lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml"
     rendered = render_slurm(load_config(path), path)
     assert 'export OELLM_WEIGHT_TRANSFER="hierarchical"' in rendered
+
+
+def test_opd_job_authenticates_manifests_and_selects_verl_preflight() -> None:
+    path = ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml"
+    rendered = render_slurm(load_config(path), path)
+
+    assert "opd-preflight --config" in rendered
+    assert "--backend verl_opd" in rendered
+    assert "Launching on-policy distillation" in rendered

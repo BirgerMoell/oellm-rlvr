@@ -11,6 +11,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--accelerator", choices=("rocm", "cuda"), required=True)
     parser.add_argument("--gpus", type=int, required=True)
+    parser.add_argument("--backend", choices=("tmax", "verl_opd"), default="tmax")
+    parser.add_argument("--teacher-engine", choices=("vllm", "sglang"), action="append", default=[])
     args = parser.parse_args()
 
     errors: list[str] = []
@@ -33,17 +35,27 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 - report arbitrary native/import initialization failures
         errors.append(f"torch: {error}")
 
-    for module in ("ray", "vllm", "open_instruct"):
+    modules = ("ray", "vllm", "open_instruct") if args.backend == "tmax" else (
+        "ray",
+        "vllm",
+        "verl",
+        "verl.trainer.main_ppo",
+        "transfer_queue",
+    )
+    if args.backend == "verl_opd" and "sglang" in args.teacher_engine:
+        modules = (*modules, "sglang")
+    for module in modules:
         try:
             loaded = importlib.import_module(module)
             details[module] = getattr(loaded, "__version__", "imported")
         except Exception as error:  # noqa: BLE001 - preflight records every import failure
             errors.append(f"{module}: {error}")
-    try:
-        importlib.import_module("vllm.distributed.weight_transfer.nccl_engine")
-        details["weight_transfer"] = "native_nccl_engine"
-    except Exception as error:  # noqa: BLE001 - native extension errors vary by backend build
-        errors.append(f"vLLM native weight transfer: {error}")
+    if args.backend == "tmax":
+        try:
+            importlib.import_module("vllm.distributed.weight_transfer.nccl_engine")
+            details["weight_transfer"] = "native_nccl_engine"
+        except Exception as error:  # noqa: BLE001 - native extension errors vary by backend build
+            errors.append(f"vLLM native weight transfer: {error}")
 
     print(json.dumps({"ok": not errors, "details": details, "errors": errors}, sort_keys=True))
     return 0 if not errors else 1

@@ -44,7 +44,7 @@ def _tool_config(config: RunConfig) -> dict[str, object]:
     return values
 
 
-def build_backend_argv(config: RunConfig) -> list[str]:
+def _build_tmax_backend_argv(config: RunConfig) -> list[str]:
     """Build argv for the pinned Open-Instruct/TMAX GRPO entry point."""
     if config.model.local_path:
         argv = [config.backend.python, "-u", "-m", "oellm_rlvr.tmax_launcher", config.backend.script]
@@ -182,6 +182,15 @@ def build_backend_argv(config: RunConfig) -> list[str]:
         )
         argv.extend(["--checkpoint_state_dir", checkpoint_state_directory])
     return argv
+
+
+def build_backend_argv(config: RunConfig) -> list[str]:
+    """Build backend argv without coupling the stable TMAX and OPD adapters."""
+    if config.backend.kind == "tmax":
+        return _build_tmax_backend_argv(config)
+    from .verl_backend import build_verl_opd_argv
+
+    return build_verl_opd_argv(config)
 
 
 def shell_command(config: RunConfig) -> str:

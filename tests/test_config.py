@@ -23,6 +23,8 @@ ROOT = Path(__file__).parents[1]
         ("lumi-code-qwen35-2b-signal-probe.yaml", 0),
         ("lumi-code-qwen35-2b-4node.yaml", 0),
         ("cuda-code-qwen35-2b-smoke.yaml", 0),
+        ("cuda-opd-qwen35-2b-contract-smoke.yaml", 0),
+        ("lumi-opd-qwen35-2b-contract-smoke.yaml", 0),
     ],
 )
 def test_example_profiles_validate(name: str, expected_spare_gpus: int) -> None:
@@ -106,3 +108,40 @@ def test_materialize_config_rejects_unsafe_run_name(tmp_path: Path) -> None:
             model_path="/model",
             output_root="/campaign",
         )
+
+
+def test_opd_topology_accounts_for_colocation_and_teacher_pool() -> None:
+    config = load_config(ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml")
+    topology = build_topology(config)
+
+    assert config.backend.kind == "verl_opd"
+    assert topology.learner_gpus == 4
+    assert topology.rollout_gpus == 0
+    assert topology.colocated_rollout_gpus == 4
+    assert topology.teacher_gpus == 4
+
+
+def test_opd_rejects_teacher_footprint_that_does_not_fill_pool() -> None:
+    profile = ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml"
+    raw = load_config(profile).model_dump()
+    raw["distillation"]["teachers"][0]["num_replicas"] = 3
+    with pytest.raises(ValidationError, match="teacher replicas require 3 GPUs but teacher pool has 4"):
+        type(load_config(profile)).model_validate(raw)
+
+
+def test_opd_rejects_multi_teacher_replica_that_straddles_nodes() -> None:
+    profile = ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml"
+    config_type = type(load_config(profile))
+    raw = load_config(profile).model_dump()
+    raw["platform"]["nodes"] = 2
+    raw["training"]["learner_gpus_per_node"] = [4, 4]
+    raw["rollout"]["engines"] = 8
+    raw["distillation"]["teacher_gpus_per_node"] = [4, 4]
+    base = raw["distillation"]["teachers"][0]
+    raw["distillation"]["teachers"] = [
+        {**base, "name": "teacher_a", "key": "a", "num_replicas": 1, "inference": {**base["inference"], "tensor_parallel_size": 3}},
+        {**base, "name": "teacher_b", "key": "b", "num_replicas": 1, "inference": {**base["inference"], "tensor_parallel_size": 4}},
+        {**base, "name": "teacher_c", "key": "c", "num_replicas": 1, "inference": {**base["inference"], "tensor_parallel_size": 1}},
+    ]
+    with pytest.raises(ValidationError, match="crosses an avoidable node boundary"):
+        config_type.model_validate(raw)

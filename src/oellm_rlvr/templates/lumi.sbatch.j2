@@ -39,6 +39,12 @@ case "$actual_commit" in
   *) echo "Backend revision mismatch: expected {{ config.backend.commit }}, got $actual_commit" >&2; exit 2 ;;
 esac
 
+{% if config.backend.kind == "verl_opd" %}# OPD needs identical token IDs across student and teacher. Authenticate the
+# precomputed checkpoint manifests before starting Ray or allocating model memory.
+singularity exec -B "$BIND" "$CONTAINER" env \
+  PYTHONPATH="${CONTROL_ROOT}/src:${BACKEND_ROOT}" "$PYTHON_BIN" -m oellm_rlvr.cli opd-preflight --config "$CONFIG"
+{% endif %}
+
 mapfile -t NODES < <(scontrol show hostnames "$SLURM_JOB_NODELIST")
 HEAD_NODE="${NODES[0]}"
 HEAD_IP="$(srun --overlap --nodes=1 --ntasks=1 -w "$HEAD_NODE" getent hosts "$HEAD_NODE" | awk 'NR==1 {print $1}')"
@@ -97,7 +103,8 @@ trap cleanup EXIT INT TERM
 echo "Preflight: ${SLURM_NNODES} nodes, ${GPUS_PER_NODE} GPUs/node, head=${RAY_ADDRESS}"
 srun --label --gpu-bind=none singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" "$CONTROL_ROOT/scripts/preflight_gpu.py" \
-  --accelerator {{ config.platform.accelerator }} --gpus "$GPUS_PER_NODE"
+  --accelerator {{ config.platform.accelerator }} --gpus "$GPUS_PER_NODE" --backend {{ config.backend.kind }}{% if config.distillation %}{% for teacher in config.distillation.teachers %} \
+  --teacher-engine {{ teacher.inference.engine }}{% endfor %}{% endif %}
 
 # Ray owns the allocation for the lifetime of the job. LUMI can omit GPU
 # devices from a long-lived overlapping step, so make this the primary step
@@ -121,8 +128,9 @@ for _ in $(seq 1 60); do
 done
 if [[ "$ready" != 1 ]]; then echo "Ray did not become ready" >&2; exit 3; fi
 
-echo "Launching online {{ config.task.kind }} RLVR with native learner-to-vLLM weight transfer"
-srun --label --overlap --gpu-bind=none --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
+{% if config.backend.kind == "verl_opd" %}echo "Launching on-policy distillation with colocated student rollout and a dedicated teacher pool"
+{% else %}echo "Launching online {{ config.task.kind }} RLVR with native learner-to-vLLM weight transfer"
+{% endif %}srun --label --overlap --gpu-bind=none --nodes=1 --ntasks=1 -w "$HEAD_NODE" \
   singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" RAY_ADDRESS="$RAY_ADDRESS" WANDB_MODE="$WANDB_MODE" \
   "$PYTHON_BIN" -m oellm_rlvr.cli run-backend --config "$CONFIG"

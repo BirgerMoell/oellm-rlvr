@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictModel(BaseModel):
@@ -42,13 +43,62 @@ class VerifierResult(StrictModel):
     error_type: str | None = None
 
 
+class DistillationTrace(StrictModel):
+    """Auditable token-level contract for one OPD completion."""
+
+    teacher_name: str
+    teacher_revision: str
+    token_ids: list[int] = Field(min_length=1)
+    rollout_logprobs: list[float] = Field(min_length=1)
+    teacher_logprobs: list[float] = Field(min_length=1)
+    trainable_mask: list[bool] = Field(min_length=1)
+    teacher_topk_token_ids: list[list[int]] | None = None
+    teacher_topk_logprobs: list[list[float]] | None = None
+
+    @model_validator(mode="after")
+    def aligned_token_fields(self) -> DistillationTrace:
+        size = len(self.token_ids)
+        for name, values in (
+            ("rollout_logprobs", self.rollout_logprobs),
+            ("teacher_logprobs", self.teacher_logprobs),
+            ("trainable_mask", self.trainable_mask),
+        ):
+            if len(values) != size:
+                raise ValueError(f"{name} must align one-for-one with token_ids")
+        if not any(self.trainable_mask):
+            raise ValueError("distillation trace has no trainable response tokens")
+        if not all(math.isfinite(value) for value in self.rollout_logprobs + self.teacher_logprobs):
+            raise ValueError("distillation log-probabilities must be finite")
+        if (self.teacher_topk_token_ids is None) != (self.teacher_topk_logprobs is None):
+            raise ValueError("teacher top-k token IDs and log-probabilities must be recorded together")
+        if self.teacher_topk_token_ids is not None and self.teacher_topk_logprobs is not None:
+            if len(self.teacher_topk_token_ids) != size or len(self.teacher_topk_logprobs) != size:
+                raise ValueError("teacher top-k fields must align one-for-one with token_ids")
+            for ids, logprobs in zip(self.teacher_topk_token_ids, self.teacher_topk_logprobs, strict=True):
+                if len(ids) != len(logprobs) or not all(math.isfinite(value) for value in logprobs):
+                    raise ValueError("each teacher top-k ID row must align with finite log-probabilities")
+        return self
+
+    @property
+    def sampled_reverse_kl(self) -> float:
+        estimates = [
+            rollout - teacher
+            for rollout, teacher, active in zip(
+                self.rollout_logprobs, self.teacher_logprobs, self.trainable_mask, strict=True
+            )
+            if active
+        ]
+        return sum(estimates) / len(estimates)
+
+
 class TrajectoryRecord(StrictModel):
     run_id: str
     task_id: str
-    task_kind: Literal["math", "code"]
+    task_kind: Literal["math", "code", "prompt"]
     prompt: str
     completion: str
-    verifier: VerifierResult
+    verifier: VerifierResult | None = None
+    distillation: DistillationTrace | None = None
     policy_version: int = Field(ge=0)
     learner_version: int = Field(ge=0)
     response_tokens: int = Field(ge=0)

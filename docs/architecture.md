@@ -2,7 +2,10 @@
 
 ## Control plane versus training backend
 
-`oellm-rlvr` is the reproducible layer around the pinned `OpenEuroLLM/tmax-reproduction` backend. The backend owns the model-specific learner, vLLM actors, DPPO/GRPO losses, Ray placement groups, environment pool, and native weight-transfer implementation. This repository owns configuration, scheduling, data/verifier contracts, launch safety, and health policy.
+`oellm-rlvr` is the reproducible layer around two explicit, pinned training backends. TMAX/Open-Instruct owns the
+online DPPO/GRPO learner, rollout actors, environment pool, and native weight transfer. verl owns the optional
+FSDP/vLLM on-policy-distillation learner and teacher-log-probability path. This repository owns backend selection,
+configuration, scheduling, data/verifier contracts, launch safety, topology accounting, and health policy.
 
 Keeping that boundary prevents an AMD fork and an NVIDIA fork from drifting. PyTorch still exposes ROCm devices through `torch.cuda`; vLLM's NCCL weight-transfer API reaches RCCL in the LUMI image. The CUDA profile uses the same argv and Ray topology with `singularity exec --nv` instead of `--rocm`.
 
@@ -14,6 +17,10 @@ A Slurm allocation starts one Ray process per node. Ray then places two disjoint
 - rollout bundles from `rollout.engines × rollout.tensor_parallel_size`.
 
 The validator requires their sum to fit inside `nodes × gpus_per_node`. It also verifies that the rollout batch is large enough for the learner's sequence/data-parallel layout. Spare GPUs are allowed, but accidental oversubscription is not.
+
+The OPD topology is different: student vLLM rollout is colocated with the learner, while each frozen teacher uses
+a separate resource pool. The validator counts the student pool once and requires the declared teacher pool to
+equal the sum of every teacher's `replicas × TP × DP × PP` footprint.
 
 For the one-node smoke, Ray schedules four learner GCDs and four TP=1 vLLM engines. The four-node production example follows the TMAX split: two eight-GCD learner bundles plus sixteen one-GCD rollout engines.
 
@@ -28,6 +35,17 @@ For the one-node smoke, Ray schedules four learner GCDs and four TP=1 vLLM engin
 7. New rollouts record their model step, making policy lag observable.
 
 `async_steps` and `inflight_updates` overlap generation/verification with learning. They improve utilization but make policy-lag limits essential.
+
+## On-policy distillation loop
+
+1. Colocated vLLM samples completions from the current student.
+2. A routed frozen teacher evaluates the exact sampled response tokens.
+3. verl aligns student and teacher log-probabilities under the shared tokenizer contract.
+4. The learner applies either a sampled reverse-KL policy-gradient signal or a direct distillation loss.
+5. The updated student generates the next batch, keeping training on policy.
+
+Pure OPD uses an explicit zero task reward. Hybrid math OPD uses the same exact/numeric answer semantics as this
+control plane. Code-agent OPD remains outside the supported boundary.
 
 ## Hierarchical rollout weight transfer
 
@@ -53,9 +71,14 @@ configuration validation rejects unsupported layouts.
 - The job trap terminates the background Ray step.
 - Environment reset failures can become reward zero (`SWERL_RESET_FAILURE_ZERO_REWARD=1`) but are separately counted as errors.
 - Code commands and test suites have independent timeouts.
-- Backend revision, container, visible GPU count, accelerator type, imports, and native weight-transfer support are checked before training.
+- Backend revision, container, visible GPU count, accelerator type, and backend-specific imports are checked before training.
+- OPD additionally authenticates checkpoint roots/revisions and rejects tokenizer mismatches.
 - The health gate stops promotion when reward groups are constant, outputs truncate, verifiers fail, or rollout policies lag too far behind.
 
 ## Trajectory contract
 
-`TrajectoryRecord` stores the task and policy identities, completion, verifier result, token usage, entropy, and learner version. The append-only JSONL store is intentionally simple and recoverable. Large runs should write one shard per actor/node and compact to Parquet after the job; multiple workers should not contend on one shared file.
+`TrajectoryRecord` stores the task and policy identities, completion, optional verifier result, token usage, entropy,
+and learner version. Its optional `DistillationTrace` records the teacher identity, aligned sampled token IDs,
+student and teacher log-probabilities, trainable mask, and optional top-k teacher distribution. The append-only
+JSONL store is intentionally simple and recoverable. Large runs should write one shard per actor/node and compact
+to Parquet after the job; multiple workers should not contend on one shared file.

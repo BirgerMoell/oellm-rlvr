@@ -2,7 +2,9 @@
 
 Standalone rollout and reinforcement-learning-with-verifiable-rewards control plane for OpenEuroLLM. It is designed for LUMI's AMD MI250X/ROCm environment first and uses the same configuration model on NVIDIA/CUDA clusters.
 
-The repository deliberately does not copy a trainer. It pins the OpenEuroLLM TMAX/Open-Instruct backend at commit `3f80d37042402b8363f39c9535723b0d4cb8de54`, then owns the parts that need to be cluster- and project-specific:
+The repository deliberately does not copy a trainer. It pins the OpenEuroLLM TMAX/Open-Instruct backend for
+GRPO/DPPO and exposes a separate pinned verl adapter for on-policy distillation, then owns the parts that need to
+be cluster- and project-specific:
 
 - learner/rollout GPU topology validation;
 - Slurm and multi-node Ray lifecycle;
@@ -11,8 +13,10 @@ The repository deliberately does not copy a trainer. It pins the OpenEuroLLM TMA
 - code-agent rollouts in Apptainer with seed files and deferred hidden tests;
 - revision-pinned GSM8K preparation plus paired parent/candidate reasoning evaluation and blinded trace audit;
 - task packing, append-only trajectory schemas, and rollout health gates;
-- ROCm and CUDA profiles using one control plane.
-- machine-validated multi-stage campaign DAGs with repository pins, compute ceilings, artifacts, and gates.
+- ROCm and CUDA profiles using one control plane;
+- machine-validated multi-stage campaign DAGs with repository pins, compute ceilings, artifacts, and gates;
+- opt-in pure or math-hybrid on-policy distillation with teacher-pool accounting, tokenizer contracts, and
+  multi-teacher routing.
 
 ## How online training works
 
@@ -32,6 +36,18 @@ flowchart LR
 ```
 
 Math rows carry `messages` and `ground_truth`. Code rows carry `messages`, `tools`, and the backend's exact `env_config` structure. Code environments only receive seed files at reset; tests are uploaded when the agent submits, and `/logs/verifier/reward.txt` is clipped to `[0, 1]` by the backend.
+
+## On-policy distillation
+
+OPD is selected explicitly with `backend.kind: verl_opd`; all existing profiles continue to use `tmax` by
+default. The student generates from its current policy, a frozen same-tokenizer teacher scores those sampled
+tokens, and verl updates the student from the token-level discrepancy. The teacher can be larger, equal-size, or
+smaller—the relevant requirement is better behavior on the targeted distribution, not parameter count.
+
+The implementation includes immutable student/teacher manifest checks, prompt conversion, exact GPU-footprint
+validation, pure-distillation and hybrid math rewards, deterministic verl command generation, Slurm preflight,
+and OPD-aware trajectory/gate schemas. Start with the same-model contract smoke before attempting capability
+transfer. See the [on-policy distillation runbook](docs/on-policy-distillation.md).
 
 ## Local installation and checks
 

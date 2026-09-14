@@ -27,6 +27,7 @@ from .gates import evaluate_gates
 from .harbor_atif import index_harbor_atif
 from .harbor_qualification import qualify_harbor_rollouts
 from .harbor_tasks import build_harbor_dryrun_pack, validate_harbor_dryrun_pack
+from .opd import preflight_opd, prepare_opd_dataset
 from .reasoning_eval import build_blinded_reasoning_audit, compare_reasoning_evals, run_reasoning_eval
 from .schemas import TaskSpec
 from .skyrl_adapter import export_skyrl_math
@@ -118,6 +119,10 @@ def command_doctor(args: argparse.Namespace) -> int:
         # Singularity/Apptainer accepts both immutable SIF files and unpacked
         # sandbox directories as execution images.
         checks["sandbox_image"] = Path(config.task.sandbox.image).exists()
+    if config.backend.kind == "verl_opd":
+        opd = preflight_opd(config)
+        checks["opd_contract"] = opd["ok"]
+        checks["opd_contract_report"] = opd
     ok = all(value for key, value in checks.items() if isinstance(value, bool))
     _json({"ok": ok, "checks": checks})
     return 0 if ok else 1
@@ -281,9 +286,32 @@ def command_verify(args: argparse.Namespace) -> int:
 
 def command_gate(args: argparse.Namespace) -> int:
     config = load_config(args.config)
-    report = evaluate_gates(JsonlTrajectoryStore(args.trajectories), config.gates)
+    report = evaluate_gates(
+        JsonlTrajectoryStore(args.trajectories),
+        config.gates,
+        require_reward_signal=config.distillation is None or config.distillation.use_task_rewards,
+        require_distillation=config.distillation is not None,
+    )
     _json(report.as_dict())
     return 0 if report.passed else 1
+
+
+def command_opd_preflight(args: argparse.Namespace) -> int:
+    report = preflight_opd(load_config(args.config))
+    _json(report)
+    return 0 if report["ok"] else 1
+
+
+def command_prepare_opd_data(args: argparse.Namespace) -> int:
+    report = prepare_opd_dataset(
+        args.source,
+        args.output,
+        data_source=args.data_source,
+        ability=args.ability,
+        require_ground_truth=args.require_ground_truth,
+    )
+    _json(report)
+    return 0
 
 
 def command_inspect_rollouts(args: argparse.Namespace) -> int:
@@ -540,6 +568,20 @@ def build_parser() -> argparse.ArgumentParser:
     gate.add_argument("--config", required=True)
     gate.add_argument("--trajectories", required=True)
     gate.set_defaults(handler=command_gate)
+
+    opd_preflight = sub.add_parser(
+        "opd-preflight", help="verify student/teacher manifests and the tokenization contract"
+    )
+    opd_preflight.add_argument("--config", required=True)
+    opd_preflight.set_defaults(handler=command_opd_preflight)
+
+    opd_data = sub.add_parser("prepare-opd-data", help="convert prompt rows to verl's OPD dataset schema")
+    opd_data.add_argument("--source", required=True, help="JSON, JSONL, or Parquet prompt rows")
+    opd_data.add_argument("--output", required=True, help="destination JSONL or Parquet")
+    opd_data.add_argument("--data-source", required=True, help="dataset ID and multi-teacher routing key")
+    opd_data.add_argument("--ability", default="general")
+    opd_data.add_argument("--require-ground-truth", action="store_true", help="require verifier labels for hybrid OPD+RLVR")
+    opd_data.set_defaults(handler=command_prepare_opd_data)
 
     inspect_rollouts = sub.add_parser("inspect-rollouts")
     inspect_rollouts.add_argument("--rollouts", required=True, help="backend rollouts_*.jsonl artifact")

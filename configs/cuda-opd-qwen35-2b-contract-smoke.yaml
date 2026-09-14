@@ -1,0 +1,119 @@
+version: 1
+name: opd-qwen35-2b-contract-smoke
+platform:
+  accelerator: cuda
+  nodes: 1
+  gpus_per_node: 8
+  container: /shared/containers/verl-cuda.sif
+  account: CHANGE_ME
+  partition: gpu
+  walltime: 00:30:00
+  cpus_per_task: 64
+  binds: [/shared, /scratch]
+backend:
+  kind: verl_opd
+  repo_path: /shared/oellm/verl
+  commit: a9f2985159536a607211dcac730d3f5d55028950
+  python: /shared/oellm/verl/.venv/bin/python
+  verl:
+    actor_strategy: fsdp2
+    ppo_mini_batch_size: 8
+    ppo_micro_batch_size_per_gpu: 1
+    ppo_max_token_len_per_gpu: 4096
+    use_dynamic_batching: false
+    use_torch_compile: false
+    parameter_offload: true
+    optimizer_offload: true
+    ray_runtime_python: /shared/oellm/verl/.venv/bin/python
+model:
+  name_or_path: hamishivi/Qwen3.5-2B
+  local_path: /shared/oellm/models/Qwen3.5-2B
+  revision: REPLACE_WITH_IMMUTABLE_REVISION
+  manifest_path: /shared/oellm/manifests/qwen35-2b.json
+  max_prompt_tokens: 1024
+  response_tokens: 512
+  per_turn_tokens: 512
+  pack_length: 1536
+datasets:
+  - path: /shared/oellm/data/opd-contract-smoke.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: prompt
+  max_steps: 1
+  pool_size: 8
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  weight_transfer: broadcast
+  unique_prompts: 8
+  samples_per_prompt: 1
+  temperature: 1.0
+  gpu_memory_utilization: 0.45
+  async_steps: 0
+  active_sampling: false
+  inflight_updates: false
+  enable_prefix_caching: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+  colocate_with_learner: true
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 32
+  epochs: 1
+  deepspeed_stage: 3
+  loss: grpo
+  beta: 0.0
+  seed: 42
+  save_freq: 0
+  checkpoint_state_freq: 0
+  gradient_checkpointing: true
+  use_liger_loss: false
+distillation:
+  teacher_gpus_per_node: [4]
+  teacher_key: data_source
+  loss_mode: k1
+  top_k: 64
+  use_policy_gradient: true
+  use_task_rewards: false
+  coefficient: 1.0
+  loss_max_clamp: 10.0
+  logprob_min_clamp: -10.0
+  shuffle: false
+  teachers:
+    - name: teacher_model
+      key: opd-contract-smoke
+      name_or_path: hamishivi/Qwen3.5-2B
+      local_path: /shared/oellm/models/Qwen3.5-2B
+      revision: REPLACE_WITH_IMMUTABLE_REVISION
+      manifest_path: /shared/oellm/manifests/qwen35-2b.json
+      num_replicas: 4
+      inference:
+        engine: vllm
+        tensor_parallel_size: 1
+        data_parallel_size: 1
+        pipeline_parallel_size: 1
+        expert_parallel_size: 1
+        gpu_memory_utilization: 0.45
+        enforce_eager: true
+        max_num_batched_tokens: 4096
+        max_num_sequences: 256
+output:
+  directory: /shared/oellm/outputs/opd-contract-smoke
+  rollout_directory: /shared/oellm/rollouts/opd-contract-smoke
+  experiment_name: cuda_opd_qwen35_2b_contract_smoke
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_truncation_fraction: 0.15
+  max_error_fraction: 0.02
+  max_policy_lag: 0
+  min_distillation_coverage: 0.99
+environment:
+  HF_HOME: /shared/oellm/hf_cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"

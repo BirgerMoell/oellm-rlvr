@@ -2,13 +2,18 @@ import json
 from pathlib import Path
 
 from oellm_rlvr.backend import build_backend_argv
-from oellm_rlvr.config import load_config
+from oellm_rlvr.config import RunConfig, load_config
 
 ROOT = Path(__file__).parents[1]
 
 
 def _value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1]
+
+
+def _hydra_value(argv: list[str], key: str) -> str:
+    prefix = f"{key}="
+    return next(value.removeprefix(prefix) for value in argv if value.startswith(prefix))
 
 
 def test_math_smoke_is_bounded_and_keeps_online_weight_updates() -> None:
@@ -109,3 +114,34 @@ def test_oellm9b_pilot_runs_ten_restartable_hierarchical_updates() -> None:
     assert _value(argv, "--checkpoint_state_dir").endswith("math-oellm9b-sft-pilot-10step-state")
     assert "--active_sampling" in argv
     assert "--save_filtered_rollouts" in argv
+
+
+def test_verl_opd_backend_maps_teacher_loss_and_resource_pools() -> None:
+    config = load_config(ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml")
+    argv = build_backend_argv(config)
+
+    assert argv[:4] == [config.backend.python, "-u", "-m", "verl.trainer.main_ppo"]
+    assert _hydra_value(argv, "actor_rollout_ref.model.path") == config.model.local_path
+    assert _hydra_value(argv, "actor_rollout_ref.rollout.n") == "1"
+    assert _hydra_value(argv, "trainer.n_gpus_per_node") == "4"
+    assert _hydra_value(argv, "trainer.total_training_steps") == "4"
+    assert _hydra_value(argv, "distillation.n_gpus_per_node") == "4"
+    assert _hydra_value(argv, "distillation.teacher_models.teacher_model.num_replicas") == "4"
+    assert _hydra_value(argv, "distillation.distillation_loss.loss_mode") == "k1"
+    assert _hydra_value(argv, "distillation.distillation_loss.use_task_rewards") == "False"
+    assert _hydra_value(argv, "custom_reward_function.name") == "compute_score"
+    assert "--dataset_mixer_list" not in argv
+
+
+def test_hybrid_math_opd_selects_project_reward() -> None:
+    raw = load_config(ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml").model_dump()
+    raw["task"]["kind"] = "math"
+    raw["rollout"].update(unique_prompts=4, samples_per_prompt=2)
+    raw["backend"]["verl"]["ppo_mini_batch_size"] = 4
+    raw["distillation"]["use_task_rewards"] = True
+
+    argv = build_backend_argv(RunConfig.model_validate(raw))
+
+    assert _hydra_value(argv, "data.train_batch_size") == "4"
+    assert _hydra_value(argv, "actor_rollout_ref.rollout.n") == "2"
+    assert _hydra_value(argv, "custom_reward_function.name") == "compute_math_score"

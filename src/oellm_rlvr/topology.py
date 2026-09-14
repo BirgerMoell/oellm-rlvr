@@ -10,8 +10,11 @@ class Topology:
     capacity_gpus: int
     learner_gpus: int
     rollout_gpus: int
+    colocated_rollout_gpus: int
+    teacher_gpus: int
     spare_gpus: int
     learner_nodes: int
+    teacher_nodes: int
     rollout_engines: int
     tensor_parallel_size: int
     data_parallel_ranks: int
@@ -24,13 +27,18 @@ class Topology:
 def build_topology(config: RunConfig) -> Topology:
     capacity = config.platform.nodes * config.platform.gpus_per_node
     learners = sum(config.training.learner_gpus_per_node)
-    rollout = config.rollout.engines * config.rollout.tensor_parallel_size
+    logical_rollout = config.rollout.engines * config.rollout.tensor_parallel_size
+    rollout = 0 if config.rollout.colocate_with_learner else logical_rollout
+    teachers = config.distillation.gpu_count if config.distillation else 0
     return Topology(
         capacity_gpus=capacity,
         learner_gpus=learners,
         rollout_gpus=rollout,
-        spare_gpus=capacity - learners - rollout,
+        colocated_rollout_gpus=logical_rollout if config.rollout.colocate_with_learner else 0,
+        teacher_gpus=teachers,
+        spare_gpus=capacity - learners - rollout - teachers,
         learner_nodes=len(config.training.learner_gpus_per_node),
+        teacher_nodes=len(config.distillation.teacher_gpus_per_node) if config.distillation else 0,
         rollout_engines=config.rollout.engines,
         tensor_parallel_size=config.rollout.tensor_parallel_size,
         data_parallel_ranks=learners // config.training.sequence_parallel_size,
