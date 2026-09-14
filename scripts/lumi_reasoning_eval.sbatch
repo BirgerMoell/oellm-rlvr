@@ -25,6 +25,7 @@ module purge
 : "${CONTAINER:=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif}"
 : "${PYTHON_BIN:=/scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python}"
 : "${HF_HOME:=/scratch/project_465002530/users/bmoell/hf_cache}"
+: "${OELLM_PATCH_VLLM_QWEN35_TEXT:=1}"
 : "${LIMIT:=}"
 : "${LIMIT_SEED:=20260905}"
 : "${SAMPLES_PER_PROMPT:=1}"
@@ -46,13 +47,15 @@ test -r "$DATASET"
 test -r "$CONTAINER"
 test -r "$CONTROL_ROOT/src/oellm_rlvr/reasoning_eval.py"
 export MODEL TAG DATASET RESULTS_ROOT CONTROL_ROOT TOKENIZER CONTAINER PYTHON_BIN HF_HOME
+export OELLM_PATCH_VLLM_QWEN35_TEXT
 export LIMIT LIMIT_SEED SAMPLES_PER_PROMPT TEMPERATURE TOP_P MAX_NEW_TOKENS MAX_MODEL_LEN BATCH_SIZE SEED
 export OUTPUT JOB_TMPDIR PYTHONPATH
 
 echo "model=$MODEL tokenizer=$TOKENIZER dataset=$DATASET tag=$TAG output=$OUTPUT"
 srun --label --gpu-bind=none --gpus-per-task=mi250:1 singularity exec \
   -B /pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd \
-  "$CONTAINER" env PYTHONPATH="$PYTHONPATH" HF_HOME="$HF_HOME" bash -c '
+  "$CONTAINER" env PYTHONPATH="$PYTHONPATH" HF_HOME="$HF_HOME" \
+    OELLM_PATCH_VLLM_QWEN35_TEXT="$OELLM_PATCH_VLLM_QWEN35_TEXT" bash -c '
     set -euo pipefail
     if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
       export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"

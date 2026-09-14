@@ -64,6 +64,12 @@ def test_prompt_think_channel_detection_requires_trailing_opener() -> None:
     assert not prompt_opens_think_channel("user mentioned <think> in the question")
 
 
+def test_lumi_reasoning_eval_enables_qwen35_text_compatibility() -> None:
+    script = (Path(__file__).parents[1] / "scripts/lumi_reasoning_eval.sbatch").read_text()
+    assert ': "${OELLM_PATCH_VLLM_QWEN35_TEXT:=1}"' in script
+    assert 'OELLM_PATCH_VLLM_QWEN35_TEXT="$OELLM_PATCH_VLLM_QWEN35_TEXT"' in script
+
+
 def test_reasoning_analysis_accepts_gsm8k_thousands_separators() -> None:
     result = analyze_reasoning_completion("The product is \\boxed{12,345}.", "12345")
     assert result["correct"]
