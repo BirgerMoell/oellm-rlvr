@@ -9,7 +9,7 @@ ROOT = Path(__file__).parents[1]
 def test_lumi_job_renders_ray_and_rocm_preflight() -> None:
     path = ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml"
     rendered = render_slurm(load_config(path), path)
-    assert "#SBATCH --gpus-per-node=8" in rendered
+    assert "#SBATCH --gpus-per-node=mi250:8" in rendered
     assert "singularity exec --rocm" not in rendered
     assert "singularity exec  -B" in rendered
     assert "scripts/ray_node.sh" in rendered
@@ -31,6 +31,8 @@ def test_lumi_job_renders_ray_and_rocm_preflight() -> None:
 def test_cuda_job_uses_nv_flag() -> None:
     path = ROOT / "configs/cuda-code-qwen35-2b-smoke.yaml"
     rendered = render_slurm(load_config(path), path)
+    assert "#SBATCH --gpus-per-node=8" in rendered
+    assert "#SBATCH --gpus-per-node=mi250:" not in rendered
     assert "singularity exec --nv" in rendered
     assert "HWLOC_COMPONENTS" not in rendered
 

@@ -7,7 +7,7 @@
 #SBATCH --account=project_465002530
 #SBATCH --partition=dev-g
 #SBATCH --nodes=1
-#SBATCH --gpus-per-node=2
+#SBATCH --gpus-per-node=mi250:2
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=120G

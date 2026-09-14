@@ -48,7 +48,7 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert "qualify-harbor-rollouts" in script
     assert "--min-bash-commands-per-trial 1" in script
     assert 'TASK_GLOB:=repo-repair-clamp' in script
-    assert "#SBATCH --gpus-per-node=2" in script
+    assert "#SBATCH --gpus-per-node=mi250:2" in script
     assert "#SBATCH --time=00:30:00" in script
     assert ': "${TOTAL_GPUS:=2}"' in script
     assert ': "${MAX_TOKENS_PER_TURN:=1024}"' in script
@@ -89,4 +89,4 @@ def test_agentic_training_runs_real_harbor_learner_and_strict_gate() -> None:
     assert 'TASK_GLOB:=function-scale-recipe' in script
     assert ': "${N_SAMPLES_PER_PROMPT:=8}"' in script
     assert ': "${TRAIN_STEPS:=2}"' in script
-    assert "#SBATCH --gpus-per-node=8" in script
+    assert "#SBATCH --gpus-per-node=mi250:8" in script

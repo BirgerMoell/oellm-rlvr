@@ -279,7 +279,7 @@ only when at least one repeated-prompt group contains mixed rewards.
 Only after the default canary passes, run all four repairs on the full node:
 
 ```bash
-sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
+sbatch --gpus-per-node=mi250:8 --cpus-per-task=56 --mem=480G \
   --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8,OELLM_HARBOR_DIRECT_SINGLE_ENGINE=0' \
   scripts/lumi_harbor_agentic_rollout.sbatch
 ```

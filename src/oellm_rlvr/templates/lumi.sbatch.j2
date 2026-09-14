@@ -5,7 +5,7 @@
 #SBATCH --partition={{ config.platform.partition }}
 {% if config.platform.qos %}#SBATCH --qos={{ config.platform.qos }}
 {% endif %}#SBATCH --nodes={{ config.platform.nodes }}
-#SBATCH --gpus-per-node={{ config.platform.gpus_per_node }}
+#SBATCH --gpus-per-node={% if config.platform.accelerator == "rocm" %}mi250:{% endif %}{{ config.platform.gpus_per_node }}
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task={{ config.platform.cpus_per_task }}
 {% if config.platform.memory %}#SBATCH --mem={{ config.platform.memory }}
