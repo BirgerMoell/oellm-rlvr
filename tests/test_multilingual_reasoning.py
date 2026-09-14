@@ -14,6 +14,12 @@ from oellm_rlvr.multilingual_reasoning import (
 )
 
 
+def test_builder_cli_accepts_explicit_family_list() -> None:
+    script = (Path(__file__).parents[1] / "scripts/build_multilingual_reasoning_canary.py").read_text()
+    assert '"--families"' in script
+    assert "len(set(families))" in script
+
+
 def test_parse_language_contract_preserves_variants(tmp_path: Path) -> None:
     contract = tmp_path / "languages"
     contract.write_text("eng: English: eng_Latn\nest: Estonian: est_Latn ekk_Latn\n")

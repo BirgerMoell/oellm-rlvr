@@ -27,13 +27,27 @@ def main() -> None:
         default="basic",
         help="select the deterministic verifier-backed reasoning curriculum",
     )
+    parser.add_argument(
+        "--families",
+        help=(
+            "optional comma-separated family override, for example "
+            "affine_mod_chain,weighted_checksum; takes precedence over --family-set"
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260914)
     args = parser.parse_args()
-    families = {
-        "basic": BASIC_FAMILIES,
-        "challenge": CHALLENGE_FAMILIES,
-        "all": BASIC_FAMILIES + CHALLENGE_FAMILIES,
-    }[args.family_set]
+    if args.families:
+        families = tuple(value.strip() for value in args.families.split(",") if value.strip())
+        if not families:
+            parser.error("--families must contain at least one family")
+        if len(set(families)) != len(families):
+            parser.error("--families must not contain duplicates")
+    else:
+        families = {
+            "basic": BASIC_FAMILIES,
+            "challenge": CHALLENGE_FAMILIES,
+            "all": BASIC_FAMILIES + CHALLENGE_FAMILIES,
+        }[args.family_set]
     manifest = build_multilingual_reasoning_canary(
         language_contract=args.language_contract,
         reference_traces=args.reference_traces,
