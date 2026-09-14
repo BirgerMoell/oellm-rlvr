@@ -92,6 +92,8 @@ records the first two nonzero-gradient optimizer steps from the EU-SFT checkpoin
 language-sampling, and truncation gaps that must be fixed before the reasoning stage is scaled.
 The [`EU-SFT-v2full` checkpoint record](docs/checkpoint-qwen35-9b-eu-sft-v2full.md) reconstructs the
 control model's lineage, SFT mixture, training schedule, LUMI allocation, and known limitations.
+The [multilingual reasoning qualification](docs/qualification-qwen35-eu-reasoning-2026-09-14.md)
+records the frozen parent profiles, language-gated reward, SFT bridge, and RL admission criteria.
 
 Bind any frozen incoming checkpoint to a validated reasoning, math, or code template without hand-editing its
 artifact paths:

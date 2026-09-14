@@ -18,8 +18,8 @@ backend:
   python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
   extra_args: [--save_filtered_rollouts]
 model:
-  name_or_path: birgermoell/Qwen3.5-9B-EU-SFT-v2full
-  local_path: /scratch/project_465002530/users/bmoell/qwen35-posttrain/output/qwen35-9b-eu-sft-v2full-bf16-textfix
+  name_or_path: qwen35-9b-eu-sft-v2full-multilingual-reasoning-bridge
+  local_path: /scratch/project_465002530/users/bmoell/qwen35-posttrain/output/qwen35-9b-eu-sft-v2full-multilingual-reasoning-bridge
   max_prompt_tokens: 512
   response_tokens: 2048
   per_turn_tokens: 2048
