@@ -90,6 +90,8 @@ contamination work.
 The [Qwen3.5-9B EU-SFT multilingual math qualification](docs/qualification-qwen35-eu-math-2026-09-14.md)
 records the first two nonzero-gradient optimizer steps from the EU-SFT checkpoint on LUMI, plus the think-tag,
 language-sampling, and truncation gaps that must be fixed before the reasoning stage is scaled.
+The [`EU-SFT-v2full` checkpoint record](docs/checkpoint-qwen35-9b-eu-sft-v2full.md) reconstructs the
+control model's lineage, SFT mixture, training schedule, LUMI allocation, and known limitations.
 
 Bind any frozen incoming checkpoint to a validated reasoning, math, or code template without hand-editing its
 artifact paths:
