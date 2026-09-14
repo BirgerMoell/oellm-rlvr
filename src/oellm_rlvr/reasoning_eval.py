@@ -152,7 +152,14 @@ def summarize_reasoning_predictions(records: list[dict[str, Any]]) -> dict[str, 
         for record in records
         if record["analysis"].get("response_tokens") is not None
     ]
-    return {
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        metadata = record.get("metadata") or {}
+        language = metadata.get("canonical_language") or metadata.get("language")
+        if language:
+            grouped[str(language)].append(record)
+
+    result = {
         "samples": len(records),
         "prompts": len(by_prompt),
         "samples_per_prompt": sorted({len(values) for values in by_prompt.values()}),
@@ -178,6 +185,25 @@ def summarize_reasoning_predictions(records: list[dict[str, Any]]) -> dict[str, 
         "length_stop_rate": fmean(bool(record["analysis"]["length_stopped"]) for record in records),
         "mean_response_tokens": fmean(response_token_values) if response_token_values else None,
     }
+    if grouped:
+        result["by_language"] = {
+            language: {
+                "samples": len(values),
+                "prompts": len({str(value["id"]) for value in values}),
+                "sample_accuracy": fmean(bool(value["analysis"]["correct"]) for value in values),
+                "reasoning_channel_format_rate": fmean(
+                    bool(value["analysis"].get("reasoning_channel_format_pass")) for value in values
+                ),
+                "length_stop_rate": fmean(bool(value["analysis"]["length_stopped"]) for value in values),
+                "mean_response_tokens": fmean(
+                    int(value["analysis"]["response_tokens"])
+                    for value in values
+                    if value["analysis"].get("response_tokens") is not None
+                ),
+            }
+            for language, values in sorted(grouped.items())
+        }
+    return result
 
 
 def _completed_keys(path: Path) -> set[tuple[str, int]]:
@@ -322,6 +348,17 @@ def run_reasoning_eval(
                         "prompt": row["messages"],
                         "text": generated.text,
                         "analysis": analysis,
+                        "metadata": {
+                            key: row[key]
+                            for key in (
+                                "language",
+                                "canonical_language",
+                                "canonical_variant",
+                                "subdomain",
+                                "difficulty",
+                            )
+                            if key in row
+                        },
                     }
                     sink.write(json.dumps(record, ensure_ascii=False) + "\n")
                     sink.flush()

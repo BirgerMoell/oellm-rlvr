@@ -65,6 +65,16 @@ def test_reasoning_summary_reports_sample_and_prompt_metrics() -> None:
     assert summary["think_tag_use_rate"] == 0.0
 
 
+def test_reasoning_summary_reports_canonical_language_slices() -> None:
+    english = _record("en-a", 0, "<think>1+1=2</think>\\boxed{2}", "2")
+    english["metadata"] = {"language": "en", "canonical_language": "eng"}
+    swedish = _record("sv-a", 0, "<think>1+1=3</think>\\boxed{3}", "2")
+    swedish["metadata"] = {"language": "sv", "canonical_language": "swe"}
+    summary = summarize_reasoning_predictions([english, swedish])
+    assert summary["by_language"]["eng"]["sample_accuracy"] == 1.0
+    assert summary["by_language"]["swe"]["sample_accuracy"] == 0.0
+
+
 def test_paired_comparison_and_blinded_audit(tmp_path: Path) -> None:
     before = _write(
         tmp_path / "before.jsonl",
