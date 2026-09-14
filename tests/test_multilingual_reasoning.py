@@ -8,6 +8,7 @@ import pytest
 
 from oellm_rlvr.datasets import write_rows
 from oellm_rlvr.multilingual_reasoning import (
+    CHALLENGE_FAMILIES,
     build_multilingual_reasoning_canary,
     parse_language_contract,
 )
@@ -70,3 +71,43 @@ def test_build_multilingual_reasoning_canary_is_balanced_and_disjoint(tmp_path: 
     assert manifest["language_contract"]["macro_languages"] == 2
     assert manifest["language_contract"]["internal_variants"] == 2
     assert json.loads((output / "manifest.json").read_text()) == manifest
+
+
+def test_build_challenge_canary_uses_harder_verified_families(tmp_path: Path) -> None:
+    contract = tmp_path / "languages"
+    contract.write_text("eng: English: eng_Latn\nkat: Georgian: kat_Geor\n")
+    reference = tmp_path / "reference.parquet"
+    write_rows(
+        [
+            {
+                "language": "de",
+                "messages": [
+                    {"role": "user", "content": "Löse die folgende Aufgabe.\n\n1 + 1"},
+                    {"role": "assistant", "content": "<think>1+1=2</think>\\boxed{2}"},
+                ],
+            }
+        ],
+        reference,
+    )
+    output = tmp_path / "challenge"
+
+    manifest = build_multilingual_reasoning_canary(
+        language_contract=contract,
+        reference_traces=reference,
+        output_dir=output,
+        contract_revision="abc123",
+        reference_revision="def456",
+        train_per_language=8,
+        eval_per_language=4,
+        profile_per_language=2,
+        families=CHALLENGE_FAMILIES,
+        seed=11,
+    )
+
+    train = pq.read_table(output / "train.parquet").to_pylist()
+    profile = pq.read_table(output / "profile.parquet").to_pylist()
+    assert len(profile) == 4
+    assert {row["generator_family"] for row in train} == set(CHALLENGE_FAMILIES)
+    assert all(row["difficulty"] >= 4 for row in train)
+    assert all(row["ground_truth"].lstrip("-").isdigit() for row in train)
+    assert manifest["profile_per_language"] == 2
