@@ -78,12 +78,18 @@ def _fraction_repeated_ngrams(text: str, n: int = 4) -> float:
     return 1.0 - len(set(grams)) / len(grams)
 
 
+def prompt_opens_think_channel(rendered_prompt: str) -> bool:
+    """Detect a reasoning-channel opener supplied by the native chat template."""
+    return bool(re.search(r"<think>\s*$", rendered_prompt, flags=re.IGNORECASE))
+
+
 def analyze_reasoning_completion(
     text: str,
     expected: str,
     *,
     finish_reason: str = "stop",
     response_tokens: int | None = None,
+    prompt_opens_think: bool = False,
 ) -> dict[str, Any]:
     """Score correctness and conservative, explicitly structural form checks.
 
@@ -96,15 +102,21 @@ def analyze_reasoning_completion(
     reasoning_prefix = text[:last_box_position] if last_box_position >= 0 else "\n".join(text.splitlines()[:-1])
     prefix_tokens = _TOKEN.findall(reasoning_prefix)
     repeated_fraction = _fraction_repeated_ngrams(text)
-    open_think = len(re.findall(r"<think>", text, flags=re.IGNORECASE))
-    close_think = len(re.findall(r"</think>", text, flags=re.IGNORECASE))
-    lower_text = text.casefold()
+    # Some native templates, including Qwen3.5's, place the opening <think>
+    # in the generation prompt. vLLM returns only newly generated tokens, so
+    # reason over the reconstructed assistant message while keeping `text`
+    # unchanged for answer extraction and audits.
+    channel_text = ("<think>\n" if prompt_opens_think else "") + text
+    channel_last_box_position = channel_text.rfind("\\boxed{")
+    open_think = len(re.findall(r"<think>", channel_text, flags=re.IGNORECASE))
+    close_think = len(re.findall(r"</think>", channel_text, flags=re.IGNORECASE))
+    lower_text = channel_text.casefold()
     open_think_position = lower_text.find("<think>")
     close_think_position = lower_text.find("</think>")
     reasoning_channel_format_pass = (
         open_think == 1
         and close_think == 1
-        and open_think_position < close_think_position < last_box_position
+        and open_think_position < close_think_position < channel_last_box_position
         and len(boxes) == 1
     )
     expected_normalized = _normalized_numeric(expected)
@@ -120,6 +132,7 @@ def analyze_reasoning_completion(
         "format_pass": len(boxes) == 1 and _equivalent_numeric(boxes[0], expected),
         "reasoning_structure_present": len(prefix_tokens) >= 8,
         "reasoning_prefix_tokens": len(prefix_tokens),
+        "prompt_opens_think": prompt_opens_think,
         "uses_think_tags": open_think > 0 or close_think > 0,
         "think_tags_balanced": open_think == close_think,
         "think_tag_pairs": min(open_think, close_think),
@@ -249,12 +262,28 @@ def run_reasoning_eval(
         if missing:
             raise ValueError(f"evaluation row {index} is missing columns: {sorted(missing)}")
 
+    # Imported lazily so dataset preparation, analysis, and unit tests remain
+    # usable on login nodes and developer machines without a GPU vLLM build.
+    from transformers import AutoTokenizer
+    from vllm import LLM, SamplingParams
+
+    tokenizer_source = tokenizer or model
+    hf_tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=True)
+    if not hf_tokenizer.chat_template:
+        raise ValueError(f"tokenizer {tokenizer_source} has no chat template")
+    template_digest = sha256(hf_tokenizer.chat_template.encode()).hexdigest()
+    template_probe = hf_tokenizer.apply_chat_template(
+        [{"role": "user", "content": "template-contract-probe"}],
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+
     output_path = Path(output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     dataset_digest = _sha256(dataset)
     selected_ids = "\n".join(str(row["id"]) for row in rows).encode()
     run_identity = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model": model,
         "tokenizer": tokenizer or model,
         "dataset": str(dataset),
@@ -269,6 +298,8 @@ def run_reasoning_eval(
         "max_model_len": max_model_len,
         "seed": seed,
         "chat_template": "native tokenizer template",
+        "chat_template_sha256": template_digest,
+        "generation_prompt_opens_think": prompt_opens_think_channel(template_probe),
     }
     run_path = output_path.with_suffix(".run.json")
     if run_path.exists():
@@ -287,15 +318,6 @@ def run_reasoning_eval(
         if summary_path.exists():
             return json.loads(summary_path.read_text())
 
-    # Imported lazily so dataset preparation, analysis, and unit tests remain
-    # usable on login nodes and developer machines without a GPU vLLM build.
-    from transformers import AutoTokenizer
-    from vllm import LLM, SamplingParams
-
-    tokenizer_source = tokenizer or model
-    hf_tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=True)
-    if not hf_tokenizer.chat_template:
-        raise ValueError(f"tokenizer {tokenizer_source} has no chat template")
     engine = LLM(
         model=model,
         tokenizer=tokenizer_source,
@@ -331,7 +353,7 @@ def run_reasoning_eval(
                 for row in pending
             ]
             generations = engine.generate(prompts, sampling, use_tqdm=True)
-            for row, request in zip(pending, generations, strict=True):
+            for row, rendered_prompt, request in zip(pending, prompts, generations, strict=True):
                 for sample_index, generated in enumerate(request.outputs):
                     key = (str(row["id"]), sample_index)
                     if key in completed:
@@ -341,6 +363,7 @@ def run_reasoning_eval(
                         str(row["ground_truth"]),
                         finish_reason=str(generated.finish_reason or "unknown"),
                         response_tokens=len(generated.token_ids),
+                        prompt_opens_think=prompt_opens_think_channel(rendered_prompt),
                     )
                     record = {
                         "id": key[0],
@@ -368,7 +391,7 @@ def run_reasoning_eval(
     if len(records) != expected_samples:
         raise ValueError(f"prediction file has {len(records)} rows; expected {expected_samples}")
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "diagnostic": limit is not None,
         "model": model,
         "tokenizer": tokenizer_source,
@@ -384,6 +407,8 @@ def run_reasoning_eval(
             "max_model_len": max_model_len,
             "seed": seed,
             "chat_template": "native tokenizer template",
+            "chat_template_sha256": template_digest,
+            "generation_prompt_opens_think": prompt_opens_think_channel(template_probe),
         },
         "metrics": summarize_reasoning_predictions(records),
         "predictions": str(output_path),

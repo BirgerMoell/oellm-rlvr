@@ -7,6 +7,7 @@ from oellm_rlvr.reasoning_eval import (
     analyze_reasoning_completion,
     build_blinded_reasoning_audit,
     compare_reasoning_evals,
+    prompt_opens_think_channel,
     summarize_reasoning_predictions,
 )
 
@@ -43,6 +44,24 @@ def test_reasoning_analysis_distinguishes_correctness_form_and_structure() -> No
     assert malformed["length_stopped"]
     assert channeled["reasoning_channel_format_pass"]
     assert not good["reasoning_channel_format_pass"]
+
+
+def test_reasoning_analysis_accounts_for_template_supplied_think_opener() -> None:
+    suffix = "Work through 12 + 7 carefully.</think>\n\\boxed{19}"
+    without_prompt_context = analyze_reasoning_completion(suffix, "19")
+    reconstructed = analyze_reasoning_completion(suffix, "19", prompt_opens_think=True)
+
+    assert not without_prompt_context["think_tags_balanced"]
+    assert not without_prompt_context["reasoning_channel_format_pass"]
+    assert reconstructed["think_tags_balanced"]
+    assert reconstructed["think_tag_pairs"] == 1
+    assert reconstructed["reasoning_channel_format_pass"]
+
+
+def test_prompt_think_channel_detection_requires_trailing_opener() -> None:
+    assert prompt_opens_think_channel("<|im_start|>assistant\n<think>\n")
+    assert not prompt_opens_think_channel("<think>done</think>\n")
+    assert not prompt_opens_think_channel("user mentioned <think> in the question")
 
 
 def test_reasoning_analysis_accepts_gsm8k_thousands_separators() -> None:
