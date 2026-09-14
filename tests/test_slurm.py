@@ -23,7 +23,7 @@ def test_lumi_job_renders_ray_and_rocm_preflight() -> None:
     assert "mkdir -p \"$JOB_TMPDIR\" \"$XDG_CACHE_HOME\"" in rendered
     assert 'export TMPDIR="$JOB_TMPDIR"' in rendered
     ray_launch = rendered.split("bash \"$CONTROL_ROOT/scripts/ray_node.sh\"", 1)[0].rsplit("srun --label", 1)[1]
-    assert '--gpus-per-task="$GPUS_PER_NODE"' in ray_launch
+    assert '--gpus-per-task=mi250:"$GPUS_PER_NODE"' in ray_launch
     assert "--ntasks-per-node=1" in ray_launch
     assert "--overlap" not in ray_launch
 
@@ -33,6 +33,7 @@ def test_cuda_job_uses_nv_flag() -> None:
     rendered = render_slurm(load_config(path), path)
     assert "#SBATCH --gpus-per-node=8" in rendered
     assert "#SBATCH --gpus-per-node=mi250:" not in rendered
+    assert '--gpus-per-task="$GPUS_PER_NODE"' in rendered
     assert "singularity exec --nv" in rendered
     assert "HWLOC_COMPONENTS" not in rendered
 

@@ -65,7 +65,7 @@ def test_agentic_rollout_uses_real_harbor_sandbox_and_rl_trace_gate() -> None:
     assert 'generator.n_samples_per_prompt="$N_SAMPLES_PER_PROMPT"' in script
     assert 'trainer.train_batch_size="$PROMPT_COUNT"' in script
     assert '--expected-gpus "$TOTAL_GPUS"' in script
-    assert '--gpus-per-task="$TOTAL_GPUS"' in script
+    assert '--gpus-per-task=mi250:"$TOTAL_GPUS"' in script
     assert '--expected-trials "$EXPECTED_TRIALS"' in script
     assert "srun --label --cpu-bind=none --gpu-bind=none" in script
 

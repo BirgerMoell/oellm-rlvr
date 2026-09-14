@@ -72,7 +72,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "[1/5] Per-node GPU and import checks"
-srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bind=none \
+srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=mi250:8 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV PYTHONPATH="$PYTHONPATH" bash -c '
     set -euo pipefail
     env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" "$PYTHON_BIN" \
@@ -94,7 +94,7 @@ singularity exec -B "$BIND" "$CONTAINER" env PYTHONPATH="$PYTHONPATH" "$PYTHON_B
 echo "[3/5] Two-node Ray resource and placement check"
 export RAY_TMPDIR="/tmp/oellm-ray-$SLURM_JOB_ID"
 export RAY_BIN="$(dirname "$PYTHON_BIN")/ray"
-srun --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bind=none \
+srun --overlap --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=mi250:8 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" env -u ROCR_VISIBLE_DEVICES \
   PYTHONPATH="$PYTHONPATH" RAY_TMPDIR="$RAY_TMPDIR" RAY_BIN="$RAY_BIN" \
   "$CONTROL_ROOT/scripts/ray_node.sh" "$HEAD_IP" "$RAY_PORT" 8 &
@@ -115,7 +115,7 @@ cleanup
 unset RAY_STEP_PID
 
 echo "[4/5] Cross-node RCCL plus local fan-out"
-srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bind=none \
+srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=mi250:8 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" env -u ROCR_VISIBLE_DEVICES \
   /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_hierarchical_weight_transfer.py" \
   --trainer-address "$TRAINER_IP" --relay-address "$HEAD_IP" --master-port "$TRANSFER_PORT" \
@@ -123,7 +123,7 @@ srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 --gpus-per-task=8 --gpu-bi
   | tee "$RESULTS_DIR/hierarchical-transfer.log"
 
 echo "[5/5] Offline BF16 load and one-prompt vLLM generation"
-srun --label --nodes=1 --ntasks=1 -w "$HEAD_NODE" --gpus-per-task=1 --gpu-bind=none \
+srun --label --nodes=1 --ntasks=1 -w "$HEAD_NODE" --gpus-per-task=mi250:1 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" env -u BASH_ENV PYTHONPATH="$PYTHONPATH" bash -c '
     set -euo pipefail
     if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then

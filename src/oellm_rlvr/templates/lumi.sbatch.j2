@@ -110,7 +110,7 @@ srun --label --gpu-bind=none singularity exec {{ accelerator_flag }} -B "$BIND" 
 # devices from a long-lived overlapping step, so make this the primary step
 # and request every GCD explicitly. The short control steps below use
 # --overlap and do not execute GPU work themselves.
-srun --label --gpu-bind=none --gpus-per-task="$GPUS_PER_NODE" \
+srun --label --gpu-bind=none --gpus-per-task={% if config.platform.accelerator == "rocm" %}mi250:{% endif %}"$GPUS_PER_NODE" \
   --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
   singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES PYTHONPATH="$PYTHONPATH" RAY_TMPDIR="$RAY_TMP" RAY_BIN="$RAY_BIN" \

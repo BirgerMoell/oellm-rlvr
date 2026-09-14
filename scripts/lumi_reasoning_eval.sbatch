@@ -50,7 +50,7 @@ export LIMIT LIMIT_SEED SAMPLES_PER_PROMPT TEMPERATURE TOP_P MAX_NEW_TOKENS MAX_
 export OUTPUT JOB_TMPDIR PYTHONPATH
 
 echo "model=$MODEL tokenizer=$TOKENIZER dataset=$DATASET tag=$TAG output=$OUTPUT"
-srun --label --gpu-bind=none --gpus-per-task=1 singularity exec \
+srun --label --gpu-bind=none --gpus-per-task=mi250:1 singularity exec \
   -B /pfs,/scratch,/flash,/project,/projappl,/appl,/opt/cray,/var/spool/slurmd \
   "$CONTAINER" env PYTHONPATH="$PYTHONPATH" HF_HOME="$HF_HOME" bash -c '
     set -euo pipefail

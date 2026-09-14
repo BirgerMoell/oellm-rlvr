@@ -40,7 +40,7 @@ echo "Hierarchical transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, relay=
 # LUMI can create an overlapping step without attaching the allocation's GPU
 # devices, even when the step requests the matching GRES count.
 srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 \
-  --gpus-per-task=8 --gpu-bind=none \
+  --gpus-per-task=mi250:8 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_hierarchical_weight_transfer.py" \
   --trainer-address "$TRAINER_IP" \

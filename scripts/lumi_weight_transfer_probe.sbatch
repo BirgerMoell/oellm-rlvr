@@ -43,7 +43,7 @@ echo "Native transfer probe: trainer=${TRAINER_NODE}/${TRAINER_IP}, workers=${PR
 # This is the only long-lived step in the probe. Avoid --overlap so LUMI
 # attaches the allocation's GPU devices to both node orchestrators.
 srun --label --nodes=2 --ntasks=2 --ntasks-per-node=1 \
-  --gpus-per-task=8 --gpu-bind=none \
+  --gpus-per-task=mi250:8 --gpu-bind=none \
   singularity exec -B "$BIND" "$CONTAINER" \
   env -u ROCR_VISIBLE_DEVICES /opt/venv/bin/python "$CONTROL_ROOT/scripts/probe_nccl_weight_transfer.py" \
   --master-address "$TRAINER_IP" \

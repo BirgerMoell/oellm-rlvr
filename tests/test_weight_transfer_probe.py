@@ -53,5 +53,5 @@ def test_child_environment_can_leave_all_allocated_gpus_visible(monkeypatch) -> 
 def test_lumi_step_requests_all_gpus_for_each_node_orchestrator() -> None:
     script = SBATCH.read_text()
     launch = script.split("srun --label --nodes=2", 1)[1]
-    assert "--gpus-per-task=8 --gpu-bind=none" in launch
+    assert "--gpus-per-task=mi250:8 --gpu-bind=none" in launch
     assert "--overlap" not in launch

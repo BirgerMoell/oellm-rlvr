@@ -74,7 +74,7 @@ export MIOPEN_USER_DB_PATH="$CACHE_ROOT/miopen" MIOPEN_CUSTOM_CACHE_DIR="$CACHE_
 export TMPDIR="$NODE_TMP" RAY_TMPDIR="$RAY_NODE_TMP" PYTHONPYCACHEPREFIX="$CACHE_ROOT/pycache"
 export HF_HOME="$CACHE_ROOT/hf" HF_DATASETS_CACHE="$CACHE_ROOT/hf/datasets"
 
-srun --label --gpu-bind=none --gpus-per-task=8 singularity exec -B "$BIND" "$CONTAINER" \
+srun --label --gpu-bind=none --gpus-per-task=mi250:8 singularity exec -B "$BIND" "$CONTAINER" \
   env -u BASH_ENV PYTHONPATH="$PYTHONPATH" bash -c '
   set -euo pipefail
   export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
