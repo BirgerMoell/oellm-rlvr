@@ -4,6 +4,7 @@ import importlib.abc
 import importlib.machinery
 import json
 import os
+import re
 import socket
 import sys
 import threading
@@ -408,6 +409,100 @@ def patch_math_equivalence_module(module: ModuleType) -> bool:
     bounded_is_equiv._oellm_thread_safe_math_equiv = True
     module.timeout = ThreadAwareTimeout
     module.is_equiv = bounded_is_equiv
+    return True
+
+
+def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
+    """Register a conjunctive exact-answer, language, and form verifier.
+
+    The project dataset carries a JSON label containing the ordinary math
+    answer and the requested ISO-639-1 language. A response earns one only if
+    every condition passes; language or formatting can never rescue an
+    incorrect answer.
+    """
+    if getattr(module, "_oellm_multilingual_math_verifier", False):
+        return False
+
+    from oellm_rlvr.language_audit import (
+        _build_detector,
+        _detect,
+        reasoning_prose,
+        target_language_matches,
+    )
+
+    class MultilingualMathVerifier(module.VerifierFunction):
+        _detector: Any = None
+        _detector_lock = threading.Lock()
+
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("multilingual_math", verifier_config=verifier_config, weight=1.0)
+            self.math_verifier = module.MathVerifier(verifier_config)
+
+        @classmethod
+        def detector(cls) -> Any:
+            if cls._detector is None:
+                with cls._detector_lock:
+                    if cls._detector is None:
+                        cls._detector = _build_detector()
+            return cls._detector
+
+        def __call__(
+            self,
+            tokenized_prediction: list[int],
+            prediction: str,
+            label: str,
+            query: str | None = None,
+            rollout_state: dict | None = None,
+        ) -> Any:
+            del query
+            try:
+                contract = json.loads(label)
+                answer = str(contract["answer"])
+                target = str(contract["target_language"])
+            except (KeyError, TypeError, json.JSONDecodeError):
+                return module.VerificationResult(score=0.0, reasoning="invalid multilingual math label")
+
+            math_result = self.math_verifier(
+                tokenized_prediction,
+                prediction,
+                answer,
+                rollout_state=rollout_state,
+            )
+            if float(math_result.score) != 1.0:
+                return module.VerificationResult(score=0.0, reasoning="incorrect answer")
+
+            boxes = list(re.finditer(r"\\boxed\{[^{}]+\}", prediction))
+            open_count = len(re.findall(r"<think>", prediction, flags=re.IGNORECASE))
+            closes = list(re.finditer(r"</think>", prediction, flags=re.IGNORECASE))
+            # Qwen3.5's native generation prompt supplies the opening tag, so
+            # the generated suffix normally contains only the close. Also
+            # accept a fully explicit pair for other compatible templates.
+            channel_ok = (
+                len(boxes) == 1
+                and len(closes) == 1
+                and closes[0].start() < boxes[0].start()
+                and open_count in {0, 1}
+            )
+            if not channel_ok:
+                return module.VerificationResult(score=0.0, reasoning="invalid think/box format")
+
+            prose = reasoning_prose(prediction)
+            detected, confidence = _detect(self.detector(), prose)
+            language_ok = target_language_matches(target, detected, confidence)
+            diagnostic = json.dumps(
+                {
+                    "target": target,
+                    "detected": detected,
+                    "confidence": confidence,
+                    "language_ok": language_ok,
+                },
+                sort_keys=True,
+            )
+            return module.VerificationResult(score=float(language_ok), reasoning=diagnostic)
+
+    MultilingualMathVerifier.__name__ = "MultilingualMathVerifier"
+    module.MultilingualMathVerifier = MultilingualMathVerifier
+    module._oellm_multilingual_math_verifier = True
     return True
 
 

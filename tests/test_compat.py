@@ -13,6 +13,7 @@ from oellm_rlvr.compat import (
     patch_math_equivalence_module,
     patch_open_instruct_grpo_module,
     patch_open_instruct_vllm_module,
+    patch_tmax_multilingual_math_verifier,
     patch_vllm_mamba_module,
     patch_vllm_qwen35_text_registry,
     patch_vllm_weight_transfer_factory,
@@ -308,6 +309,45 @@ def test_math_equivalence_timeout_is_safe_in_executor_thread() -> None:
     assert asyncio.run(asyncio.to_thread(module.is_equiv, "-73/20", "-73/20")) is True
     assert module.is_equiv("27", "27") is True
     assert module.is_equiv("x" * 513, "x" * 513) is False
+
+
+def test_multilingual_math_reward_is_conjunctive(monkeypatch) -> None:
+    class Result:
+        def __init__(self, score, reasoning=None):
+            self.score = score
+            self.reasoning = reasoning
+
+    class BaseVerifier:
+        def __init__(self, name, weight=1.0, verifier_config=None):
+            self.name = name
+            self.weight = weight
+            self.verifier_config = verifier_config
+
+    class MathVerifier(BaseVerifier):
+        def __init__(self, verifier_config=None):
+            super().__init__("math", verifier_config=verifier_config)
+
+        def __call__(self, _tokens, _prediction, label, **_kwargs):
+            return Result(float(label == "7"))
+
+    monkeypatch.setattr("oellm_rlvr.language_audit._build_detector", lambda: object())
+    monkeypatch.setattr("oellm_rlvr.language_audit._detect", lambda _detector, _text: ("sv", 0.99))
+    module = ModuleType("fake_ground_truth_utils")
+    module.VerifierFunction = BaseVerifier
+    module.MathVerifier = MathVerifier
+    module.VerificationResult = Result
+
+    assert patch_tmax_multilingual_math_verifier(module) is True
+    assert patch_tmax_multilingual_math_verifier(module) is False
+    verifier = module.MultilingualMathVerifier()
+    response = "Det här är en utförlig svensk förklaring.</think>\\boxed{7}"
+    label = json.dumps({"answer": "7", "target_language": "sv"})
+    assert verifier([], response, label).score == 1
+    wrong_answer = json.dumps({"answer": "8", "target_language": "sv"})
+    assert verifier([], response, wrong_answer).score == 0
+    wrong_language = json.dumps({"answer": "7", "target_language": "de"})
+    assert verifier([], response, wrong_language).score == 0
+    assert verifier([], "Det här saknar rätt format 7", label).score == 0
 
 
 def test_swerl_plain_apptainer_drops_prepared_kwargs() -> None:

@@ -36,6 +36,14 @@ if os.environ.get("OELLM_PATCH_MATH_EQUIV_THREADS") == "1":
         patch_math_equivalence_module,
     )
 
+if os.environ.get("OELLM_PATCH_TMAX_MULTILINGUAL_MATH") == "1":
+    from oellm_rlvr.compat import patch_tmax_multilingual_math_verifier
+
+    install_post_import_patch(
+        "open_instruct.ground_truth_utils",
+        patch_tmax_multilingual_math_verifier,
+    )
+
 if os.environ.get("OELLM_PATCH_HARBOR_VLLM_TOKENS") == "1":
     from oellm_rlvr.compat import patch_harbor_litellm_module
 

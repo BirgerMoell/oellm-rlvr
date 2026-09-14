@@ -35,6 +35,11 @@ def main() -> None:
         ),
     )
     parser.add_argument("--seed", type=int, default=20260914)
+    parser.add_argument(
+        "--language-gated-training",
+        action="store_true",
+        help="require answer, target language, and think/box form jointly in training reward labels",
+    )
     args = parser.parse_args()
     if args.families:
         families = tuple(value.strip() for value in args.families.split(",") if value.strip())
@@ -58,6 +63,7 @@ def main() -> None:
         eval_per_language=args.eval_per_language,
         profile_per_language=args.profile_per_language,
         families=families,
+        language_gated_training=args.language_gated_training,
         seed=args.seed,
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .datasets import write_rows
+from .language_audit import SUPPORTED_TARGET_LANGUAGES
 
 ISO639_3_TO_1 = {
     "bos": "bs",
@@ -431,6 +432,7 @@ def build_multilingual_reasoning_canary(
     eval_per_language: int = 4,
     profile_per_language: int = 1,
     families: tuple[str, ...] = BASIC_FAMILIES,
+    language_gated_training: bool = False,
     seed: int = 20260914,
 ) -> dict[str, Any]:
     """Build deterministic train/profile/eval pools over every macro-language."""
@@ -455,14 +457,31 @@ def build_multilingual_reasoning_canary(
     if missing:
         raise ValueError(f"no localized prompt header for canonical languages: {missing}")
 
+    training_targets = (
+        [target for target in targets if target.alpha2 in SUPPORTED_TARGET_LANGUAGES]
+        if language_gated_training
+        else targets
+    )
     train_rows = _build_rows(
-        targets,
+        training_targets,
         headers,
         count_per_language=train_per_language,
         seed=seed,
         split="train",
         families=families,
     )
+    if language_gated_training:
+        for row in train_rows:
+            row["ground_truth"] = json.dumps(
+                {
+                    "answer": row["canonical_answer"],
+                    "target_language": row["language"],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            row["dataset"] = "multilingual_math"
+            row["verifier_kind"] = "integer_exact_and_language_and_format"
     eval_rows = _build_rows(
         targets,
         headers,
@@ -515,6 +534,15 @@ def build_multilingual_reasoning_canary(
         },
         "format_contract": FORMAT_CONTRACT,
         "families": sorted({row["generator_family"] for row in train_rows}),
+        "training_reward_contract": (
+            "correct_answer AND target_language AND think_box_format"
+            if language_gated_training
+            else "correct_answer"
+        ),
+        "training_languages": sorted({row["canonical_language"] for row in train_rows}),
+        "training_languages_excluded_from_automatic_gate": sorted(
+            target.macro for target in targets if target not in training_targets
+        ),
         "profile_per_language": profile_per_language,
         "artifacts": {
             name: {

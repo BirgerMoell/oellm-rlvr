@@ -117,3 +117,42 @@ def test_build_challenge_canary_uses_harder_verified_families(tmp_path: Path) ->
     assert all(row["difficulty"] >= 4 for row in train)
     assert all(row["ground_truth"].lstrip("-").isdigit() for row in train)
     assert manifest["profile_per_language"] == 2
+
+
+def test_language_gated_training_uses_conjunctive_labels_and_keeps_full_eval(tmp_path: Path) -> None:
+    contract = tmp_path / "languages"
+    contract.write_text("eng: English: eng_Latn\nmlt: Maltese: mlt_Latn\n")
+    reference = tmp_path / "reference.parquet"
+    write_rows(
+        [
+            {
+                "language": "mt",
+                "messages": [
+                    {"role": "user", "content": "Issolvi din il-problema.\n\n1 + 1"},
+                    {"role": "assistant", "content": "<think>1+1=2</think>\\boxed{2}"},
+                ],
+            }
+        ],
+        reference,
+    )
+    output = tmp_path / "gated"
+
+    manifest = build_multilingual_reasoning_canary(
+        language_contract=contract,
+        reference_traces=reference,
+        output_dir=output,
+        contract_revision="abc123",
+        reference_revision="def456",
+        train_per_language=2,
+        eval_per_language=1,
+        language_gated_training=True,
+        seed=13,
+    )
+
+    train = pq.read_table(output / "train.parquet").to_pylist()
+    evaluation = pq.read_table(output / "evaluation.parquet").to_pylist()
+    assert {row["language"] for row in train} == {"en"}
+    assert {row["language"] for row in evaluation} == {"en", "mt"}
+    assert all(row["dataset"] == "multilingual_math" for row in train)
+    assert json.loads(train[0]["ground_truth"])["target_language"] == "en"
+    assert manifest["training_languages_excluded_from_automatic_gate"] == ["mlt"]

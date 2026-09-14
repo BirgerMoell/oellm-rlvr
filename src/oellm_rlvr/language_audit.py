@@ -51,6 +51,7 @@ _ACCEPTABLE_EQUIVALENTS = {
     "sr": {"bs", "hr", "sr"},
 }
 _LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
+SUPPORTED_TARGET_LANGUAGES = frozenset(_LINGUA_NAMES)
 
 
 def reasoning_prose(text: str) -> str:
@@ -84,6 +85,18 @@ def _detect(detector: Any, text: str) -> tuple[str | None, float | None]:
     return code, float(best.value)
 
 
+def target_language_matches(
+    target: str,
+    detected: str | None,
+    confidence: float | None,
+    *,
+    minimum_confidence: float = 0.55,
+) -> bool:
+    if detected is None or confidence is None:
+        return False
+    return detected in _ACCEPTABLE_EQUIVALENTS.get(target, {target}) and confidence >= minimum_confidence
+
+
 def audit_reasoning_languages(
     predictions: str | Path,
     output: str | Path,
@@ -111,7 +124,16 @@ def audit_reasoning_languages(
         detected, confidence = _detect(detector, prose) if supported and enough_text else (None, None)
         match = None
         if detected is not None and confidence is not None:
-            match = detected in _ACCEPTABLE_EQUIVALENTS.get(target, {target}) and confidence >= minimum_confidence
+            match = target_language_matches(
+                target,
+                detected,
+                confidence,
+                minimum_confidence=minimum_confidence,
+            )
+        analysis = record.get("analysis") or {}
+        answer_correct = bool(analysis.get("correct"))
+        format_ok = bool(analysis.get("reasoning_channel_format_pass"))
+        gated_reward = bool(answer_correct and format_ok and match) if match is not None else None
         results.append(
             {
                 "id": str(record.get("id")),
@@ -121,6 +143,9 @@ def audit_reasoning_languages(
                 "detected_language": detected,
                 "confidence": confidence,
                 "target_language_match": match,
+                "answer_correct": answer_correct,
+                "format_ok": format_ok,
+                "gated_reward": gated_reward,
                 "reasoning_excerpt": prose[:240],
             }
         )
@@ -140,9 +165,19 @@ def audit_reasoning_languages(
             "mean_confidence": (
                 fmean(float(value["confidence"]) for value in scored) if scored else None
             ),
+            "gated_reward_rate": (
+                fmean(bool(value["gated_reward"]) for value in scored) if scored else None
+            ),
         }
 
     scored_all = [value for value in results if value["target_language_match"] is not None]
+    by_prompt: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for value in scored_all:
+        by_prompt[value["id"]].append(value)
+    mixed_prompts = sum(
+        0 < sum(bool(value["gated_reward"]) for value in values) < len(values)
+        for values in by_prompt.values()
+    )
     report = {
         "schema_version": 1,
         "predictions": str(predictions),
@@ -155,6 +190,15 @@ def audit_reasoning_languages(
         ),
         "target_language_match_rate": (
             fmean(bool(value["target_language_match"]) for value in scored_all) if scored_all else None
+        ),
+        "gated_reward_rate": (
+            fmean(bool(value["gated_reward"]) for value in scored_all) if scored_all else None
+        ),
+        "scored_prompts": len(by_prompt),
+        "mixed_gated_reward_prompts": mixed_prompts,
+        "mixed_gated_reward_prompt_fraction": mixed_prompts / len(by_prompt) if by_prompt else None,
+        "zero_std_gated_reward_prompt_fraction": (
+            1.0 - mixed_prompts / len(by_prompt) if by_prompt else None
         ),
         "by_language": {
             language: summarize(values) for language, values in sorted(by_language.items())
