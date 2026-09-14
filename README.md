@@ -81,6 +81,16 @@ For the production-shaped checkpoint chain—reasoning, then math, then code, th
   --campaign campaigns/lumi-oellm9b-progressive-rl.yaml
 ```
 
+The [multilingual progressive RL programme](docs/openeurollm-multilingual-progressive-rl.md) extends that
+sequence to OpenEuroLLM's canonical 36 languages and 42 language/script variants. Its
+[source inventory](campaigns/openeurollm-multilingual-rl-sources.yaml) records which reasoning, math, code, and
+agentic inputs are already staged or qualified and which still require localization, verifier, license, or
+contamination work.
+
+The [Qwen3.5-9B EU-SFT multilingual math qualification](docs/qualification-qwen35-eu-math-2026-09-14.md)
+records the first two nonzero-gradient optimizer steps from the EU-SFT checkpoint on LUMI, plus the think-tag,
+language-sampling, and truncation gaps that must be fixed before the reasoning stage is scaled.
+
 Bind any frozen incoming checkpoint to a validated reasoning, math, or code template without hand-editing its
 artifact paths:
 

@@ -1,0 +1,124 @@
+version: 1
+audited_at: 2026-09-14
+target_languages:
+  source: https://github.com/OpenEuroLLM/training-data-catalogue/blob/main/languages
+  macro_languages: 36
+  internal_variants: 42
+  policy: Fetch and pin this file when a campaign is frozen; do not maintain an independent list.
+
+sources:
+  - id: openeurollm/Dolci-Think-SFT-translated
+    stage: reasoning_interface_sft
+    license: apache-2.0
+    coverage: 12 languages; 1,008,455 rows reported on 2026-09-14
+    lumi_status: not_staged_as_translated_release
+    disposition: candidate_after_native_review_and_answer_verification
+    notes: SFT traces with think tags, not an RLVR prompt source.
+
+  - id: openeurollm/reasoning-traces-multilingual
+    stage: reasoning_interface_sft
+    license: cc-by-4.0
+    coverage: 3,425 accepted translations; 99 semantic problems; 37 non-English labels
+    lumi_status: staged
+    lumi_path: /scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/raw/datasets/openeurollm--reasoning-traces-multilingual
+    disposition: pilot_only_pending_native_review_and_independent_solver_check
+
+  - id: openeurollm/Dolci-Think-SFT-7B-decontaminated
+    stage: reasoning_interface_sft
+    license: apache-2.0
+    coverage: English
+    lumi_status: staged
+    lumi_path: /scratch/project_465002530/users/bmoell/oellm-reasoning-training/artifacts/raw/datasets/openeurollm--Dolci-Think-SFT-7B-decontaminated
+    disposition: candidate_filtered_english_replay
+
+  - id: open-thought/reasoning-gym
+    stage: reasoning_rl
+    source: https://github.com/open-thought/reasoning-gym
+    license: apache-2.0
+    coverage: 100-plus procedural task families; primarily English upstream
+    lumi_status: adapter_present_in_harbor_v0.22.0
+    disposition: preferred_generator_after_pin_and_task_family_audit
+
+  - id: apple-aiml-research/ml-multilingual-reasoning-gym
+    stage: reasoning_rl
+    source: https://github.com/apple-aiml-research/ml-multilingual-reasoning-gym
+    license: verify_at_pin
+    coverage: 10-plus languages; 90-plus procedural task families
+    lumi_status: not_staged
+    disposition: candidate_translation_layer_not_full_oellm_coverage
+
+  - id: nvidia/Nemotron-RL-ReasoningGym-v1
+    stage: reasoning_rl
+    license: cc-by-4.0
+    coverage: English
+    lumi_status: not_staged
+    disposition: optional_reference_pool_after_decontamination
+
+  - id: birgermoell/oellm-math-rlvr
+    revision: 0ffc9d6dc82717c25733b3172f4dbd63e48bab68
+    stage: math_rl
+    license: apache-2.0
+    coverage: 1,000,000 rows; all 24 EU official languages; 10,000 aligned semantic groups
+    lumi_status: staged
+    lumi_path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/sources/oellm-math-rlvr-0ffc9d6c.parquet
+    disposition: ready_for_eu24_pilot_extend_to_canonical_36_42
+
+  - id: birgermoell/oellm-code-rlvr
+    revision: e1cae7711049e3b5ff021fb3e9c752424882998c
+    stage: code_rl
+    license: apache-2.0
+    coverage: 100,000 procedural Python tasks; English; 10-13 hidden tests per task
+    lumi_status: samples_only_full_release_not_staged
+    disposition: ready_after_lumi_staging_translation_and_test_reexecution
+
+  - id: nvidia/Nemotron-RL-coding-competitive_coding
+    stage: code_rl
+    license: cc-by-sa-4.0
+    coverage: 16,100 English rows reported by the Hub collection
+    lumi_status: not_staged
+    disposition: optional_separate_license_pool_after_contamination_and_verifier_audit
+
+  - id: nvidia/Nemotron-RL-Agentic-Function-Calling-Pivot-v1
+    stage: agentic_rl_phase_a
+    license: cc-by-4.0
+    coverage: 9,620 rows reported by the Hub dataset viewer
+    lumi_status: not_staged
+    disposition: candidate_after_harbor_adapter_oracle_and_localization
+
+  - id: nvidia/Nemotron-RL-Agentic-Conversational-Tool-Use-Pivot-v1
+    stage: agentic_rl_phase_b
+    license: verify_at_pin
+    coverage: 97,000 rows reported by the Hub collection
+    lumi_status: not_staged
+    disposition: candidate_after_environment_and_license_audit
+
+  - id: nvidia/Nemotron-RL-Agentic-SWE-Pivot-v1
+    stage: agentic_rl_phase_c
+    license: verify_at_pin
+    coverage: 33,800 rows reported by the Hub collection
+    lumi_status: not_staged
+    disposition: candidate_after_repo_decontamination_sif_and_oracle_audit
+
+  - id: skyrl_harbor_lumi
+    stage: agentic_runtime
+    source: https://github.com/novasky-ai/skyrl
+    companion_source: https://github.com/harbor-framework/harbor
+    qualified_evidence: Qwen3.5-9B Harbor rollouts and two SkyRL optimizer steps on LUMI
+    lumi_status: qualified_pinned_overlay
+    disposition: production_candidate_reprofile_for_each_checkpoint
+
+evaluation_only:
+  - openeurollm/ArenaHard-EU-v0
+  - openeurollm/eval_dashboard
+  - birgermoell/oellm-eu-eval-holdouts-v1
+  - disjoint_procedural_generator_template_and_seed_holdouts
+
+admission_requirements:
+  - immutable source and revision
+  - source-level license and attribution
+  - canonical language and script mapping
+  - semantic cluster and leakage-safe split
+  - deterministic verifier or oracle-tested environment
+  - eight-sample pass-rate profile from the entering checkpoint
+  - model-visible prompt contains no answer hidden test or verifier secret
+  - native review and independent solver checks for translated reasoning traces

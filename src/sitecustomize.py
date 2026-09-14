@@ -12,6 +12,14 @@ if os.environ.get("OELLM_PATCH_VLLM_MAMBA_ENUM") == "1":
         patch_vllm_mamba_module,
     )
 
+if os.environ.get("OELLM_PATCH_VLLM_QWEN35_TEXT") == "1":
+    from oellm_rlvr.compat import patch_vllm_qwen35_text_registry
+
+    install_post_import_patch(
+        "vllm.model_executor.models.registry",
+        patch_vllm_qwen35_text_registry,
+    )
+
 if os.environ.get("OELLM_PATCH_VLLM_WEIGHT_UPDATE") == "1":
     from oellm_rlvr.compat import patch_vllm_weight_module
 

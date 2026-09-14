@@ -14,6 +14,7 @@ from oellm_rlvr.compat import (
     patch_open_instruct_grpo_module,
     patch_open_instruct_vllm_module,
     patch_vllm_mamba_module,
+    patch_vllm_qwen35_text_registry,
     patch_vllm_weight_transfer_factory,
     replace_none_enum_value,
     wrap_async_weight_update,
@@ -62,6 +63,81 @@ def test_mamba_module_patch() -> None:
     module.MambaAttentionBackendEnum = FakeMambaEnum
     assert patch_vllm_mamba_module(module) is True
     assert FakeMambaEnum.CUSTOM.value == ""
+
+
+def test_qwen35_text_registry_patch_registers_native_causal_lm(monkeypatch) -> None:
+    class FakePositions:
+        def __init__(self, values):
+            self.values = list(values)
+            self.rows = 1
+
+        def unsqueeze(self, _dim):
+            return self
+
+        def expand(self, rows, _columns):
+            self.rows = rows
+            return self
+
+        def tolist(self):
+            return [self.values] * self.rows
+
+    fake_torch = SimpleNamespace(
+        long="long",
+        arange=lambda length, dtype: FakePositions(range(length)),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    class FakeQwen35:
+        pass
+
+    class FakeConditionalQwen35:
+        @classmethod
+        def get_mamba_state_dtype_from_config(cls, _config):
+            return "dtype"
+
+        @classmethod
+        def get_mamba_state_shape_from_config(cls, _config):
+            return "shape"
+
+        @classmethod
+        def get_mamba_state_copy_func(cls):
+            return "copy"
+
+    qwen_module = ModuleType("vllm.model_executor.models.qwen3_5")
+    qwen_module.Qwen3_5ForCausalLM = FakeQwen35
+    qwen_module.Qwen3_5ForConditionalGeneration = FakeConditionalQwen35
+
+    class FakeRegistry:
+        def __init__(self) -> None:
+            self.models = {}
+
+        def register_model(self, architecture: str, model: type) -> None:
+            self.models[architecture] = SimpleNamespace(model_cls=model)
+
+    module = ModuleType("fake_vllm_model_registry")
+    module.ModelRegistry = FakeRegistry()
+    original = sys.modules.get(qwen_module.__name__)
+    sys.modules[qwen_module.__name__] = qwen_module
+    try:
+        assert patch_vllm_qwen35_text_registry(module) is True
+        registered = module.ModelRegistry.models["Qwen3_5ForCausalLM"]
+        assert registered.model_cls is FakeQwen35
+        assert registered.model_cls.is_hybrid is True
+        assert registered.model_cls.get_mamba_state_dtype_from_config(None) == "dtype"
+        assert registered.model_cls.get_mamba_state_shape_from_config(None) == "shape"
+        assert registered.model_cls.get_mamba_state_copy_func() == "copy"
+        assert registered.model_cls.supports_mrope is True
+        positions, delta = registered.model_cls().get_mrope_input_positions(
+            [101, 102, 103], []
+        )
+        assert positions.tolist() == [[0, 1, 2], [0, 1, 2], [0, 1, 2]]
+        assert delta == 0
+        assert patch_vllm_qwen35_text_registry(module) is False
+    finally:
+        if original is None:
+            sys.modules.pop(qwen_module.__name__, None)
+        else:
+            sys.modules[qwen_module.__name__] = original
 
 
 def test_post_import_patch_is_lazy_and_one_shot(tmp_path, monkeypatch) -> None:

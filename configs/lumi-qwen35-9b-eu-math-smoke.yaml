@@ -1,0 +1,88 @@
+version: 1
+name: qwen35-9b-eu-math-smoke
+platform:
+  accelerator: rocm
+  nodes: 2
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: dev-g
+  walltime: 00:45:00
+  cpus_per_task: 56
+  memory: 480G
+  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  network_interface: hsn
+backend:
+  repo_path: /scratch/project_465002530/users/bmoell/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /scratch/project_465002530/users/bmoell/venvs/oellm-rlvr/bin/python
+  extra_args: [--save_filtered_rollouts]
+model:
+  name_or_path: birgermoell/Qwen3.5-9B-EU-SFT
+  local_path: /scratch/project_465002530/users/bmoell/qwen35-posttrain/output/qwen35-9b-sft-bf16-textfix
+  max_prompt_tokens: 1024
+  response_tokens: 1024
+  per_turn_tokens: 1024
+  pack_length: 2048
+datasets:
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/eu-math-qwen35-20260914/eu-math.parquet
+    weight: 0.8
+    split: train
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/eu-math-qwen35-20260914/english-replay.parquet
+    weight: 0.2
+    split: train
+task:
+  kind: math
+  max_steps: 1
+  pool_size: 32
+rollout:
+  engines: 8
+  tensor_parallel_size: 1
+  weight_transfer: hierarchical
+  unique_prompts: 8
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enable_prefix_caching: true
+  enforce_eager: false
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [8]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 128
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dppo
+  save_freq: 0
+  checkpoint_state_freq: 0
+  gradient_checkpointing: true
+  use_liger_loss: true
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/qwen35-9b-eu-math-smoke
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/qwen35-9b-eu-math-smoke
+  experiment_name: qwen35_9b_eu_math_smoke
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.8
+  max_truncation_fraction: 0.5
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/hf_cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
+  OELLM_PATCH_VLLM_MAMBA_ENUM: "1"
+  OELLM_PATCH_VLLM_QWEN35_TEXT: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  VLLM_NO_USAGE_STATS: "1"
+  NCCL_DEBUG: INFO
+  NCCL_DEBUG_SUBSYS: INIT,NET

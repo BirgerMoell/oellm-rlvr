@@ -47,6 +47,13 @@ class _PostImportLoader(importlib.abc.Loader):
             if self.finder in sys.meta_path:
                 sys.meta_path.remove(self.finder)
 
+    def get_code(self, fullname: str) -> Any:
+        """Preserve loaders used by ``python -m`` and vLLM inspectors."""
+        get_code = getattr(self.original, "get_code", None)
+        if get_code is None:
+            raise ImportError(f"loader for {fullname} does not provide get_code")
+        return get_code(fullname)
+
 
 class _PostImportFinder(importlib.abc.MetaPathFinder):
     def __init__(self, module_name: str, callback: ModulePatch) -> None:
@@ -93,6 +100,66 @@ def patch_vllm_mamba_enum() -> bool:
     # vLLM 0.22.1 defines five string values and CUSTOM=None. msgspec refuses
     # to decode any value of an enum with mixed string/None member types.
     return patch_vllm_mamba_module(registry)
+
+
+def patch_vllm_qwen35_text_registry(module: ModuleType) -> bool:
+    """Register vLLM's native text-only Qwen3.5 implementation.
+
+    The LUMI vLLM 0.22.1 build ships ``Qwen3_5ForCausalLM`` but omits it from
+    the model registry and omits its hybrid-cache and M-RoPE interfaces. Its
+    architecture fallback selects the multimodal conditional-generation class,
+    which expects ``vision_config``; registering the unmarked text class alone
+    then leaves ``mamba_block_size`` unset during KV-cache construction.
+    """
+    registry = module.ModelRegistry
+    qwen_module = importlib.import_module("vllm.model_executor.models.qwen3_5")
+    model_type = qwen_module.Qwen3_5ForCausalLM
+    conditional_type = qwen_module.Qwen3_5ForConditionalGeneration
+
+    # vLLM 0.22.1 also omits the IsHybrid marker and GDN state helpers from
+    # its text-only class.  Without them VllmConfig skips
+    # HybridAttentionMambaModelConfig, leaving mamba_block_size unset and
+    # aborting KV-cache construction after all weights have loaded.  The
+    # conditional class implements the same text backbone and already carries
+    # the correct helpers, so copy only that interface onto the native text
+    # class while preserving its class name and text-only weight loader.
+    model_type.is_hybrid = True
+    for method_name in (
+        "get_mamba_state_dtype_from_config",
+        "get_mamba_state_shape_from_config",
+        "get_mamba_state_copy_func",
+    ):
+        if method_name not in model_type.__dict__:
+            setattr(model_type, method_name, conditional_type.__dict__[method_name])
+
+    # The Qwen3.5 text config still uses M-RoPE.  Text tokens do not require
+    # the multimodal class' image/video grid logic: upstream vLLM implements
+    # the text-only path by broadcasting the ordinary positions over T/H/W.
+    # Backport that exact behavior instead of copying a method that expects
+    # ``vision_config`` from the conditional-generation class.
+    model_type.supports_mrope = True
+    if "get_mrope_input_positions" not in model_type.__dict__:
+
+        def get_mrope_input_positions(
+            self: Any,
+            input_tokens: list[int],
+            mm_features: list[object],
+        ) -> tuple[Any, int]:
+            del self, mm_features
+            import torch
+
+            positions = torch.arange(len(input_tokens), dtype=torch.long)
+            return positions.unsqueeze(0).expand(3, -1), 0
+
+        model_type.get_mrope_input_positions = get_mrope_input_positions
+
+    existing = registry.models.get("Qwen3_5ForCausalLM")
+    if existing is not None and getattr(existing, "model_cls", None) is model_type:
+        return False
+    # Register the concrete class so vLLM does not invoke its lazy model-info
+    # inspector in a subprocess before the compute actor has initialized.
+    registry.register_model("Qwen3_5ForCausalLM", model_type)
+    return True
 
 
 def wrap_async_weight_update(async_llm_type: type[Any]) -> bool:

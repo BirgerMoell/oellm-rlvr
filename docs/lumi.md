@@ -32,6 +32,9 @@ The hooks run only when the relevant vLLM module is imported, so Ray's generic p
 
 - `OELLM_PATCH_VLLM_MAMBA_ENUM=1` normalizes the unused `CUSTOM=None` Mamba backend enum value that
   vLLM's own `msgspec` IPC decoder rejects for Qwen3.5.
+- `OELLM_PATCH_VLLM_QWEN35_TEXT=1` registers vLLM's shipped native `Qwen3_5ForCausalLM` class and restores
+  its hybrid GDN state-cache interface. The LUMI vLLM 0.22.1 build otherwise falls back to the multimodal
+  class or constructs the text model's KV cache without a Mamba block size.
 - `OELLM_PATCH_VLLM_WEIGHT_UPDATE=1` wraps TMAX's packed update in the `start_weight_update` /
   `finish_weight_update` transaction newly required by vLLM 0.22.1.
 - `OELLM_PATCH_RAY_ROCM_VISIBILITY=1` copies Ray's actor-specific `HIP_VISIBLE_DEVICES` assignment to
