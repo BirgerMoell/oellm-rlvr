@@ -30,6 +30,14 @@ def test_math_smoke_is_bounded_and_keeps_online_weight_updates() -> None:
     assert "--tools" not in argv
 
 
+def test_dapo_smoke_maps_current_tmax_loss() -> None:
+    config = load_config(ROOT / "configs/lumi-grpo-dapo-oellm9b-instruct-sft-smoke.yaml")
+    argv = build_backend_argv(config)
+
+    assert _value(argv, "--loss_fn") == "dapo"
+    assert _value(argv, "--dataset_mixer_list").endswith("/train.parquet")
+
+
 def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)

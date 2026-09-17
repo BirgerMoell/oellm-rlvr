@@ -243,7 +243,9 @@ class TrainingConfig(StrictModel):
     total_episodes: int = Field(default=1024, ge=1)
     epochs: int = Field(default=1, ge=1)
     deepspeed_stage: Literal[2, 3] = 3
-    loss: Literal["grpo", "dppo"] = "dppo"
+    # TMAX/Open-Instruct exposes the online-policy objectives below. ``grpo``
+    # remains valid for older TMAX profiles and the colocated verl adapter.
+    loss: Literal["grpo", "dapo", "cispo", "dppo", "tvpo"] = "dppo"
     dppo_divergence_type: Literal["tv", "kl", "js"] = "tv"
     dppo_divergence_threshold: float = Field(default=0.1, gt=0)
     beta: float = Field(default=0.0, ge=0)

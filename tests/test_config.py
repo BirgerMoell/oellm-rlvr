@@ -25,6 +25,7 @@ ROOT = Path(__file__).parents[1]
         ("cuda-code-qwen35-2b-smoke.yaml", 0),
         ("cuda-opd-qwen35-2b-contract-smoke.yaml", 0),
         ("lumi-opd-qwen35-2b-contract-smoke.yaml", 0),
+        ("lumi-grpo-dapo-oellm9b-instruct-sft-smoke.yaml", 0),
     ],
 )
 def test_example_profiles_validate(name: str, expected_spare_gpus: int) -> None:
@@ -32,6 +33,15 @@ def test_example_profiles_validate(name: str, expected_spare_gpus: int) -> None:
     topology = build_topology(config)
     assert topology.spare_gpus == expected_spare_gpus
     assert topology.samples_per_step >= topology.data_parallel_ranks
+
+
+def test_dapo_smoke_uses_current_tmax_loss_and_shared_dataset() -> None:
+    config = load_config(ROOT / "configs/lumi-grpo-dapo-oellm9b-instruct-sft-smoke.yaml")
+
+    assert config.training.loss == "dapo"
+    assert config.datasets[0].path.startswith(
+        "/scratch/project_465002530/training/collection/post-training/2026q3/"
+    )
 
 
 def test_oversubscribed_profile_is_rejected() -> None:

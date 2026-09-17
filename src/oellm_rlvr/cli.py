@@ -19,6 +19,7 @@ from .datasets import (
     make_math_calibration,
     make_math_smoke,
     pack_code_dataset,
+    prepare_dapo_math_dataset,
     prepare_gsm8k_dataset,
     sample_code_dataset,
     sample_math_dataset,
@@ -213,6 +214,21 @@ def command_prepare_gsm8k(args: argparse.Namespace) -> int:
             prompt_style=args.prompt_style,
             calibration_count=args.calibration_count,
             calibration_seed=args.calibration_seed,
+        )
+    )
+    return 0
+
+
+def command_prepare_dapo_math(args: argparse.Namespace) -> int:
+    _json(
+        prepare_dapo_math_dataset(
+            args.source,
+            args.output_dir,
+            revision=args.revision,
+            configuration=args.configuration,
+            calibration_count=args.calibration_count,
+            evaluation_count=args.evaluation_count,
+            split_seed=args.split_seed,
         )
     )
     return 0
@@ -531,6 +547,16 @@ def build_parser() -> argparse.ArgumentParser:
     gsm8k.add_argument("--calibration-count", type=int, default=64)
     gsm8k.add_argument("--calibration-seed", type=int, default=20260905)
     gsm8k.set_defaults(handler=command_prepare_gsm8k)
+
+    dapo = sub.add_parser("prepare-dapo-math", help="convert DAPO-Math-17k to disjoint prompt-only RLVR splits")
+    dapo.add_argument("--source", required=True, help="revision-pinned processed DAPO parquet")
+    dapo.add_argument("--output-dir", required=True)
+    dapo.add_argument("--revision", required=True, help="immutable Hugging Face dataset commit")
+    dapo.add_argument("--configuration", default="en", help="source configuration recorded in the manifest")
+    dapo.add_argument("--calibration-count", type=int, default=256)
+    dapo.add_argument("--evaluation-count", type=int, default=1024)
+    dapo.add_argument("--split-seed", type=int, default=20260916)
+    dapo.set_defaults(handler=command_prepare_dapo_math)
 
     reasoning_eval = sub.add_parser("eval-reasoning", help="run resumable vLLM math-reasoning evaluation")
     reasoning_eval.add_argument("--model", required=True, help="immutable local Hugging Face checkpoint")

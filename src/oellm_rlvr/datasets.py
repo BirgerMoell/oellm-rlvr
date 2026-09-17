@@ -74,6 +74,12 @@ GSM8K_PROMPTS = {
     ),
 }
 
+DAPO_MATH_PROMPT = (
+    "Solve the following math problem. Work through it carefully inside exactly one <think>...</think> block. "
+    "After </think>, output exactly one final line of the form \\boxed{answer}, with no other text. Put only the "
+    "final answer in the box.\n\n{problem}"
+)
+
 
 def _sha256(path: str | Path) -> str:
     digest = sha256()
@@ -236,6 +242,131 @@ def prepare_gsm8k_dataset(
     }
     manifest_path = destination / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    return manifest
+
+
+def prepare_dapo_math_dataset(
+    source: str | Path,
+    output_dir: str | Path,
+    *,
+    revision: str,
+    configuration: str = "en",
+    calibration_count: int = 256,
+    evaluation_count: int = 1024,
+    split_seed: int = 20260916,
+) -> dict[str, object]:
+    """Convert deduplicated DAPO math rows into prompt-only RLVR artifacts.
+
+    Published solution/source-prompt fields are deliberately excluded.  The
+    learner sees only a normalized user prompt, while the deterministic math
+    verifier receives the published ground truth in a separate column.
+    """
+    if not revision.strip():
+        raise ValueError("revision must be a non-empty immutable dataset revision")
+    if not configuration.strip():
+        raise ValueError("configuration must be non-empty")
+    if calibration_count < 0 or evaluation_count < 0:
+        raise ValueError("split counts must be non-negative")
+
+    source = Path(source)
+    raw_rows = _read_parquet_rows(source)
+    converted: list[dict[str, object]] = []
+    prompt_groups: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    ids: set[str] = set()
+    for index, row in enumerate(raw_rows):
+        problem = row.get("prompt")
+        reward_model = row.get("reward_model")
+        extra_info = row.get("extra_info")
+        if not isinstance(problem, str) or not problem.strip():
+            raise ValueError(f"DAPO row {index} has an empty prompt")
+        if not isinstance(reward_model, dict) or not str(reward_model.get("ground_truth", "")).strip():
+            raise ValueError(f"DAPO row {index} has no reward_model.ground_truth")
+        source_id = extra_info.get("index") if isinstance(extra_info, dict) else None
+        task_id = str(source_id or f"row-{index:05d}")
+        if task_id in ids:
+            raise ValueError(f"duplicate DAPO id: {task_id}")
+        prompt_key = " ".join(problem.split()).casefold()
+        ids.add(task_id)
+        prompt_groups.setdefault(prompt_key, []).append((index, row))
+
+    same_answer_duplicate_rows_dropped = 0
+    conflicting_prompt_groups_dropped = 0
+    conflicting_rows_dropped = 0
+    for group in prompt_groups.values():
+        ground_truths = {str(row["reward_model"]["ground_truth"]).strip() for _, row in group}
+        if len(ground_truths) != 1:
+            conflicting_prompt_groups_dropped += 1
+            conflicting_rows_dropped += len(group)
+            continue
+        same_answer_duplicate_rows_dropped += len(group) - 1
+        index, row = group[0]
+        problem = str(row["prompt"])
+        reward_model = row["reward_model"]
+        extra_info = row.get("extra_info")
+        source_id = extra_info.get("index") if isinstance(extra_info, dict) else None
+        task_id = str(source_id or f"row-{index:05d}")
+        converted.append(
+            {
+                "id": task_id,
+                "messages": [{"role": "user", "content": DAPO_MATH_PROMPT.replace("{problem}", problem.strip())}],
+                "ground_truth": str(reward_model["ground_truth"]).strip(),
+                "dataset": "math",
+                "verifier_kind": str(reward_model.get("style") or "rule-lighteval/MATH_v2"),
+                "semantic_group_id": task_id,
+                "ability": str(row.get("ability") or "MATH"),
+                "oellm_source_dataset": "open-r1/DAPO-Math-17k-Processed",
+                "oellm_source_revision": revision,
+                "oellm_source_configuration": configuration,
+            }
+        )
+
+    held_out = calibration_count + evaluation_count
+    if held_out >= len(converted):
+        raise ValueError(f"requested {held_out} held-out rows from only {len(converted)} DAPO rows")
+    random.Random(split_seed).shuffle(converted)
+    calibration_rows = converted[:calibration_count]
+    evaluation_rows = converted[calibration_count:held_out]
+    train_rows = converted[held_out:]
+
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    outputs = {
+        "train": (destination / "train.parquet", train_rows),
+        "calibration": (destination / "calibration.parquet", calibration_rows),
+        "evaluation": (destination / "evaluation.parquet", evaluation_rows),
+    }
+    for path, rows in outputs.values():
+        write_rows(rows, path)
+
+    split_ids = {name: {str(row["id"]) for row in rows} for name, (_, rows) in outputs.items()}
+    overlap = (
+        (split_ids["train"] & split_ids["calibration"])
+        | (split_ids["train"] & split_ids["evaluation"])
+        | (split_ids["calibration"] & split_ids["evaluation"])
+    )
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "dataset": "open-r1/DAPO-Math-17k-Processed",
+        "revision": revision,
+        "configuration": configuration,
+        "source": str(source),
+        "source_sha256": _sha256(source),
+        "split_seed": split_seed,
+        "prompt_protocol": DAPO_MATH_PROMPT,
+        "source_rows": len(raw_rows),
+        "unique_normalized_prompt_groups": len(prompt_groups),
+        "same_answer_duplicate_rows_dropped": same_answer_duplicate_rows_dropped,
+        "conflicting_prompt_groups_dropped": conflicting_prompt_groups_dropped,
+        "conflicting_rows_dropped": conflicting_rows_dropped,
+        "rows_after_qa": len(converted),
+        "published_solution_fields_in_outputs": False,
+        "split_id_overlap": len(overlap),
+        "splits": {
+            name: {"rows": len(rows), "output": str(path), "output_sha256": _sha256(path)}
+            for name, (path, rows) in outputs.items()
+        },
+    }
+    (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
 
 

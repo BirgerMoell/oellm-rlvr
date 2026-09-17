@@ -8,6 +8,7 @@ from oellm_rlvr.datasets import (
     make_math_calibration,
     make_math_smoke,
     pack_code_dataset,
+    prepare_dapo_math_dataset,
     prepare_gsm8k_dataset,
     sample_code_dataset,
     sample_math_dataset,
@@ -78,6 +79,79 @@ def test_prepare_gsm8k_separates_train_from_reference_eval(tmp_path: Path) -> No
     assert manifest["train"]["rows"] == 1
     assert manifest["evaluation_protocol"]["calibration"]["rows"] == 0
     assert manifest["evaluation_protocol"]["primary"]["rows"] == 1
+
+
+def test_prepare_dapo_math_creates_prompt_only_disjoint_splits(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "dapo.parquet"
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "prompt": f"Compute {index} + 1.",
+                    "solution": f"published trace {index}",
+                    "ability": "MATH",
+                    "reward_model": {"ground_truth": str(index + 1), "style": "rule-lighteval/MATH_v2"},
+                    "extra_info": {"index": f"dapo-{index}"},
+                }
+                for index in range(8)
+            ]
+        ),
+        source,
+    )
+
+    manifest = prepare_dapo_math_dataset(
+        source,
+        tmp_path / "prepared",
+        revision="deadbeef",
+        calibration_count=2,
+        evaluation_count=2,
+        split_seed=7,
+    )
+    splits = {
+        name: pq.read_table(tmp_path / "prepared" / f"{name}.parquet").to_pylist()
+        for name in ("train", "calibration", "evaluation")
+    }
+    assert {name: len(rows) for name, rows in splits.items()} == {"train": 4, "calibration": 2, "evaluation": 2}
+    assert manifest["split_id_overlap"] == 0
+    assert manifest["published_solution_fields_in_outputs"] is False
+    assert all("solution" not in row and "source_prompt" not in row for rows in splits.values() for row in rows)
+    assert all(row["dataset"] == "math" for rows in splits.values() for row in rows)
+    assert all("\\boxed{answer}" in row["messages"][0]["content"] for rows in splits.values() for row in rows)
+
+
+def test_prepare_dapo_math_collapses_agreement_and_drops_conflicts(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "dapo.parquet"
+    rows = []
+    for index, (prompt, answer) in enumerate(
+        (("Same prompt", "1"), (" Same   prompt ", "1"), ("Conflict", "2"), ("Conflict", "3"), ("Unique", "4"))
+    ):
+        rows.append(
+            {
+                "prompt": prompt,
+                "reward_model": {"ground_truth": answer, "style": "rule-lighteval/MATH_v2"},
+                "extra_info": {"index": f"dapo-{index}"},
+            }
+        )
+    pq.write_table(pa.Table.from_pylist(rows), source)
+
+    manifest = prepare_dapo_math_dataset(
+        source,
+        tmp_path / "prepared",
+        revision="deadbeef",
+        calibration_count=0,
+        evaluation_count=0,
+    )
+    train = pq.read_table(tmp_path / "prepared/train.parquet").to_pylist()
+    assert len(train) == 2
+    assert manifest["same_answer_duplicate_rows_dropped"] == 1
+    assert manifest["conflicting_prompt_groups_dropped"] == 1
+    assert manifest["conflicting_rows_dropped"] == 2
 
 
 def test_prepare_gsm8k_excludes_calibration_rows_from_primary_eval(tmp_path: Path) -> None:
