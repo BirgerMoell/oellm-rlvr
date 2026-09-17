@@ -54,6 +54,34 @@ coverage floor and must never be oversampled as if it were a broad reasoning cor
    canary. Treat sandbox launch failures as infrastructure errors rather than reward zero. Code RLVR follows,
    rather than substitutes for, the English reasoning gate.
 
+## Reuse the reasoning-v1 recipe, not its checkpoint
+
+`birgermoell/oellm-9b-256k-reasoning-v1@e74926a1` is not a candidate parent for this campaign. It continues an
+older SFT lineage and did not pass its retention gates. Its useful contribution is the reproducible training
+recipe and the failure evidence: a large synthetic-reasoning continuation can teach visible traces, but 2.086
+billion packed tokens with only 14.89% exact prior-SFT replay still regressed English GSM8K, IFEval, and MMLU
+computer science and produced language switching and reasoning loops.
+
+If the direct-RL profile triggers the conditional SFT bridge, reuse these mechanics from that recipe:
+
+- full-parameter, assistant-only SFT on structured conversations, with prompt/user tokens masked from loss;
+- render before packing, keep only complete 64--16,384-token conversations, and never truncate an answer;
+- language-scoped normalized-prompt deduplication, with specialized verified sources claiming duplicates before
+  broad synthetic pools;
+- a pinned, globally shuffled, token-budgeted mixture with immutable per-source manifests and a recorded seed;
+- verified math, code, and STEM reasoning plus multilingual traces and general-instruction replay, rather than
+  training only on translated traces;
+- BF16, FSDP, gradient checkpointing, FlashAttention 2, AdamW with zero weight decay, and a short cosine schedule
+  with 3% warmup as the implementation starting point.
+
+Do not copy the original scale or mixture weights. Begin with a 32-update recipe-validation run, evaluate its
+checkpoint, and cap the first real bridge at 128 updates (about 134 million packed tokens at global sequence
+batch 64 and length 16,384). Increase the general-instruction replay share substantially above 14.89%, cap each
+multilingual pilot row at one exposure, and checkpoint every 32 updates. Promote only the earliest checkpoint
+that establishes balanced non-empty reasoning while passing the same reasoning, instruction-following,
+multilingual, repetition, and long-context gates used for RL. Then repeat the frozen parent profile and return
+to verifier-driven DAPO; SFT teaches the reasoning interface, while RLVR supplies the correctness signal.
+
 ## Checked-in LUMI jobs
 
 - `configs/lumi-grpo-dapo-oellm9b-instruct-sft-smoke.yaml`: two-update, 128-trajectory smoke on two LUMI-G
@@ -61,7 +89,7 @@ coverage floor and must never be oversampled as if it were a broad reasoning cor
 - `configs/lumi-grpo-dapo-oellm9b-instruct-sft-32step.yaml`: 32-update English reasoning canary with active
   sampling, 2,048-token responses, resumable state, and full exports at steps 16 and 32.
 
-Both jobs use the pinned TMAX/Open-Instruct backend at
+Both checked-in jobs use the pinned TMAX/Open-Instruct backend at
 `3f80d37042402b8363f39c9535723b0d4cb8de54`, the LUMI ROCm 7 container, eight learner GCDs, and eight TP=1
 vLLM rollout GCDs. The 32-update canary has a 64 GCD-hour reservation ceiling; the measured 1,024-token
 reference run used 9.30 GCD-hours, so 2,048-token responses should be re-estimated from the smoke rather than
