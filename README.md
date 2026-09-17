@@ -87,6 +87,11 @@ sequence to OpenEuroLLM's canonical 36 languages and 43 language/script variants
 agentic inputs are already staged or qualified and which still require localization, verifier, license, or
 contamination work.
 
+For the Neonkraft OpenEuroLLM 9B instruct-SFT checkpoint, use the
+[reasoning RL plan](docs/oellm9b-instruct-reasoning-rl-plan.md). It makes English verifier-backed reasoning the
+first promotion gate, keeps the multilingual reasoning traces as a bounded interface bridge, and schedules
+multilingual and code RLVR only after the English reasoning canary passes.
+
 The [Qwen3.5-9B EU-SFT multilingual math qualification](docs/qualification-qwen35-eu-math-2026-09-14.md)
 records the first two nonzero-gradient optimizer steps from the EU-SFT checkpoint on LUMI, plus the think-tag,
 language-sampling, and truncation gaps that must be fixed before the reasoning stage is scaled.
