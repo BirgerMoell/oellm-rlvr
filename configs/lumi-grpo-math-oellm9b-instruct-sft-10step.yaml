@@ -1,0 +1,86 @@
+version: 1
+name: grpo-math-oellm9b-instruct-sft-10step
+platform:
+  accelerator: rocm
+  nodes: 2
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: standard-g
+  walltime: 02:00:00
+  cpus_per_task: 56
+  memory: 480G
+  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  network_interface: hsn
+backend:
+  repo_path: /project/project_465002530/users/bmoell/oellm-rlvr-runtime/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /project/project_465002530/users/bmoell/oellm-rlvr-runtime/venv/bin/python
+  extra_args: [--save_filtered_rollouts]
+model:
+  name_or_path: Neonkraft/oellm-9b-256k-theta64m-prelude-anneal300b-instruct-sft
+  local_path: /scratch/project_465002530/users/bmoell/helpsteer3-dpo/artifacts/model
+  revision: 85bf18fb4f0bee6ac6270f06b1d1c6b3be200f31
+  max_prompt_tokens: 1024
+  response_tokens: 2048
+  per_turn_tokens: 2048
+  pack_length: 3072
+datasets:
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/math-pilot-en-d1-3-seed20260904-n256.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: math
+  max_steps: 1
+  pool_size: 64
+rollout:
+  engines: 8
+  tensor_parallel_size: 1
+  weight_transfer: hierarchical
+  unique_prompts: 8
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enable_prefix_caching: true
+  enforce_eager: false
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [8]
+  sequence_parallel_size: 1
+  learning_rate: 5.0e-7
+  total_episodes: 640
+  epochs: 1
+  deepspeed_stage: 3
+  loss: grpo
+  beta: 0.0
+  save_freq: 5
+  checkpoint_state_freq: 5
+  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-instruct-10step-state
+  gradient_checkpointing: true
+  use_liger_loss: true
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-instruct-10step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-instruct-10step
+  experiment_name: lumi_grpo_math_oellm9b_instruct_sft_10step
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.35
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/oellm-rlvr/cache/huggingface
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  VLLM_NO_USAGE_STATS: "1"
+  NCCL_DEBUG: INFO
+  NCCL_DEBUG_SUBSYS: INIT,NET
