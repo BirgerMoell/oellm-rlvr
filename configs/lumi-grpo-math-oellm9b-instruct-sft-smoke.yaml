@@ -13,9 +13,9 @@ platform:
   binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
   network_interface: hsn
 backend:
-  repo_path: /project/project_465002530/users/bmoell/oellm-rlvr-runtime/tmax-reproduction
+  repo_path: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260924/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
-  python: /project/project_465002530/users/bmoell/oellm-rlvr-runtime/venv/bin/python
+  python: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260924/venv/bin/python
   extra_args: [--save_filtered_rollouts]
 model:
   name_or_path: Neonkraft/oellm-9b-256k-theta64m-prelude-anneal300b-instruct-sft
