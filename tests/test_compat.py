@@ -11,6 +11,7 @@ from oellm_rlvr.compat import (
     install_post_import_patch,
     patch_harbor_litellm_module,
     patch_math_equivalence_module,
+    patch_mcp_streamable_http_module,
     patch_open_instruct_grpo_module,
     patch_open_instruct_vllm_module,
     patch_tmax_multilingual_math_verifier,
@@ -163,6 +164,14 @@ def test_post_import_patch_handles_loaded_module(monkeypatch) -> None:
 
     assert install_post_import_patch(module_name, calls.append) is False
     assert calls == [module]
+
+
+def test_mcp_streamable_http_patch_restores_legacy_name() -> None:
+    module = ModuleType("fake_mcp_streamable_http")
+    module.streamable_http_client = object()
+    assert patch_mcp_streamable_http_module(module) is True
+    assert module.streamablehttp_client is module.streamable_http_client
+    assert patch_mcp_streamable_http_module(module) is False
 
 
 def test_weight_update_is_wrapped_in_transaction() -> None:

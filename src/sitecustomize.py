@@ -4,6 +4,14 @@ import os
 
 from oellm_rlvr.compat import install_post_import_patch
 
+if os.environ.get("OELLM_PATCH_MCP_STREAMABLE_HTTP") == "1":
+    from oellm_rlvr.compat import patch_mcp_streamable_http_module
+
+    install_post_import_patch(
+        "mcp.client.streamable_http",
+        patch_mcp_streamable_http_module,
+    )
+
 if os.environ.get("OELLM_PATCH_VLLM_MAMBA_ENUM") == "1":
     from oellm_rlvr.compat import patch_vllm_mamba_module
 

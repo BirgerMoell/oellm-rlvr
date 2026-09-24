@@ -81,6 +81,14 @@ def install_post_import_patch(module_name: str, callback: ModulePatch) -> bool:
     return True
 
 
+def patch_mcp_streamable_http_module(module: ModuleType) -> bool:
+    """Restore the MCP 1.x spelling expected by the pinned TMAX backend."""
+    if hasattr(module, "streamablehttp_client"):
+        return False
+    module.streamablehttp_client = module.streamable_http_client
+    return True
+
+
 def replace_none_enum_value(enum_type: type[Enum], member_name: str, replacement: str) -> bool:
     member = enum_type.__members__[member_name]
     if member.value is not None:
