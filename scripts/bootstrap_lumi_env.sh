@@ -32,7 +32,9 @@ mkdir -p "$(dirname "$VENV")"
 singularity exec -B "$BIND" "$BASE_IMAGE" python -m venv --system-site-packages "$VENV"
 
 run_python() {
-  singularity exec -B "$BIND" "$BASE_IMAGE" "$VENV/bin/python" "$@"
+  singularity exec -B "$BIND" "$BASE_IMAGE" env \
+    PYTHONPATH="$VENV/lib/python3.12/site-packages:/opt/venv/lib/python3.12/site-packages" \
+    "$VENV/bin/python" "$@"
 }
 
 run_python -m pip install --upgrade 'pip<27' 'setuptools>=75.6,<80' wheel
