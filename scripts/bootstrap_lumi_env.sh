@@ -43,7 +43,7 @@ run_python -m pip install \
   'liger-kernel==0.8.0' \
   'flash-linear-attention>=0.4.2' \
   'openenv-core>=0.2.1' \
-  'mcp>=1.9.0' \
+  'mcp>=1.9.0,<2' \
   'docker>=7.0.0' \
   'immutabledict==1.2.0' \
   'antlr4-python3-runtime==4.11' \
@@ -63,6 +63,7 @@ run_python - <<'PY'
 import importlib
 for name in ("torch", "vllm", "ray", "olmo_core", "open_instruct", "liger_kernel", "fla"):
     importlib.import_module(name)
+from mcp.client.streamable_http import streamablehttp_client
 from vllm.distributed.weight_transfer.nccl_engine import NCCLWeightTransferEngine
 print("LUMI RLVR environment imports are healthy")
 PY
