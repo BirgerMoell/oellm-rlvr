@@ -87,6 +87,20 @@ def test_dapo_math_canary_is_sixteen_updates_on_sanitized_frozen_data() -> None:
     argv = build_backend_argv(config)
     assert _value(argv, "--total_episodes") == "1024"
     assert _value(argv, "--loss_fn") == "dapo"
+
+
+def test_profiled_math_canary_is_sixteen_updates_on_frozen_curriculum() -> None:
+    config = load_config(ROOT / "configs/lumi-grpo-math-oellm9b-instruct-sft-16step.yaml")
+    argv = build_backend_argv(config)
+
+    assert config.platform.partition == "standard-g"
+    assert config.training.total_episodes == 1024
+    assert config.training.loss == "dapo"
+    assert config.training.save_freq == 8
+    assert config.training.checkpoint_state_freq == 8
+    assert config.rollout.active_sampling is True
+    assert config.datasets[0].path.endswith("math-pilot-en-d1-3-seed20260904-n256.parquet")
+    assert _value(argv, "--loss_fn") == "dapo"
     assert _value(argv, "--checkpoint_state_freq") == "8"
     assert "--active_sampling" in argv
 
