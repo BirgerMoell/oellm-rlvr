@@ -55,6 +55,23 @@ def test_math_dryrun_is_four_restartable_dapo_updates() -> None:
     assert _value(argv, "--checkpoint_state_dir").endswith("dryrun-4step-state")
 
 
+def test_math_dryrun_resume_executes_only_update_five() -> None:
+    initial = load_config(ROOT / "configs/lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml")
+    resumed = load_config(ROOT / "configs/lumi-grpo-math-oellm9b-instruct-sft-dryrun-resume.yaml")
+    episodes_per_update = resumed.rollout.unique_prompts * resumed.rollout.samples_per_prompt
+
+    assert resumed.training.total_episodes == 5 * episodes_per_update
+    assert resumed.training.checkpoint_state_freq == 1
+    assert resumed.training.save_freq == 5
+    assert resumed.training.checkpoint_state_directory == initial.training.checkpoint_state_directory
+    assert resumed.output.directory != initial.output.directory
+    assert resumed.output.rollout_directory != initial.output.rollout_directory
+
+    argv = build_backend_argv(resumed)
+    assert _value(argv, "--total_episodes") == "320"
+    assert _value(argv, "--checkpoint_state_dir").endswith("dryrun-4step-state")
+
+
 def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)
