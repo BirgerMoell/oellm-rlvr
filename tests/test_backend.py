@@ -105,6 +105,21 @@ def test_profiled_math_canary_is_sixteen_updates_on_frozen_curriculum() -> None:
     assert "--active_sampling" in argv
 
 
+def test_profiled_math_canary_resume_executes_update_seventeen() -> None:
+    config = load_config(ROOT / "configs/lumi-grpo-math-oellm9b-instruct-sft-16step-resume.yaml")
+    argv = build_backend_argv(config)
+
+    assert config.platform.partition == "dev-g"
+    assert config.training.total_episodes == 1088
+    assert config.training.checkpoint_state_freq == 1
+    assert config.training.checkpoint_state_directory.endswith(
+        "grpo-math-oellm9b-instruct-canary-16step-v1-state"
+    )
+    assert config.output.directory.endswith("grpo-math-oellm9b-instruct-canary-resume-step17-v1")
+    assert _value(argv, "--checkpoint_state_freq") == "1"
+    assert "--active_sampling" in argv
+
+
 def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)
