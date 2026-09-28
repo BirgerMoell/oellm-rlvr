@@ -444,6 +444,8 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-oellm9b-256k-sft-ladder-2node.yaml` | Bounded two-update arithmetic calibration for the OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
 | `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml` | Eight-engine hierarchical-transfer qualification of the OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-math-oellm9b-256k-sft-pilot-2node.yaml` | Ten-update, restartable 9B math RLVR pilot | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml` | Four-update DAPO production dry run on the instruct-SFT checkpoint | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-dryrun-resume.yaml` | Cold restart from the dry run and exactly one additional update | 8 learner + 8 rollout GCDs |
 | `lumi-reasoning-gsm8k-oellm9b-32step.yaml` | Paired GSM8K reasoning-RL reference experiment (<96 GCD-hours) | 8 learner + 8 rollout GCDs |
 | `lumi-dryrun-reasoning-oellm9b-16step.yaml` | Full-stack campaign's bounded 9B reasoning canary | 8 learner + 8 rollout GCDs |
 | `lumi-dryrun-code-oellm9b-4step.yaml` | Full-stack campaign's executable-code canary | 8 learner + 8 rollout GCDs |
@@ -452,6 +454,12 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
 
 Every profile is validated before rendering. It rejects oversubscribed GPU layouts, insufficient rollout batches, invalid sequence-parallel divisibility, math runs with sandboxes, and code runs without sandboxes.
+
+The instruct-SFT math dry run and its independent cold-restart probe completed five finite DAPO updates on
+LUMI in 5.67 total GCD-hours. All 40 accepted prompt groups had mixed rewards, all gradient norms were non-zero,
+and the restart recovered optimizer, RNG, sampler, and data-preparation state before continuing at update 5.
+See the [2026-09-28 qualification record](docs/qualification-oellm9b-instruct-math-dapo-2026-09-28.md) for
+immutable inputs, job IDs, hashes, metrics, artifacts, and the remaining KL-reference caveat.
 
 The [reasoning-RL reference protocol](docs/lumi-reasoning-reference.md) adds a strict official-train versus
 official-test boundary, a resumable LUMI vLLM evaluator, paired confidence statistics, form/degeneration
