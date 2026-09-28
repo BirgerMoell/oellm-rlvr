@@ -154,6 +154,11 @@ def summarize_reasoning_predictions(records: list[dict[str, Any]]) -> dict[str, 
         by_prompt[str(record["id"])].append(record)
     sample_accuracy = fmean(bool(record["analysis"]["correct"]) for record in records)
     pass_at_k = fmean(any(bool(record["analysis"]["correct"]) for record in values) for values in by_prompt.values())
+    mixed_reward_prompts = sum(
+        any(bool(record["analysis"]["correct"]) for record in values)
+        and not all(bool(record["analysis"]["correct"]) for record in values)
+        for values in by_prompt.values()
+    )
     majority_correct: list[bool] = []
     for values in by_prompt.values():
         answers = [str(value["analysis"]["extracted_normalized"]) for value in values]
@@ -178,6 +183,9 @@ def summarize_reasoning_predictions(records: list[dict[str, Any]]) -> dict[str, 
         "samples_per_prompt": sorted({len(values) for values in by_prompt.values()}),
         "sample_accuracy": sample_accuracy,
         "pass_at_k": pass_at_k,
+        "mixed_reward_prompts": mixed_reward_prompts,
+        "mixed_reward_prompt_rate": mixed_reward_prompts / len(by_prompt),
+        "zero_variance_prompt_rate": 1.0 - (mixed_reward_prompts / len(by_prompt)),
         "majority_vote_accuracy": fmean(majority_correct),
         "boxed_answer_rate": fmean(bool(record["analysis"]["boxed_answer"]) for record in records),
         "correct_boxed_format_rate": fmean(bool(record["analysis"]["format_pass"]) for record in records),

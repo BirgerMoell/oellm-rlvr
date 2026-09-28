@@ -87,6 +87,9 @@ def test_reasoning_summary_reports_sample_and_prompt_metrics() -> None:
     summary = summarize_reasoning_predictions(rows)
     assert summary["sample_accuracy"] == 0.5
     assert summary["pass_at_k"] == 1.0
+    assert summary["mixed_reward_prompts"] == 2
+    assert summary["mixed_reward_prompt_rate"] == 1.0
+    assert summary["zero_variance_prompt_rate"] == 0.0
     assert summary["samples_per_prompt"] == [2]
     assert summary["think_tag_use_rate"] == 0.0
 
