@@ -26,6 +26,7 @@ ROOT = Path(__file__).parents[1]
         ("cuda-opd-qwen35-2b-contract-smoke.yaml", 0),
         ("lumi-opd-qwen35-2b-contract-smoke.yaml", 0),
         ("lumi-grpo-dapo-oellm9b-instruct-sft-smoke.yaml", 0),
+        ("lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml", 0),
     ],
 )
 def test_example_profiles_validate(name: str, expected_spare_gpus: int) -> None:
@@ -42,6 +43,14 @@ def test_dapo_smoke_uses_current_tmax_loss_and_shared_dataset() -> None:
     assert config.datasets[0].path.startswith(
         "/scratch/project_465002530/training/collection/post-training/2026q3/"
     )
+
+
+def test_tmax_rejects_unavailable_plain_grpo_loss() -> None:
+    profile = ROOT / "configs/lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml"
+    raw = load_config(profile).model_dump()
+    raw["training"]["loss"] = "grpo"
+    with pytest.raises(ValidationError, match="does not expose loss_fn='grpo'"):
+        type(load_config(profile)).model_validate(raw)
 
 
 def test_oversubscribed_profile_is_rejected() -> None:

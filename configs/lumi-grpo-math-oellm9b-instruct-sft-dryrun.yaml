@@ -1,5 +1,5 @@
 version: 1
-name: grpo-math-oellm9b-instruct-sft-smoke
+name: grpo-math-oellm9b-instruct-sft-dryrun
 platform:
   accelerator: rocm
   nodes: 2
@@ -7,7 +7,7 @@ platform:
   container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
   account: project_465002530
   partition: dev-g
-  walltime: 00:45:00
+  walltime: 01:00:00
   cpus_per_task: 56
   memory: 480G
   binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
@@ -44,26 +44,27 @@ rollout:
   async_steps: 2
   active_sampling: true
   inflight_updates: true
+  enable_prefix_caching: true
   enforce_eager: true
   gdn_prefill_backend: null
 training:
   learner_gpus_per_node: [8]
   sequence_parallel_size: 1
   learning_rate: 5.0e-7
-  total_episodes: 128
+  total_episodes: 256
   epochs: 1
   deepspeed_stage: 3
   loss: dapo
   beta: 0.0
   save_freq: 2
-  checkpoint_state_freq: 1
-  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-instruct-smoke-state
+  checkpoint_state_freq: 2
+  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-instruct-dryrun-4step-state
   gradient_checkpointing: true
   use_liger_loss: true
 output:
-  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-instruct-smoke
-  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-instruct-smoke
-  experiment_name: lumi_grpo_math_oellm9b_instruct_sft_smoke
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-instruct-dryrun-4step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-instruct-dryrun-4step
+  experiment_name: lumi_grpo_math_oellm9b_instruct_sft_dryrun_4step
   with_tracking: true
   wandb_mode: offline
   wandb_entity: local

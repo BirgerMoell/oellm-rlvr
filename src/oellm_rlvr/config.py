@@ -243,8 +243,8 @@ class TrainingConfig(StrictModel):
     total_episodes: int = Field(default=1024, ge=1)
     epochs: int = Field(default=1, ge=1)
     deepspeed_stage: Literal[2, 3] = 3
-    # TMAX/Open-Instruct exposes the online-policy objectives below. ``grpo``
-    # remains valid for older TMAX profiles and the colocated verl adapter.
+    # The pinned TMAX/Open-Instruct backend exposes DAPO/CISPO/DPPO/TVPO.
+    # ``grpo`` is reserved for the colocated verl adapter.
     loss: Literal["grpo", "dapo", "cispo", "dppo", "tvpo"] = "dppo"
     dppo_divergence_type: Literal["tv", "kl", "js"] = "tv"
     dppo_divergence_threshold: float = Field(default=0.1, gt=0)
@@ -339,6 +339,11 @@ class RunConfig(StrictModel):
                 raise ValueError("the TMAX backend requires a dedicated rollout GPU pool")
             if self.rollout.samples_per_prompt < 2:
                 raise ValueError("TMAX GRPO/DPPO requires at least two samples per prompt")
+            if self.training.loss == "grpo":
+                raise ValueError(
+                    "the pinned TMAX backend does not expose loss_fn='grpo'; "
+                    "use the GRPO-family 'dapo', 'cispo', 'dppo', or 'tvpo' objective"
+                )
             return self
 
         if self.distillation is None:

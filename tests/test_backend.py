@@ -38,6 +38,23 @@ def test_dapo_smoke_maps_current_tmax_loss() -> None:
     assert _value(argv, "--dataset_mixer_list").endswith("/train.parquet")
 
 
+def test_math_dryrun_is_four_restartable_dapo_updates() -> None:
+    config = load_config(ROOT / "configs/lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml")
+    argv = build_backend_argv(config)
+    episodes_per_update = config.rollout.unique_prompts * config.rollout.samples_per_prompt
+
+    assert config.training.loss == "dapo"
+    assert config.training.total_episodes == 4 * episodes_per_update
+    assert config.training.save_freq == 2
+    assert config.training.checkpoint_state_freq == 2
+    assert config.rollout.engines == 8
+    assert config.rollout.weight_transfer == "hierarchical"
+    assert "--active_sampling" in argv
+    assert "--save_filtered_rollouts" in argv
+    assert _value(argv, "--loss_fn") == "dapo"
+    assert _value(argv, "--checkpoint_state_dir").endswith("dryrun-4step-state")
+
+
 def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)

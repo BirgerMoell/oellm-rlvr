@@ -54,7 +54,7 @@ training:
   total_episodes: 640
   epochs: 1
   deepspeed_stage: 3
-  loss: grpo
+  loss: dapo
   beta: 0.0
   save_freq: 5
   checkpoint_state_freq: 5
