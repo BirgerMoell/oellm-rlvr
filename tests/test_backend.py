@@ -72,6 +72,25 @@ def test_math_dryrun_resume_executes_only_update_five() -> None:
     assert _value(argv, "--checkpoint_state_dir").endswith("dryrun-4step-state")
 
 
+def test_dapo_math_canary_is_sixteen_updates_on_sanitized_frozen_data() -> None:
+    config = load_config(ROOT / "configs/lumi-grpo-dapo-oellm9b-instruct-sft-16step.yaml")
+    episodes_per_update = config.rollout.unique_prompts * config.rollout.samples_per_prompt
+
+    assert config.training.total_episodes == 16 * episodes_per_update
+    assert config.training.loss == "dapo"
+    assert config.training.beta == 0
+    assert config.training.save_freq == 8
+    assert config.training.checkpoint_state_freq == 8
+    assert config.datasets[0].path.endswith("dapo-math-17k-en-31dd3095-sanitized-v2/train.parquet")
+    assert config.rollout.enforce_eager is True
+
+    argv = build_backend_argv(config)
+    assert _value(argv, "--total_episodes") == "1024"
+    assert _value(argv, "--loss_fn") == "dapo"
+    assert _value(argv, "--checkpoint_state_freq") == "8"
+    assert "--active_sampling" in argv
+
+
 def test_code_backend_uses_slurm_apptainer_swerl_environment() -> None:
     config = load_config(ROOT / "configs/lumi-code-qwen35-2b-smoke.yaml")
     argv = build_backend_argv(config)

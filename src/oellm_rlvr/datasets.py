@@ -81,6 +81,23 @@ DAPO_MATH_PROMPT = (
 )
 
 
+def _sanitize_dapo_problem(problem: str) -> tuple[str, int, int]:
+    r"""Repair JSON-decoded TeX escapes and remove prompt control characters.
+
+    Some published DAPO rows contain ``\f`` followed by ``rac`` because a
+    ``\\frac`` command was decoded as a JSON form-feed escape.  Preserve the
+    intended TeX command and replace any other non-whitespace C0 controls with
+    a space so they cannot enter model context.
+    """
+    fraction_repairs = problem.count("\x0crac")
+    sanitized = problem.replace("\x0crac", r"\frac")
+    control_replacements = sum(ord(character) < 32 and character not in "\n\t" for character in sanitized)
+    sanitized = "".join(
+        " " if ord(character) < 32 and character not in "\n\t" else character for character in sanitized
+    )
+    return sanitized, fraction_repairs, control_replacements
+
+
 def _sha256(path: str | Path) -> str:
     digest = sha256()
     with Path(path).open("rb") as source:
@@ -273,6 +290,8 @@ def prepare_dapo_math_dataset(
     converted: list[dict[str, object]] = []
     prompt_groups: dict[str, list[tuple[int, dict[str, Any]]]] = {}
     ids: set[str] = set()
+    latex_fraction_repairs = 0
+    control_character_replacements = 0
     for index, row in enumerate(raw_rows):
         problem = row.get("prompt")
         reward_model = row.get("reward_model")
@@ -285,9 +304,14 @@ def prepare_dapo_math_dataset(
         task_id = str(source_id or f"row-{index:05d}")
         if task_id in ids:
             raise ValueError(f"duplicate DAPO id: {task_id}")
-        prompt_key = " ".join(problem.split()).casefold()
+        sanitized_problem, fraction_repairs, control_replacements = _sanitize_dapo_problem(problem)
+        latex_fraction_repairs += fraction_repairs
+        control_character_replacements += control_replacements
+        sanitized_row = dict(row)
+        sanitized_row["prompt"] = sanitized_problem
+        prompt_key = " ".join(sanitized_problem.split()).casefold()
         ids.add(task_id)
-        prompt_groups.setdefault(prompt_key, []).append((index, row))
+        prompt_groups.setdefault(prompt_key, []).append((index, sanitized_row))
 
     same_answer_duplicate_rows_dropped = 0
     conflicting_prompt_groups_dropped = 0
@@ -359,6 +383,13 @@ def prepare_dapo_math_dataset(
         "conflicting_prompt_groups_dropped": conflicting_prompt_groups_dropped,
         "conflicting_rows_dropped": conflicting_rows_dropped,
         "rows_after_qa": len(converted),
+        "latex_fraction_repairs": latex_fraction_repairs,
+        "control_character_replacements": control_character_replacements,
+        "residual_prompt_control_characters": sum(
+            ord(character) < 32 and character not in "\n\t"
+            for row in converted
+            for character in str(row["messages"][0]["content"])
+        ),
         "published_solution_fields_in_outputs": False,
         "split_id_overlap": len(overlap),
         "splits": {

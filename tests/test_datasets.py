@@ -154,6 +154,47 @@ def test_prepare_dapo_math_collapses_agreement_and_drops_conflicts(tmp_path: Pat
     assert manifest["conflicting_rows_dropped"] == 2
 
 
+def test_prepare_dapo_math_repairs_fraction_escape_and_removes_controls(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "dapo.parquet"
+    pq.write_table(
+        pa.Table.from_pylist(
+            [
+                {
+                    "prompt": "Return the fraction \frac{1}{2}.\x0bDo not approximate.",
+                    "reward_model": {"ground_truth": "1/2", "style": "rule-lighteval/MATH_v2"},
+                    "extra_info": {"index": "escaped-fraction"},
+                },
+                {
+                    "prompt": "Compute 2 + 2.",
+                    "reward_model": {"ground_truth": "4", "style": "rule-lighteval/MATH_v2"},
+                    "extra_info": {"index": "plain"},
+                },
+            ]
+        ),
+        source,
+    )
+
+    manifest = prepare_dapo_math_dataset(
+        source,
+        tmp_path / "prepared",
+        revision="deadbeef",
+        calibration_count=0,
+        evaluation_count=0,
+    )
+    rows = pq.read_table(tmp_path / "prepared/train.parquet").to_pylist()
+    prompt = next(row["messages"][0]["content"] for row in rows if row["id"] == "escaped-fraction")
+
+    assert r"\frac{1}{2}" in prompt
+    assert "\x0c" not in prompt
+    assert "\x0b" not in prompt
+    assert manifest["latex_fraction_repairs"] == 1
+    assert manifest["control_character_replacements"] == 1
+    assert manifest["residual_prompt_control_characters"] == 0
+
+
 def test_prepare_gsm8k_excludes_calibration_rows_from_primary_eval(tmp_path: Path) -> None:
     pa = pytest.importorskip("pyarrow")
     import pyarrow.parquet as pq
