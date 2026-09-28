@@ -46,7 +46,10 @@ pools. Parallel translations of a semantic problem cannot cross these boundaries
 | Frozen multilingual holdout, difficulty 1–5 | 512, including 16 per non-English EU language | paired selection only |
 | Frozen DAPO-Math evaluation | 1,024 | non-procedural external-family diagnostic only |
 
-The generated manifests are authoritative for the exact hashes. The procedural holdout is useful for paired
+The LUMI-generated combined-pool SHA-256 values are `e03295a0ab25b2e00a3cf79c70faf023b840fd936434f66732346fda4c1fd7d3`
+for phase A, `feab0ced393083313ed76b0196da7f87923440f97ed720226f45a744bb9783b5` for phase B, and
+`c4be4521c07f68046140ce5f9a852cfd1fd68178bac642cde1b06b52fc9dd130` for the frozen multilingual
+holdout. The generated manifests are authoritative for every component hash. The procedural holdout is useful for paired
 measurement but does not replace the DAPO external-family diagnostic. DAPO was near the starting checkpoint's
 floor, so it is a regression/large-improvement signal rather than the sole selector.
 
@@ -58,6 +61,16 @@ Before phase A, profile 256 phase-A EU prompts and all 256 replay prompts with e
 - at least 20% mixed-reward groups in each source and at least 40% in the weighted mixture;
 - at most 15% length stops and 2% inference/verifier errors;
 - think-tag use remains 100%, with no increase in unbalanced tags.
+
+The step-16 admission profiles completed on LUMI as jobs `22401601` and `22401602`:
+
+| Component | Sample accuracy | Mixed groups | Pass@8 | Length stops | Think-tag use |
+|---|---:|---:|---:|---:|---:|
+| EU24 difficulty 1–3 | 22.22% | 106/256 (41.41%) | 48.05% | 1.81% | 100% |
+| English replay | 35.79% | 153/256 (59.77%) | 70.31% | 0.24% | 100% |
+
+At the configured 80/20 weights, the mixture estimate is 24.93% accuracy, 45.08% mixed groups, and 1.49%
+length stops. Both jobs completed `0:0`; together they used 0.232 MI250 GCD-hours. The admission gate passed.
 
 Run phase A for 32 updates only after those gates pass. Save model and full state at updates 16 and 32. Require
 finite, non-zero gradients on at least 95% of updates, maximum policy lag four, and no source or language
@@ -78,3 +91,10 @@ its online reward improved.
 At the measured canary throughput, each 32-update two-node phase should use roughly 8–12 MI250 GCD-hours.
 Profiles and frozen one-GCD evaluations add about 2–4 GCD-hours. The complete gated 64-update study is expected
 to remain around 20–30 GCD-hours; stop after phase A if its admission, training, or evaluation gates fail.
+
+The committed phase-A config SHA-256 is
+`c6f1428cef9c0d1aef78b739c4dae240c770a3dbd7b59be7e7305cb9ff255650`; the Slurm script rendered on
+LUMI from the pinned clean control checkout is
+`9cc087c70e24b3613746af49d3b713dc6f29ed21ba88374e7bc2b96c47e2eb9f`.
+
+Phase A was submitted as LUMI job `22402030` only after the admission metrics above were read and checked.
