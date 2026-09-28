@@ -68,6 +68,7 @@ def test_lumi_reasoning_eval_enables_qwen35_text_compatibility() -> None:
     script = (Path(__file__).parents[1] / "scripts/lumi_reasoning_eval.sbatch").read_text()
     assert ': "${OELLM_PATCH_VLLM_QWEN35_TEXT:=1}"' in script
     assert 'OELLM_PATCH_VLLM_QWEN35_TEXT="$OELLM_PATCH_VLLM_QWEN35_TEXT"' in script
+    assert "export VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1" in script
 
 
 def test_reasoning_analysis_accepts_gsm8k_thousands_separators() -> None:

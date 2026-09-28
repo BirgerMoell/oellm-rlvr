@@ -71,6 +71,7 @@ srun --label --gpu-bind=none --gpus-per-task=mi250:1 singularity exec \
     export MIOPEN_FIND_MODE=FAST
     export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1
     export TOKENIZERS_PARALLELISM=false VLLM_USE_V1=1 VLLM_DISABLE_COMPILE_CACHE=1
+    export VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1
     export PYTHONPATH HF_HOME
     limit_args=()
     if [[ -n "$LIMIT" ]]; then limit_args=(--limit "$LIMIT"); fi
