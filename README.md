@@ -468,6 +468,11 @@ parent-profiled procedural-math curriculum, completed every optimizer and restar
 and moved a disjoint 1,024-prompt held-out evaluation from 42.97% to 44.63%. Treat this as a positive canary
 signal: broader non-procedural and multilingual confirmation is required before a production claim.
 
+The [multilingual math promotion](docs/oellm9b-math-promotion-2026-09-28.md) turns that result into two gated
+32-update windows. It freezes semantic-group-disjoint EU24 training and evaluation pools, preserves 20% replay,
+checks a non-procedural DAPO holdout, and stops at the window boundary unless fresh reward-signal and paired
+evaluation gates pass.
+
 The [reasoning-RL reference protocol](docs/lumi-reasoning-reference.md) adds a strict official-train versus
 official-test boundary, a resumable LUMI vLLM evaluator, paired confidence statistics, form/degeneration
 metrics, and a blinded A/B reasoning audit. GSM8K results for the current SFT checkpoint are diagnostic because

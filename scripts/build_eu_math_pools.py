@@ -17,6 +17,12 @@ def main() -> None:
     parser.add_argument("--max-difficulty", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260914)
     parser.add_argument("--languages", default=",".join(EU24_NON_ENGLISH))
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="Parquet whose semantic groups must be excluded; repeat for multiple frozen pools",
+    )
     args = parser.parse_args()
     languages = tuple(value.strip() for value in args.languages.split(",") if value.strip())
     report = build_eu_math_pools(
@@ -28,6 +34,7 @@ def main() -> None:
         max_difficulty=args.max_difficulty,
         seed=args.seed,
         languages=languages,
+        exclude=args.exclude,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
 

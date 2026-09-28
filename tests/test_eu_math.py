@@ -41,6 +41,7 @@ def test_build_eu_math_pools_balances_languages_and_disjoins_groups(tmp_path) ->
     )
     eu = pq.read_table(tmp_path / "pools/eu-math.parquet").to_pylist()
     english = pq.read_table(tmp_path / "pools/english-replay.parquet").to_pylist()
+    combined = pq.read_table(tmp_path / "pools/all-math.parquet").to_pylist()
 
     assert report["eu"]["by_language"] == {"de": 10, "sv": 10}
     assert report["english_replay"]["by_language"] == {"en": 20}
@@ -49,6 +50,8 @@ def test_build_eu_math_pools_balances_languages_and_disjoins_groups(tmp_path) ->
     )
     assert len({row["semantic_group_id"] for row in eu}) == 20
     assert all(row["dataset"] == "math" and isinstance(row["ground_truth"], str) for row in eu + english)
+    assert len(combined) == len(eu) + len(english)
+    assert report["combined"]["rows"] == 40
     assert json.loads((tmp_path / "pools/manifest.json").read_text())["semantic_group_overlap"] == 0
 
 
@@ -65,3 +68,34 @@ def test_build_eu_math_pools_is_deterministic(tmp_path) -> None:
     ]
     assert reports[0]["eu"]["sha256"] == reports[1]["eu"]["sha256"]
     assert reports[0]["english_replay"]["sha256"] == reports[1]["english_replay"]["sha256"]
+    assert reports[0]["combined"]["sha256"] == reports[1]["combined"]["sha256"]
+
+
+def test_build_eu_math_pools_excludes_multiple_frozen_pools(tmp_path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    languages = ("de", "sv")
+    rows = [_row(group, language) for group in range(100) for language in (*languages, "en")]
+    rows.extend(_row(group, "en") for group in range(100, 180))
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    first_exclusion = tmp_path / "old-train.parquet"
+    second_exclusion = tmp_path / "old-eval.parquet"
+    pq.write_table(pa.Table.from_pylist([_row(1, "de"), _row(2, "en")]), first_exclusion)
+    pq.write_table(pa.Table.from_pylist([_row(3, "sv")]), second_exclusion)
+
+    report = build_eu_math_pools(
+        source,
+        tmp_path / "pools",
+        eu_per_language=10,
+        english_count=20,
+        languages=languages,
+        seed=7,
+        exclude=(first_exclusion, second_exclusion),
+    )
+    combined = pq.read_table(tmp_path / "pools/all-math.parquet").to_pylist()
+
+    assert {row["semantic_group_id"] for row in combined}.isdisjoint({"group-1", "group-2", "group-3"})
+    assert report["excluded_semantic_groups"] == 3
+    assert [item["semantic_groups"] for item in report["exclusions"]] == [2, 1]

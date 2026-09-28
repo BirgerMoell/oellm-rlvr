@@ -4,11 +4,11 @@ import hashlib
 import heapq
 import json
 from collections import Counter
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .datasets import write_rows
-
 
 EU24_NON_ENGLISH = (
     "bg",
@@ -97,6 +97,41 @@ def _iter_rows(source: Path) -> Iterable[dict[str, Any]]:
         yield from batch.to_pylist()
 
 
+def _excluded_semantic_groups(paths: Iterable[str | Path]) -> tuple[set[str], list[dict[str, Any]]]:
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as error:
+        raise RuntimeError("building EU math pools requires pyarrow") from error
+
+    groups: set[str] = set()
+    manifests: list[dict[str, Any]] = []
+    for value in paths:
+        path = Path(value)
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        parquet = pq.ParquetFile(path)
+        columns = set(parquet.schema_arrow.names)
+        group_column = "semantic_group_id" if "semantic_group_id" in columns else "id" if "id" in columns else None
+        if group_column is None:
+            raise ValueError(f"excluded dataset has no semantic_group_id or id column: {path}")
+        file_groups: set[str] = set()
+        for batch in parquet.iter_batches(batch_size=8192, columns=[group_column]):
+            for row in batch.to_pylist():
+                group = str(row.get(group_column) or "")
+                if not group:
+                    raise ValueError(f"excluded dataset contains an empty {group_column}: {path}")
+                file_groups.add(group)
+        groups.update(file_groups)
+        manifests.append(
+            {
+                "path": str(path),
+                "sha256": _sha256(path),
+                "semantic_groups": len(file_groups),
+            }
+        )
+    return groups, manifests
+
+
 def _summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "rows": len(rows),
@@ -117,6 +152,7 @@ def build_eu_math_pools(
     max_difficulty: int = 5,
     seed: int = 20260914,
     languages: Iterable[str] = EU24_NON_ENGLISH,
+    exclude: Iterable[str | Path] = (),
 ) -> dict[str, Any]:
     """Build balanced EU and disjoint English RLVR pools.
 
@@ -138,6 +174,7 @@ def build_eu_math_pools(
     if min_difficulty > max_difficulty:
         raise ValueError("min_difficulty cannot exceed max_difficulty")
 
+    excluded_groups, exclusion_manifests = _excluded_semantic_groups(exclude)
     eu_heaps: dict[str, list[tuple[int, str, dict[str, Any]]]] = {language: [] for language in language_codes}
     for row in _iter_rows(source_path):
         language = str(row.get("language", ""))
@@ -147,7 +184,7 @@ def build_eu_math_pools(
         if not min_difficulty <= difficulty <= max_difficulty:
             continue
         group = str(row.get("semantic_group_id") or row.get("id") or "")
-        if not group:
+        if not group or group in excluded_groups:
             continue
         assigned = language_codes[_score(seed, group, "language") % len(language_codes)]
         if language != assigned:
@@ -174,7 +211,7 @@ def build_eu_math_pools(
         if not min_difficulty <= difficulty <= max_difficulty:
             continue
         group = str(row.get("semantic_group_id") or row.get("id") or "")
-        if not group or group in eu_groups:
+        if not group or group in excluded_groups or group in eu_groups:
             continue
         _bounded_add(
             english_heap,
@@ -193,8 +230,10 @@ def build_eu_math_pools(
     output.mkdir(parents=True, exist_ok=True)
     eu_path = output / "eu-math.parquet"
     english_path = output / "english-replay.parquet"
+    combined_path = output / "all-math.parquet"
     write_rows(eu_rows, eu_path)
     write_rows(english_rows, english_path)
+    write_rows([*eu_rows, *english_rows], combined_path)
     manifest = {
         "schema": "oellm-eu-math-pools-v1",
         "seed": seed,
@@ -202,12 +241,19 @@ def build_eu_math_pools(
         "source_sha256": _sha256(source_path),
         "difficulty_range": [min_difficulty, max_difficulty],
         "eu_languages": list(language_codes),
+        "excluded_semantic_groups": len(excluded_groups),
+        "exclusions": exclusion_manifests,
         "semantic_group_overlap": 0,
         "eu": {**_summary(eu_rows), "path": str(eu_path), "sha256": _sha256(eu_path)},
         "english_replay": {
             **_summary(english_rows),
             "path": str(english_path),
             "sha256": _sha256(english_path),
+        },
+        "combined": {
+            **_summary([*eu_rows, *english_rows]),
+            "path": str(combined_path),
+            "sha256": _sha256(combined_path),
         },
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
