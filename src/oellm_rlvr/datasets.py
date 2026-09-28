@@ -466,6 +466,7 @@ def _sample_parquet_rows(
     max_difficulty: int | None = None,
     diverse_by: str | None = None,
     exact_filters: dict[str, str] | None = None,
+    excluded_semantic_groups: set[str] | None = None,
     seed: int | None = None,
 ) -> list[dict[str, Any]]:
     if count < 1:
@@ -497,6 +498,8 @@ def _sample_parquet_rows(
             if max_difficulty is not None and (difficulty is None or int(difficulty) > max_difficulty):
                 continue
             group = str(row.get("semantic_group_id", row.get("id", "")))
+            if excluded_semantic_groups and group in excluded_semantic_groups:
+                continue
             if group in semantic_groups:
                 continue
             diversity_value = str(row.get(diverse_by, "")) if diverse_by else ""
@@ -557,10 +560,18 @@ def sample_math_dataset(
     subdomain: str | None = None,
     copies: int = 1,
     seed: int | None = None,
+    exclude: str | Path | None = None,
 ) -> None:
     if copies < 1:
         raise ValueError("copies must be positive")
     required = {"messages", "ground_truth", "verifier_kind"}
+    excluded_semantic_groups: set[str] = set()
+    if exclude is not None:
+        for index, row in enumerate(_read_parquet_rows(exclude)):
+            group = str(row.get("semantic_group_id", row.get("id", "")))
+            if not group:
+                raise ValueError(f"excluded math row {index} has no semantic_group_id or id")
+            excluded_semantic_groups.add(group)
     rows = _sample_parquet_rows(
         source,
         count,
@@ -569,6 +580,7 @@ def sample_math_dataset(
         max_difficulty=max_difficulty,
         diverse_by=diverse_by,
         exact_filters={"subdomain": subdomain} if subdomain else None,
+        excluded_semantic_groups=excluded_semantic_groups,
         seed=seed,
     )
     for index, row in enumerate(rows):

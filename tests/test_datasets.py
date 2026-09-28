@@ -279,6 +279,34 @@ def test_published_math_sample_preserves_verifier_contract(tmp_path: Path) -> No
     assert row["oellm_source_dataset"] == "oellm-math-rlvr"
 
 
+def test_published_math_sample_can_exclude_training_semantic_groups(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    rows = [
+        {
+            "id": f"m{index}",
+            "dataset": "oellm-math-rlvr",
+            "messages": [{"role": "user", "content": f"Compute {index} + 1."}],
+            "ground_truth": [str(index + 1)],
+            "verifier_kind": "integer_exact",
+            "semantic_group_id": f"g{index}",
+            "language": "en",
+        }
+        for index in range(3)
+    ]
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    excluded = tmp_path / "train.parquet"
+    pq.write_table(pa.Table.from_pylist([rows[1]]), excluded)
+
+    output = tmp_path / "evaluation.parquet"
+    sample_math_dataset(source, output, count=2, language="en", seed=7, exclude=excluded)
+
+    sampled = pq.read_table(output).to_pylist()
+    assert {row["semantic_group_id"] for row in sampled} == {"g0", "g2"}
+
+
 def test_published_math_sample_rejects_multiple_answers_for_single_verifier(tmp_path: Path) -> None:
     pa = pytest.importorskip("pyarrow")
     import pyarrow.parquet as pq

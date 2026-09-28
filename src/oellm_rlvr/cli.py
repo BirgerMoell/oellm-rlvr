@@ -181,6 +181,7 @@ def command_sample_math(args: argparse.Namespace) -> int:
         subdomain=args.subdomain,
         copies=args.copies,
         seed=args.seed,
+        exclude=args.exclude,
     )
     print(args.output)
     return 0
@@ -517,6 +518,10 @@ def build_parser() -> argparse.ArgumentParser:
     math_sample.add_argument("--subdomain", help="optional exact math subdomain filter")
     math_sample.add_argument("--copies", type=int, default=1, help="repeat each selected row (calibration only)")
     math_sample.add_argument("--seed", type=int, help="reservoir-sample matching semantic groups reproducibly")
+    math_sample.add_argument(
+        "--exclude",
+        help="optional sampled Parquet whose semantic groups must be excluded (for disjoint evaluation)",
+    )
     math_sample.set_defaults(handler=command_sample_math)
 
     code_sample = sub.add_parser("sample-code")
