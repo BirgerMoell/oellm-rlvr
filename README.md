@@ -446,6 +446,8 @@ See [the LUMI runbook](docs/lumi.md), [architecture](docs/architecture.md), and 
 | `lumi-math-oellm9b-256k-sft-pilot-2node.yaml` | Ten-update, restartable 9B math RLVR pilot | 8 learner + 8 rollout GCDs |
 | `lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml` | Four-update DAPO production dry run on the instruct-SFT checkpoint | 8 learner + 8 rollout GCDs |
 | `lumi-grpo-math-oellm9b-instruct-sft-dryrun-resume.yaml` | Cold restart from the dry run and exactly one additional update | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-16step.yaml` | Profile-gated 16-update math canary on the instruct-SFT checkpoint | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-16step-resume.yaml` | Cold restart from the canary and exactly one additional update | 8 learner + 8 rollout GCDs |
 | `lumi-reasoning-gsm8k-oellm9b-32step.yaml` | Paired GSM8K reasoning-RL reference experiment (<96 GCD-hours) | 8 learner + 8 rollout GCDs |
 | `lumi-dryrun-reasoning-oellm9b-16step.yaml` | Full-stack campaign's bounded 9B reasoning canary | 8 learner + 8 rollout GCDs |
 | `lumi-dryrun-code-oellm9b-4step.yaml` | Full-stack campaign's executable-code canary | 8 learner + 8 rollout GCDs |
@@ -460,6 +462,11 @@ LUMI in 5.67 total GCD-hours. All 40 accepted prompt groups had mixed rewards, a
 and the restart recovered optimizer, RNG, sampler, and data-preparation state before continuing at update 5.
 See the [2026-09-28 qualification record](docs/qualification-oellm9b-instruct-math-dapo-2026-09-28.md) for
 immutable inputs, job IDs, hashes, metrics, artifacts, and the remaining KL-reference caveat.
+
+The subsequent [16-update canary](docs/qualification-oellm9b-instruct-math-canary-2026-09-28.md) used a
+parent-profiled procedural-math curriculum, completed every optimizer and restart gate in 7.82 GCD-hours,
+and moved a disjoint 1,024-prompt held-out evaluation from 42.97% to 44.63%. Treat this as a positive canary
+signal: broader non-procedural and multilingual confirmation is required before a production claim.
 
 The [reasoning-RL reference protocol](docs/lumi-reasoning-reference.md) adds a strict official-train versus
 official-test boundary, a resumable LUMI vLLM evaluator, paired confidence statistics, form/degeneration
