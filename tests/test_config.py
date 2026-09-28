@@ -27,6 +27,7 @@ ROOT = Path(__file__).parents[1]
         ("lumi-opd-qwen35-2b-contract-smoke.yaml", 0),
         ("lumi-grpo-dapo-oellm9b-instruct-sft-smoke.yaml", 0),
         ("lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml", 0),
+        ("lumi-grpo-math-oellm9b-promotion-loadfix-1step.yaml", 0),
     ],
 )
 def test_example_profiles_validate(name: str, expected_spare_gpus: int) -> None:

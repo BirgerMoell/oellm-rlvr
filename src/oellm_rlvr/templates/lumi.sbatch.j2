@@ -74,6 +74,7 @@ export VLLM_ALLOW_INSECURE_SERIALIZATION=1
 export VLLM_DISABLE_COMPILE_CACHE=1
 export VLLM_USE_V1=1
 export OELLM_WEIGHT_TRANSFER={{ config.rollout.weight_transfer | tojson }}
+export OELLM_LEARNER_INIT_TIMEOUT_SECONDS={{ config.training.learner_initialization_timeout_seconds }}
 export NCCL_CUMEM_ENABLE=0
 {% if config.platform.accelerator == "rocm" %}# Avoid the current LAIF hwloc AMD-SMI discovery SIGFPE in concurrent workers.
 export HWLOC_COMPONENTS=-rsmi
@@ -94,6 +95,17 @@ fi
 srun --label --gpu-bind=none bash -c \
   'mkdir -p "$JOB_TMPDIR" "$XDG_CACHE_HOME" "$TRITON_CACHE_DIR" "$TORCHINDUCTOR_CACHE_DIR" "$CUDA_CACHE_PATH" "$MIOPEN_USER_DB_PATH"'
 export TMPDIR="$JOB_TMPDIR"
+
+{% if config.model.local_path and config.model.stage_to_local %}# Large single-file checkpoints can deadlock ZeRO-3 startup when every learner
+# rank and rollout engine faults them from Lustre simultaneously. Stage one
+# immutable copy per node before Ray starts; the identical path resolves to
+# each node's private /tmp filesystem.
+export OELLM_MODEL_SOURCE={{ config.model.local_path | tojson }}
+export OELLM_STAGED_MODEL_PATH="$JOB_TMPDIR/model"
+echo "Staging model to node-local storage: $OELLM_MODEL_SOURCE -> $OELLM_STAGED_MODEL_PATH"
+srun --label --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=1 --gpu-bind=none \
+  bash -c 'set -euo pipefail; mkdir -p "$OELLM_STAGED_MODEL_PATH"; cp -a "$OELLM_MODEL_SOURCE"/. "$OELLM_STAGED_MODEL_PATH"/; test -s "$OELLM_STAGED_MODEL_PATH/config.json"; find "$OELLM_STAGED_MODEL_PATH" -maxdepth 1 -name "*.safetensors" -type f -size +1G -print -quit | grep -q .'
+{% endif %}
 
 cleanup() {
   if [[ -n "${RAY_STEP_PID:-}" ]]; then kill "$RAY_STEP_PID" 2>/dev/null || true; fi

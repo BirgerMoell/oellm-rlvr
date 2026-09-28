@@ -8,6 +8,7 @@ import re
 import socket
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
 from enum import Enum
 from functools import wraps
@@ -304,7 +305,42 @@ def wrap_open_instruct_streaming_config(actor_type: Any) -> bool:
     @wraps(original)
     def compatible_from_pretrained(self: Any, *args: Any, **kwargs: Any) -> Any:
         original.__globals__["streaming_config"] = self.streaming_config
-        return original(self, *args, **kwargs)
+        rank = int(getattr(self, "rank", -1))
+        started = time.monotonic()
+        timeout = int(os.environ.get("OELLM_LEARNER_INIT_TIMEOUT_SECONDS", "900"))
+        logger = original.__globals__.get("logger")
+        if logger is not None:
+            logger.info(
+                "OELLM learner initialization started: rank=%d model=%s timeout=%ds",
+                rank,
+                getattr(args[1] if len(args) > 1 else None, "model_name_or_path", "unknown"),
+                timeout,
+            )
+
+        def report_stall() -> None:
+            message = (
+                f"OELLM learner initialization has not completed after {timeout}s: "
+                f"rank={rank}; the driver will fail this startup instead of waiting for Slurm walltime"
+            )
+            if logger is not None:
+                logger.error(message)
+            else:
+                print(message, file=sys.stderr, flush=True)
+
+        watchdog = threading.Timer(timeout, report_stall)
+        watchdog.daemon = True
+        watchdog.start()
+        try:
+            result = original(self, *args, **kwargs)
+        finally:
+            watchdog.cancel()
+        if logger is not None:
+            logger.info(
+                "OELLM learner initialization completed: rank=%d elapsed=%.1fs",
+                rank,
+                time.monotonic() - started,
+            )
+        return result
 
     compatible_from_pretrained._oellm_streaming_config_global = True
     actor_type.from_pretrained = compatible_from_pretrained
@@ -315,9 +351,10 @@ def patch_open_instruct_grpo_module(module: ModuleType) -> bool:
     """Use a trainer→relay→leaf topology for native vLLM weight sync."""
     actor_type = _ray_actor_target(module.PolicyTrainerRayProcess)
     streaming_config_patched = wrap_open_instruct_streaming_config(actor_type)
+    progress_patched = wrap_open_instruct_learner_initialization_timeout(module)
     original = actor_type.setup_model_update_group
     if getattr(original, "_oellm_hierarchical_setup", False):
-        return streaming_config_patched
+        return streaming_config_patched or progress_patched
 
     @wraps(original)
     def hierarchical_setup(self: Any, vllm_engines: list[Any]) -> None:
@@ -383,6 +420,30 @@ def patch_open_instruct_grpo_module(module: ModuleType) -> bool:
 
     hierarchical_setup._oellm_hierarchical_setup = True
     actor_type.setup_model_update_group = hierarchical_setup
+    return True
+
+
+def wrap_open_instruct_learner_initialization_timeout(module: ModuleType) -> bool:
+    """Fail a wedged learner startup before the Slurm allocation expires."""
+    original = getattr(module, "ray_get_with_progress", None)
+    if original is None:
+        return False
+    if getattr(original, "_oellm_learner_initialization_timeout", False):
+        return False
+
+    @wraps(original)
+    def bounded_progress(
+        ray_refs: list[Any],
+        desc: str = "Processing",
+        enable: bool = True,
+        timeout: float | None = None,
+    ) -> Any:
+        if desc == "Initializing models" and timeout is None:
+            timeout = float(os.environ.get("OELLM_LEARNER_INIT_TIMEOUT_SECONDS", "900"))
+        return original(ray_refs, desc=desc, enable=enable, timeout=timeout)
+
+    bounded_progress._oellm_learner_initialization_timeout = True
+    module.ray_get_with_progress = bounded_progress
     return True
 
 

@@ -21,6 +21,7 @@ from oellm_rlvr.compat import (
     replace_none_enum_value,
     wrap_async_weight_update,
     wrap_harbor_vllm_token_extraction,
+    wrap_open_instruct_learner_initialization_timeout,
     wrap_open_instruct_rocm_visibility,
     wrap_open_instruct_streaming_config,
     wrap_skyrl_harbor_direct_single_engine,
@@ -542,6 +543,38 @@ def test_trainer_actor_restores_streaming_config_global(monkeypatch) -> None:
     actor.streaming_config = object()
     assert actor.from_pretrained() is actor.streaming_config
     assert function_globals["streaming_config"] is actor.streaming_config
+
+
+def test_learner_model_initialization_gets_a_bounded_timeout(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+    module = ModuleType("fake_grpo_fast")
+
+    def progress(refs, *, desc="Processing", enable=True, timeout=None):
+        calls.append({"refs": refs, "desc": desc, "enable": enable, "timeout": timeout})
+        return "done"
+
+    module.ray_get_with_progress = progress
+    monkeypatch.setenv("OELLM_LEARNER_INIT_TIMEOUT_SECONDS", "321")
+
+    assert wrap_open_instruct_learner_initialization_timeout(module) is True
+    assert wrap_open_instruct_learner_initialization_timeout(module) is False
+    assert module.ray_get_with_progress(["learner"], desc="Initializing models") == "done"
+    assert module.ray_get_with_progress(["rollout"], desc="Initializing vLLM engines") == "done"
+
+    assert calls == [
+        {
+            "refs": ["learner"],
+            "desc": "Initializing models",
+            "enable": True,
+            "timeout": 321.0,
+        },
+        {
+            "refs": ["rollout"],
+            "desc": "Initializing vLLM engines",
+            "enable": True,
+            "timeout": None,
+        },
+    ]
 
 
 def test_rank_zero_builds_one_trainer_relay_group_and_leaf_links() -> None:

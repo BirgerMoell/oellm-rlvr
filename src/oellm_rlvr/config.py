@@ -74,6 +74,10 @@ class ModelConfig(StrictModel):
     local_path: str | None = None
     revision: str | None = None
     manifest_path: str | None = None
+    # Copy immutable checkpoints to the node-local job filesystem before
+    # starting Ray.  This avoids eight ZeRO-3 ranks and every rollout engine
+    # concurrently faulting the same large safetensors file from Lustre.
+    stage_to_local: bool = False
     max_prompt_tokens: int = Field(default=2048, ge=1)
     response_tokens: int = Field(default=8192, ge=1)
     per_turn_tokens: int = Field(default=4096, ge=1)
@@ -255,6 +259,7 @@ class TrainingConfig(StrictModel):
     checkpoint_state_directory: str | None = None
     gradient_checkpointing: bool = True
     use_liger_loss: bool = True
+    learner_initialization_timeout_seconds: int = Field(default=900, ge=60)
 
 
 class OutputConfig(StrictModel):

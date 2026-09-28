@@ -146,7 +146,9 @@ def command_run_backend(args: argparse.Namespace) -> int:
     environment = os.environ.copy()
     if config.model.local_path:
         environment["OELLM_MODEL_ID"] = config.model.name_or_path
-        environment["OELLM_MODEL_PATH"] = config.model.local_path
+        environment["OELLM_MODEL_PATH"] = environment.get(
+            "OELLM_STAGED_MODEL_PATH", config.model.local_path
+        )
     os.execvpe(argv[0], argv, environment)
     return 127
 

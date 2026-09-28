@@ -1,19 +1,19 @@
 version: 1
-name: grpo-math-oellm9b-promotion-phase-a-32step
+name: grpo-math-oellm9b-promotion-loadfix-1step
 platform:
   accelerator: rocm
   nodes: 2
   gpus_per_node: 8
   container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
   account: project_465002530
-  partition: standard-g
-  walltime: 02:30:00
+  partition: dev-g
+  walltime: 00:30:00
   cpus_per_task: 56
   memory: 480G
   binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
   network_interface: hsn
 backend:
-  repo_path: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260928-promotion/tmax-reproduction
+  repo_path: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260928-loadfix/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
   python: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260924/venv/bin/python
   extra_args: [--save_filtered_rollouts]
@@ -55,21 +55,20 @@ training:
   learner_gpus_per_node: [8]
   sequence_parallel_size: 1
   learning_rate: 5.0e-7
-  total_episodes: 2048
+  total_episodes: 64
   epochs: 1
   deepspeed_stage: 3
   loss: dapo
   beta: 0.0
-  save_freq: 16
-  checkpoint_state_freq: 16
-  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-promotion-phase-a-32step-state
+  save_freq: 1
+  checkpoint_state_freq: 0
   gradient_checkpointing: true
   use_liger_loss: true
   learner_initialization_timeout_seconds: 600
 output:
-  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-promotion-phase-a-32step
-  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-promotion-phase-a-32step
-  experiment_name: lumi_grpo_math_oellm9b_promotion_phase_a_32step
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-promotion-loadfix-1step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-promotion-loadfix-1step
+  experiment_name: lumi_grpo_math_oellm9b_promotion_loadfix_1step
   with_tracking: true
   wandb_mode: offline
   wandb_entity: local

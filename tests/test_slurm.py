@@ -44,6 +44,21 @@ def test_hierarchical_job_exports_weight_transfer_mode() -> None:
     assert 'export OELLM_WEIGHT_TRANSFER="hierarchical"' in rendered
 
 
+def test_local_model_staging_is_opt_in_and_node_local() -> None:
+    path = ROOT / "configs/lumi-grpo-math-oellm9b-promotion-loadfix-1step.yaml"
+    rendered = render_slurm(load_config(path), path)
+
+    assert 'export OELLM_MODEL_SOURCE="/scratch/' in rendered
+    assert 'export OELLM_STAGED_MODEL_PATH="$JOB_TMPDIR/model"' in rendered
+    assert 'cp -a "$OELLM_MODEL_SOURCE"/. "$OELLM_STAGED_MODEL_PATH"/' in rendered
+    assert '--ntasks-per-node=1 --gpu-bind=none' in rendered
+    assert "OELLM_LEARNER_INIT_TIMEOUT_SECONDS=600" in rendered
+
+    unstaged_path = ROOT / "configs/lumi-math-qwen35-2b-smoke.yaml"
+    unstaged = render_slurm(load_config(unstaged_path), unstaged_path)
+    assert "OELLM_STAGED_MODEL_PATH" not in unstaged
+
+
 def test_opd_job_authenticates_manifests_and_selects_verl_preflight() -> None:
     path = ROOT / "configs/lumi-opd-qwen35-2b-contract-smoke.yaml"
     rendered = render_slurm(load_config(path), path)

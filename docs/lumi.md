@@ -186,6 +186,20 @@ The defaults reject more than 80% zero-signal groups, 15% truncation, 2% verifie
 
 Outputs, trainer checkpoints, traces, and rollout shards must live on shared storage. Ray state is ephemeral. On preemption or node failure, allocate a fresh cluster and resume from the backend checkpoint state; never try to reuse a half-dead Ray cluster. Keep run YAML, rendered sbatch, Git revisions, SIF path/digest, dataset revisions, and logs together under the run directory.
 
+### Node-local checkpoint staging
+
+Set `model.stage_to_local: true` for large local Hugging Face checkpoints, especially single-file 9B exports.
+The rendered job copies the immutable checkpoint once to `$JOB_TMPDIR/model` on every allocated node before
+Ray starts, verifies that the config and safetensors payload are present, and makes the backend use that
+node-local path. Outputs and restart state remain on shared storage. This prevents all learner ranks and rollout
+engines from concurrently faulting the same multi-gigabyte Lustre file.
+
+`training.learner_initialization_timeout_seconds` bounds the eight learner `from_pretrained` futures (900
+seconds by default). Each actor logs its rank, resolved model path, start time, and completion time. A wedged
+startup therefore fails with an explicit learner-initialization error rather than consuming the entire Slurm
+walltime. A timeout is a failed startup: allocate a fresh Ray cluster; do not reuse the partially initialized
+actors.
+
 When `training.checkpoint_state_freq` is positive, the launcher passes an explicit shared state directory to
 TMAX. It defaults to `<output.directory>_state` and can be overridden with
 `training.checkpoint_state_directory`. Reusing the same config resumes from the newest valid DeepSpeed state;
