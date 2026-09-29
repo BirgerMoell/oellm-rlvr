@@ -1,0 +1,564 @@
+# Advanced run reference and experiment history
+
+This is the former long README, retained as a reference. It mixes detailed configuration examples,
+historical results, and older LUMI procedures. It is **not** the entry point for a new training job.
+For that, use the [main README](../README.md) and [first-run guide](first-rl-run.md). Date-stamped
+qualification records linked below are the evidence for completed experiments; campaign/runbook documents
+describe proposed work. Revalidate every command and path before use.
+
+## What the repo does
+
+The repository deliberately does not copy a trainer. It pins the OpenEuroLLM TMAX/Open-Instruct backend for
+GRPO/DPPO and exposes a separate pinned verl adapter for on-policy distillation, then owns the parts that need to
+be cluster- and project-specific:
+
+- learner/rollout GPU topology validation;
+- Slurm and multi-node Ray lifecycle;
+- online vLLM rollout command generation and native learner-to-vLLM weight transfer;
+- deterministic math verification;
+- code-agent rollouts in Apptainer with seed files and deferred hidden tests;
+- revision-pinned GSM8K preparation plus paired parent/candidate reasoning evaluation and blinded trace audit;
+- task packing, append-only trajectory schemas, and rollout health gates;
+- ROCm and CUDA profiles using one control plane;
+- machine-validated multi-stage campaign DAGs with repository pins, compute ceilings, artifacts, and gates;
+- opt-in pure or math-hybrid on-policy distillation with teacher-pool accounting, tokenizer contracts, and
+  multi-teacher routing.
+
+## How online training works
+
+```mermaid
+flowchart LR
+    D["Math or code tasks"] --> Q["Ray prompt queues"]
+    Q --> V["vLLM rollout actors"]
+    V --> M["Math ground-truth verifier"]
+    V --> C["Apptainer code environments"]
+    C --> H["Deferred hidden tests"]
+    M --> A["Grouped advantages / active sampling"]
+    H --> A
+    A --> L["DeepSpeed learner actors"]
+    L -->|"native NCCL; RCCL on ROCm"| V
+    V --> T["Trace and rollout store"]
+    T --> G["signal, truncation, error, lag gates"]
+```
+
+Math rows carry `messages` and `ground_truth`. Code rows carry `messages`, `tools`, and the backend's exact `env_config` structure. Code environments only receive seed files at reset; tests are uploaded when the agent submits, and `/logs/verifier/reward.txt` is clipped to `[0, 1]` by the backend.
+
+## On-policy distillation
+
+OPD is selected explicitly with `backend.kind: verl_opd`; all existing profiles continue to use `tmax` by
+default. The student generates from its current policy, a frozen same-tokenizer teacher scores those sampled
+tokens, and verl updates the student from the token-level discrepancy. The teacher can be larger, equal-size, or
+smaller—the relevant requirement is better behavior on the targeted distribution, not parameter count.
+
+The implementation includes immutable student/teacher manifest checks, prompt conversion, exact GPU-footprint
+validation, pure-distillation and hybrid math rewards, deterministic verl command generation, Slurm preflight,
+and OPD-aware trajectory/gate schemas. Start with the same-model contract smoke before attempting capability
+transfer. See the [on-policy distillation runbook](on-policy-distillation.md).
+
+## Local installation and checks
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -e '.[data,math,dev]'
+.venv/bin/oellm-rlvr validate --config configs/lumi-math-qwen35-2b-smoke.yaml
+.venv/bin/oellm-rlvr topology --config configs/lumi-code-qwen35-2b-smoke.yaml
+.venv/bin/oellm-rlvr verify \
+  --task examples/math_task.json \
+  --completion examples/math_completion.txt
+pytest
+```
+
+Validate and render the proposed full-stack LUMI dry run:
+
+```bash
+.venv/bin/oellm-rlvr validate-campaign \
+  --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml
+.venv/bin/oellm-rlvr render-campaign \
+  --campaign campaigns/lumi-9b-end-to-end-dry-run.yaml
+```
+
+For the production-shaped checkpoint chain—reasoning, then math, then code, then agentic—use the
+[progressive RL runbook](progressive-rl-runbook.md) and its machine-validated campaign:
+
+```bash
+.venv/bin/oellm-rlvr validate-campaign \
+  --campaign campaigns/lumi-oellm9b-progressive-rl.yaml
+.venv/bin/oellm-rlvr render-campaign \
+  --campaign campaigns/lumi-oellm9b-progressive-rl.yaml
+```
+
+The [multilingual progressive RL programme](openeurollm-multilingual-progressive-rl.md) extends that
+sequence to OpenEuroLLM's canonical 36 languages and 43 language/script variants. Its
+[source inventory](../campaigns/openeurollm-multilingual-rl-sources.yaml) records which reasoning, math, code, and
+agentic inputs are already staged or qualified and which still require localization, verifier, license, or
+contamination work.
+
+For the Neonkraft OpenEuroLLM 9B instruct-SFT checkpoint, the
+[reasoning RL plan](oellm9b-instruct-reasoning-rl-plan.md) proposes this sequence: first run a small English
+reasoning experiment and compare its checkpoint with the starting model on held-out questions; only continue if
+that comparison passes predeclared checks. If the model cannot reliably produce usable reasoning responses, a
+small, limited SFT step using reviewed multilingual traces is an *optional* way to teach the response format
+before retrying RL. Multilingual reasoning and code training are later, separate experiments. This paragraph
+describes a plan, not jobs that have all run.
+
+The [Qwen3.5-9B EU-SFT multilingual math qualification](qualification-qwen35-eu-math-2026-09-14.md)
+records the first two nonzero-gradient optimizer steps from the EU-SFT checkpoint on LUMI, plus the think-tag,
+language-sampling, and truncation gaps that must be fixed before the reasoning stage is scaled.
+The [`EU-SFT-v2full` checkpoint record](checkpoint-qwen35-9b-eu-sft-v2full.md) reconstructs the
+control model's lineage, SFT mixture, training schedule, LUMI allocation, and known limitations.
+The [multilingual reasoning qualification](qualification-qwen35-eu-reasoning-2026-09-14.md)
+records the frozen parent profiles, language-gated reward, SFT bridge, and RL admission criteria.
+
+Bind any frozen incoming checkpoint to a validated reasoning, math, or code template without hand-editing its
+artifact paths:
+
+```bash
+.venv/bin/oellm-rlvr materialize-config \
+  --template configs/lumi-reasoning-gsm8k-oellm9b-32step.yaml \
+  --run-name oellm9b-reasoning-01 \
+  --model-id <repository@revision> --model-path <local-checkpoint> \
+  --dataset <profiled-training-pool> --output-root <campaign-root> \
+  --output <campaign-root>/configs/reasoning.yaml
+```
+
+After eight-sample profiling, build current-policy difficulty pools without relying on static source labels:
+
+```bash
+.venv/bin/oellm-rlvr build-curriculum-pools \
+  --profile <profile-dir>/task-profile.parquet \
+  --output <profile-dir>/curriculum-pools.json
+```
+
+The campaign foundations are executable, not just a schedule. They include checkpoint hashing and replay,
+strict task-catalog validation and pass-rate profiling, a two-node LUMI preflight, a pinned SkyRL/Harbor
+overlay, a four-update SkyRL AMD smoke, and a 16-task Harbor oracle/failure contract.
+
+The standalone `CodeVerifier` defaults to Apptainer. Its local runner refuses to start without `--allow-unsafe-local`; local execution is only for trusted unit-test fixtures, never generated model code.
+
+## LUMI setup and advanced reference
+
+This section records the detailed LUMI environment and agentic smoke procedures used by earlier qualifications.
+It is **not** the recommended first RL run and the `sbatch` examples below allocate GPUs. For a new training
+job, follow [the first-run guide](first-rl-run.md) and substitute your own checkpoint, dataset, output
+paths, and run name. The paths here belong to one user's project allocation.
+
+These commands run on a LUMI login node. Replace paths only if your project layout differs.
+
+```bash
+ROOT=/scratch/project_465002530/users/bmoell
+git clone git@github.com:BirgerMoell/oellm-rlvr.git "$ROOT/oellm-rlvr-src"
+git clone https://github.com/OpenEuroLLM/tmax-reproduction.git "$ROOT/tmax-reproduction"
+git -C "$ROOT/tmax-reproduction" checkout 3f80d37042402b8363f39c9535723b0d4cb8de54
+
+bash "$ROOT/oellm-rlvr-src/scripts/bootstrap_lumi_env.sh" \
+  "$ROOT/oellm-rlvr-src" \
+  "$ROOT/tmax-reproduction" \
+  "$ROOT/venvs/oellm-rlvr"
+```
+
+The bootstrap creates a `--system-site-packages` venv inside the current LUMI AI Factory ROCm 7 image. It adds Ray and the few missing Python packages without replacing LUMI's optimized PyTorch, vLLM, DeepSpeed, RCCL, or gfx90a kernels. Do not run the backend's normal `uv sync` on LUMI; that resolver includes CUDA-specific package sources.
+
+Install the separately pinned agentic stack and exercise each boundary:
+
+```bash
+bash "$ROOT/oellm-rlvr-src/scripts/bootstrap_skyrl_lumi.sh" "$ROOT/oellm-rlvr-src"
+
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr checkpoint-manifest \
+  --model "$ROOT/oellm-reasoning-training/artifacts/models/oellm-9b-256k-sft" \
+  --model-id openeurollm/oellm-9b-256k-sft \
+  --revision 08359ad61333263c067edaf290067fea5b103d34 \
+  --output "$ROOT/oellm-rlvr/checkpoint-freeze/checkpoint-manifest.json"
+
+cd "$ROOT/oellm-rlvr-src"
+sbatch scripts/lumi_full_stack_preflight.sbatch
+sbatch scripts/lumi_skyrl_amd_smoke.sbatch
+sbatch scripts/lumi_harbor_task_contract.sbatch
+sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+`bootstrap_skyrl_lumi.sh` pins SkyRL `f5bc3b7` and Harbor `4407eb5`, puts caches and builds on project
+scratch, and installs only an overlay around LUMI's native ROCm stack. Harbor does not try to nest Singularity
+inside LAIF: `scripts/lumi-host-launcher-bin/singularity` sends each sandbox launch through an overlapping
+same-node Slurm step, where LUMI's host Singularity runs it. The audited Harbor patch also omits `--fakeroot`
+on LUMI so the supported setuid runtime is used instead of an unavailable user namespace. Compute-node
+execution remains offline. The launcher removes bind-control variables inherited from the outer LAIF container;
+otherwise its host `/tmp` bind defeats Harbor's `--containall` isolation and concurrent trials overwrite one
+another. Use `TASK_NAME=terminal-edit-workers sbatch scripts/lumi_harbor_task_contract.sbatch`
+for the two-trial launcher probe. Set
+`SOAK=1` when submitting the Harbor job to run 112 environment launches; the default 32-trial smoke runs one
+oracle and one no-op attempt per task.
+
+`lumi_harbor_agentic_rollout.sbatch` is the first real agent gate. Its default 2-GCD canary starts one local vLLM
+engine and sends `repo-repair-clamp` through SkyRL's Harbor generator while Terminus-2 operates an isolated task
+terminal and Harbor runs the deferred verifier. The job is intentionally generation-only: it refuses to pass unless every ATIF
+trace has a real shell action, a linked terminal observation, aligned token IDs and log-probabilities, a finite
+verifier reward, and no leaked private verifier marker. The default is the frozen 9B OpenEuroLLM SFT checkpoint;
+override `MODEL` only for a deliberately different qualification. After the single-task gate passes, request the
+full 8-GCD topology explicitly for all four repairs:
+
+```bash
+sbatch scripts/lumi_harbor_agentic_rollout.sbatch
+sbatch --gpus-per-node=8 --cpus-per-task=56 --mem=480G \
+  --export='ALL,TASK_GLOB=repo-*,TOTAL_GPUS=8,OELLM_HARBOR_DIRECT_SINGLE_ENGINE=0' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+For the one-engine qualification canary, Harbor talks directly to vLLM's data-plane URL. This avoids losing
+vLLM-specific `prompt_token_ids` and `token_ids` values in the intermediate OpenAI router. The direct path refuses
+multi-engine configurations; remove `OELLM_HARBOR_DIRECT_SINGLE_ENGINE=1` only after the selected session-aware
+router has independently passed the token-ID forwarding probe.
+
+The vLLM engine uses compiled execution by default (`OELLM_VLLM_ENFORCE_EAGER=false`) and writes
+Triton/Inductor/vLLM compiler artifacts to the compute node's `/tmp`. Set `OELLM_VLLM_ENFORCE_EAGER=true` only
+as a compatibility fallback. The 9B checkpoint gets a 1,024-token budget per turn: its parent GSM8K evaluation
+averaged 587 generated tokens and a 192-token agent budget caused every response to truncate before valid JSON.
+`VLLM_LOGGING_LEVEL=INFO` retains startup and throughput evidence without emitting a filesystem write for every
+decode operator. These defaults matter on MI250: the earlier Qwen3.5-2B hybrid canary combined eager execution,
+per-operator DEBUG logging, and fallback GDN/Triton kernels and decoded at roughly 0.6 token/s. That run did prove
+that the direct data plane preserves exact prompt/completion token IDs and aligned log-probabilities; the 9B
+full-attention checkpoint is now the end-to-end qualification target.
+
+The agentic canary does not invoke Lmod on the compute node. It uses LUMI's
+absolute `/usr/bin/singularity` runtime and sets the two values from
+`lumi-aif-singularity-bindings` directly. This prevents an unrelated Lmod or
+module-filesystem stall from consuming an allocation before the first
+preflight log line; the pinned LAIF image and its hash remain the runtime
+boundary.
+
+To measure the within-prompt reward variance required by GRPO, repeat one task at a nonzero temperature while
+keeping a single inference engine and policy reservation:
+
+```bash
+sbatch --export='ALL,MODEL=/path/to/model,TASK_GLOB=repo-repair-bool,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=1.0,MAX_TURNS=2,MAX_TOKENS_PER_TURN=512' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+Only a learner-admissible group containing both reward 0 and reward 1 should be trained. The two-step canary
+uses the real SkyRL Harbor entrypoint, saves restart state and HF exports, and requires the second rollout batch
+to report a newer sampler weight version:
+
+```bash
+sbatch --export='ALL,MODEL=/path/to/model,TASK_GLOB=repo-repair-bool,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=1.0,MAX_TURNS=2,MAX_TOKENS_PER_TURN=512' \
+  scripts/lumi_harbor_agentic_train.sbatch
+```
+
+See the [Qwen3.5-9B qualification](qualification-harbor-training-2026-09-08.md) for the complete measured
+reference run. The same command is the incoming OpenEuroLLM checkpoint gate, but its task must be selected from
+that checkpoint's own profile rather than copied from Qwen.
+
+```bash
+sbatch --export='ALL,N_SAMPLES_PER_PROMPT=8,TEMPERATURE=0.7,MAX_TURNS=6' \
+  scripts/lumi_harbor_agentic_rollout.sbatch
+```
+
+`EXPECTED_TRIALS` is derived as `prompt count * samples per prompt`, so the strict qualification report covers
+every repetition. Do not treat a mixture of rewards across different prompts as GRPO signal; at least one
+repeated-prompt group must itself contain more than one reward value.
+
+The Qwen3.5-9B control qualified this path on LUMI. Job `21811157` produced eight learner-admissible Harbor
+trajectories from `Qwen/Qwen3.5-9B`, with 27 real Bash commands, no parser errors, and eight verifier rewards of
+`1.0`. This proves grouped sampling and the agentic data plane work, while also showing that
+`repo-repair-clamp` is too easy for this control model: an all-one group has zero GRPO advantage. See
+[`docs/qualification-harbor-agentic-2026-09-07.md`](qualification-harbor-agentic-2026-09-07.md) for the
+frozen configuration, compute accounting, and exact boundary of what remains unqualified.
+
+Artifacts are written under `$ROOT/oellm-rlvr/harbor-agent/JOB_ID/`: raw Harbor trials, ATIF trajectories,
+`campaign-index.jsonl`, `qualification.json`, source/checkpoint hashes, compatibility probes, and archived Ray
+logs. A reward of zero is allowed at this gate because it is a policy outcome, not an infrastructure failure.
+Before enabling a learner update, sample each prompt multiple times and require mixed rewards within at least one
+prompt group; otherwise GRPO has zero advantages by construction.
+
+Index a Harbor agent run without flattening its multi-turn trace:
+
+```bash
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr index-harbor-atif \
+  --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
+  --output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
+  --run-id RUN_ID --policy-version 0 --learner-version 0 \
+  --require-token-ids --require-logprobs
+```
+
+For the stricter executable-agent gate used by the Slurm job:
+
+```bash
+$ROOT/venvs/oellm-rlvr/bin/oellm-rlvr qualify-harbor-rollouts \
+  --jobs-root "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/jobs" \
+  --index-output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/campaign-index.jsonl" \
+  --report-output "$ROOT/oellm-rlvr/harbor-agent/RUN_ID/qualification.json" \
+  --run-id RUN_ID --policy-version 0 --learner-version 0 --expected-trials 1
+```
+
+Each JSONL row binds the trial result and raw `agent/trajectory.json` to SHA-256 digests, verifier reward,
+checkpoint versions, token coverage, tool-call counts, and an explicit RL admission decision. Copied-context and
+zero-LLM dispatch steps are retained in raw ATIF but excluded from trainable counts. Missing traces, Harbor
+exceptions, invalid rewards, broken tool-call references, and token/logprob misalignment are rejected. Harbor's
+`oracle` and `nop` agents intentionally produce no LLM trace, so their contract jobs validate the sandbox and
+verifier but are not learner-admissible rollouts.
+
+If the frozen parent cannot reliably emit Terminus-2 JSON or change actions after a terminal observation, build
+the project-owned agent-interface SFT bridge before RL:
+
+```bash
+oellm-rlvr build-agentic-sft-bridge --output data/oellm-agentic-bridge-v1
+oellm-rlvr validate-agentic-sft-bridge \
+  --dataset data/oellm-agentic-bridge-v1/agentic_bridge.jsonl
+```
+
+The output is deterministic OpenAI-message JSONL plus a LlamaFactory `dataset_info.json` and a SHA-256 manifest.
+It contains 16 successful multi-turn oracle episodes (52 assistant turns and 36 terminal commands) over function
+calls, stateful tools, terminal edits, and repository repairs. Every learned response is exactly one valid
+Terminus-2 JSON object; every command ends in a newline; observations and the final confirmation are included.
+The format follows [LlamaFactory's official OpenAI/ShareGPT mapping](https://github.com/hiyouga/LlamaFactory/blob/main/data/README.md#openai-format).
+
+This 16-record set is only a format/overfit canary. Its metadata marks every row `sft-bridge-only` and
+`not_for_rl_or_evaluation`: the oracle solutions must never be used to evaluate the bridged model or reused as
+RL prompts. Expand the parameterized task families into disjoint train/calibration/evaluation clusters before a
+production bridge, and rerun the Harbor canary on held-out tasks.
+
+Prepare a math smoke dataset and render a job:
+
+```bash
+VENV=$ROOT/venvs/oellm-rlvr
+mkdir -p "$ROOT/oellm-rlvr/data"
+$VENV/bin/oellm-rlvr make-math-smoke \
+  --output "$ROOT/oellm-rlvr/data/math-smoke.parquet" --count 64
+$VENV/bin/oellm-rlvr render-slurm \
+  --config "$ROOT/oellm-rlvr-src/configs/lumi-math-qwen35-2b-smoke.yaml" \
+  --output "$ROOT/oellm-rlvr/math-smoke.sbatch"
+sbatch "$ROOT/oellm-rlvr/math-smoke.sbatch"
+```
+
+To reproduce the live Hugging Face sample smokes, download the pinned train shards and select eight
+different semantic groups (enough to fill two asynchronous steps across four rollout engines):
+
+```bash
+mkdir -p data
+curl -L \
+  https://huggingface.co/datasets/birgermoell/oellm-math-rlvr/resolve/0ffc9d6dc82717c25733b3172f4dbd63e48bab68/data/train-00000-of-00001.parquet \
+  -o data/oellm-math-rlvr-train.parquet
+curl -L \
+  https://huggingface.co/datasets/birgermoell/oellm-code-rlvr/resolve/e1cae7711049e3b5ff021fb3e9c752424882998c/data/train-00000-of-00001.parquet \
+  -o data/oellm-code-rlvr-train.parquet
+$VENV/bin/oellm-rlvr sample-math \
+  --source data/oellm-math-rlvr-train.parquet \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5.parquet" \
+  --count 8 --language en --min-difficulty 5 --diverse-by subdomain
+$VENV/bin/oellm-rlvr sample-code \
+  --source data/oellm-code-rlvr-train.parquet \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-s6" \
+  --image "$ROOT/sandboxes/python-3.12-slim" \
+  --count 8 --max-steps 6
+```
+
+The inputs are [birgermoell/oellm-math-rlvr](https://huggingface.co/datasets/birgermoell/oellm-math-rlvr)
+and [birgermoell/oellm-code-rlvr](https://huggingface.co/datasets/birgermoell/oellm-code-rlvr).
+`sample-math` retains the published ground truth and verifier metadata. `sample-code` exposes only the
+problem to the policy and converts hidden `verification_info.test_cases` into sandbox-only test files.
+The committed smoke profiles point at these generated paths.
+The math smoke deliberately selects eight English difficulty-5 problems from different subdomains. Both
+one-node profiles draw eight completions for each of four prompts, increasing the chance that the grouped
+verifier rewards contain useful variation, and stop after one 32-episode optimization batch.
+Active sampling and zero-standard-deviation filtering are disabled in these bounded smoke profiles so an
+all-equal base-policy batch still exercises the learner and weight-sync path instead of resampling forever.
+The code smoke uses a six-turn horizon, exposes turns remaining, and adds a final-step submission warning.
+This lets a weak base policy reach the deferred verifier before exhausting the rollout token budget. Use
+`--max-steps` to generate samples for a different rollout horizon, and keep `task.max_steps` in the run
+configuration equal to that value. All code profiles use the concise
+`prompts/code-agent-system.txt` override, which names `/workspace/solution.py` and the exact submission marker.
+The path is resolved relative to the YAML file, not the shell's current directory.
+
+For a starting-checkpoint signal probe, select a fixed easier stratum. The math command below intentionally
+selects a narrow calibration prompt; the code command retains family diversity:
+
+```bash
+$VENV/bin/oellm-rlvr sample-math \
+  --source data/oellm-math-rlvr-train.parquet \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d2-fraction-canary-v4-20260826.parquet" \
+  --count 1 --language en --min-difficulty 2 --max-difficulty 2 \
+  --subdomain fraction_operations --copies 8
+$VENV/bin/oellm-rlvr sample-code \
+  --source data/oellm-code-rlvr-train.parquet \
+  --output-dir "$ROOT/oellm-rlvr/data/code-hf-e1cae771-en-d1-s6-v3" \
+  --image "$ROOT/sandboxes/python-3.12-slim" \
+  --count 8 --max-steps 6 --language en \
+  --min-difficulty 1 --max-difficulty 1 --diverse-by generator_family
+```
+
+The two-node 9B SFT qualification repeats the eight-row difficulty-5 math sample so TMAX can prefill eight
+prompt slots across two asynchronous steps:
+
+```bash
+$VENV/bin/oellm-rlvr sample-math \
+  --source "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5.parquet" \
+  --output "$ROOT/oellm-rlvr/data/math-hf-0ffc9d6c-en-d5-copies2-20260826.parquet" \
+  --count 8 --copies 2
+```
+
+If that published stratum is uniformly too hard for a new checkpoint, generate the checkpoint-independent
+integer ladder and run the bounded profile before enabling active sampling. The ladder deliberately spans
+eight arithmetic levels; zero-variance groups are retained, so calibration cannot resample forever:
+
+```bash
+$VENV/bin/oellm-rlvr make-math-calibration \
+  --output "$ROOT/oellm-rlvr/data/math-oellm9b-integer-ladder-copies2-20260826.parquet" \
+  --copies 2
+$VENV/bin/oellm-rlvr render-slurm \
+  --config "$ROOT/oellm-rlvr-src/configs/lumi-math-oellm9b-256k-sft-ladder-2node.yaml" \
+  --output "$ROOT/oellm-rlvr/oellm9b-ladder-qualification.sbatch"
+sbatch "$ROOT/oellm-rlvr/oellm9b-ladder-qualification.sbatch"
+```
+
+Always regenerate sampled task data with this repository revision or later. Code task data generated before
+commit `ac9bcc2` contains an incorrectly escaped newline in the generated verifier heredoc; submitted
+solutions then receive reward zero because the verifier cannot be parsed. Data generated before commit
+`99613f0` also has two signal-breaking contract errors: published math singleton answer lists become nested
+twice in the backend, and code rows do not put the actual problem in the policy-visible message. Regression
+tests now enforce scalar math answers, visible code instructions, and compilable generated verifier Python.
+
+The math signal profile repeats that revision-pinned fraction canary into the eight rows required for four
+prompt groups and two asynchronous steps, then draws 16 samples per group. LUMI job `21537886` produced mixed
+rewards in all four groups and `grad_norm=1.24`. This is a gradient-path qualification, not a representative
+training mixture; use active sampling over a diverse curriculum to retain mixed groups.
+
+Build the small read-only task sandbox once before the code smoke:
+
+```bash
+bash "$ROOT/oellm-rlvr-src/scripts/build_lumi_task_sandbox.sh" \
+  "$ROOT/sandboxes/python-3.12-slim"
+```
+
+Use revision-labelled output paths when changing a sampled dataset. Hugging Face Datasets caches prepared
+Arrow data by builder inputs and can otherwise reuse an older local Parquet build at the same pathname.
+
+Prepare the included code smoke task:
+
+```bash
+$VENV/bin/oellm-rlvr pack-code \
+  --manifest "$ROOT/oellm-rlvr-src/examples/code_task.yaml" \
+  --output-dir "$ROOT/oellm-rlvr/data/code-smoke"
+$VENV/bin/oellm-rlvr render-slurm \
+  --config "$ROOT/oellm-rlvr-src/configs/lumi-code-qwen35-2b-smoke.yaml" \
+  --output "$ROOT/oellm-rlvr/code-smoke.sbatch"
+sbatch "$ROOT/oellm-rlvr/code-smoke.sbatch"
+```
+
+Before either job, cache the model and any Hugging Face dataset on shared storage because LUMI compute nodes have no internet access. The included profiles set the Hugging Face libraries to offline mode. The example code sandbox SIF path is intentionally project-local: build or copy a Python 3.12 SIF there, then update both the manifest and YAML if the path differs.
+
+See [the LUMI runbook](lumi.md), [architecture](architecture.md), and [dataset/verifier contracts](data-and-verifiers.md) for the full operating sequence.
+
+## Configuration catalogue and results
+
+These are example or previously used configurations, **not** a list of jobs currently running. Validate and
+adapt a profile before submitting it. The paragraphs after the table record completed experiments and proposed
+follow-ups; their linked qualification records provide the evidence for each completed result.
+
+| Profile | Purpose | GPU split |
+|---|---|---|
+| `lumi-math-qwen35-2b-smoke.yaml` | One-node math signal and weight-sync smoke | 4 learner + 4 rollout GCDs |
+| `lumi-code-qwen35-2b-smoke.yaml` | One-node Slurm/Apptainer agent-test smoke | 4 learner + 4 rollout GCDs |
+| `lumi-math-qwen35-2b-signal-probe.yaml` | One-batch calibrated difficulty-2 fraction gradient canary | 4 learner + 4 rollout GCDs |
+| `lumi-math-qwen35-2b-active-sampling.yaml` | Two-update active-sampling qualification on the calibrated math canary | 4 learner + 4 rollout GCDs |
+| `lumi-math-oellm9b-256k-sft-active-2node.yaml` | Two-node active-sampling qualification of the published OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
+| `lumi-math-oellm9b-256k-sft-ladder-2node.yaml` | Bounded two-update arithmetic calibration for the OELLM 9B SFT checkpoint | 8 learner + 1 rollout GCDs; 7 GCDs reserved |
+| `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml` | Eight-engine hierarchical-transfer qualification of the OELLM 9B SFT checkpoint | 8 learner + 8 rollout GCDs |
+| `lumi-math-oellm9b-256k-sft-pilot-2node.yaml` | Ten-update, restartable 9B math RLVR pilot | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-dryrun.yaml` | Four-update DAPO production dry run on the instruct-SFT checkpoint | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-dryrun-resume.yaml` | Cold restart from the dry run and exactly one additional update | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-16step.yaml` | Profile-gated 16-update math canary on the instruct-SFT checkpoint | 8 learner + 8 rollout GCDs |
+| `lumi-grpo-math-oellm9b-instruct-sft-16step-resume.yaml` | Cold restart from the canary and exactly one additional update | 8 learner + 8 rollout GCDs |
+| `lumi-reasoning-gsm8k-oellm9b-32step.yaml` | Paired GSM8K reasoning-RL reference experiment (<96 GCD-hours) | 8 learner + 8 rollout GCDs |
+| `lumi-dryrun-reasoning-oellm9b-16step.yaml` | Full-stack campaign's bounded 9B reasoning canary | 8 learner + 8 rollout GCDs |
+| `lumi-dryrun-code-oellm9b-4step.yaml` | Full-stack campaign's executable-code canary | 8 learner + 8 rollout GCDs |
+| `lumi-code-qwen35-2b-signal-probe.yaml` | One-batch difficulty-1 code gradient probe | 4 learner + 4 rollout GCDs |
+| `lumi-code-qwen35-2b-4node.yaml` | TMAX-style asynchronous code training | 16 learner + 16 rollout GCDs |
+| `cuda-code-qwen35-2b-smoke.yaml` | NVIDIA port template | 4 learner + 4 rollout GPUs |
+
+Every profile is validated before rendering. It rejects oversubscribed GPU layouts, insufficient rollout batches, invalid sequence-parallel divisibility, math runs with sandboxes, and code runs without sandboxes.
+
+The instruct-SFT math dry run and its independent cold-restart probe completed five finite DAPO updates on
+LUMI in 5.67 total GCD-hours. All 40 accepted prompt groups had mixed rewards, all gradient norms were non-zero,
+and the restart recovered optimizer, RNG, sampler, and data-preparation state before continuing at update 5.
+See the [2026-09-28 qualification record](qualification-oellm9b-instruct-math-dapo-2026-09-28.md) for
+immutable inputs, job IDs, hashes, metrics, artifacts, and the remaining KL-reference caveat.
+
+The subsequent [16-update canary](qualification-oellm9b-instruct-math-canary-2026-09-28.md) used a
+parent-profiled procedural-math curriculum, completed every optimizer and restart gate in 7.82 GCD-hours,
+and moved a disjoint 1,024-prompt held-out evaluation from 42.97% to 44.63%. Treat this as a positive canary
+signal: broader non-procedural and multilingual confirmation is required before a production claim.
+
+The [multilingual math promotion](oellm9b-math-promotion-2026-09-28.md) turns that result into two gated
+32-update windows. It freezes semantic-group-disjoint EU24 training and evaluation pools, preserves 20% replay,
+checks a non-procedural DAPO holdout, and stops at the window boundary unless fresh reward-signal and paired
+evaluation gates pass.
+
+The [reasoning-RL reference protocol](lumi-reasoning-reference.md) adds a strict official-train versus
+official-test boundary, a resumable LUMI vLLM evaluator, paired confidence statistics, form/degeneration
+metrics, and a blinded A/B reasoning audit. GSM8K results for the current SFT checkpoint are diagnostic because
+its earlier training mixture contains a GSM8K-derived component.
+
+The 32-update reference has now completed: exact accuracy moved from 40.80% to 44.46% on 1,255 paired prompts,
+all 32 updates had non-zero gradients, and training used 9.30 GCD-hours. Read the
+[qualification record](qualification-gsm8k-reasoning-2026-09-05.md) for the immutable evidence and the
+[comprehensive OpenEuroLLM 9B RL plan](openeurollm-9b-rl-plan.md) for the proposed single-turn,
+multilingual, code, and SkyRL + Harbor agentic programme.
+
+The next qualification is specified by the [full-stack LUMI RL dry-run runbook](lumi-full-stack-rl-dry-run.md)
+and its [machine-readable campaign](../campaigns/lumi-9b-end-to-end-dry-run.yaml). It evaluates current RL systems,
+pins SkyRL + Harbor as the primary agentic candidate and verl as the bounded fallback, and schedules a miniature
+of every production stage within a 750 GCD-hour required campaign reservation.
+
+The real OELLM 9B ladder qualification completed on LUMI as job `21540106`: 128 rollouts, mean reward
+`0.7578125`, 14/16 mixed reward groups, gradient norms `0.34` and `0.40`, and a complete final checkpoint.
+The revision-pinned difficulty-5 sample was uniformly reward-zero for this checkpoint, so use the bounded
+ladder before turning on active sampling for a new model/data pairing. Exact evidence and resource accounting
+are in [the qualification record](qualification-2026-08-24.md).
+
+For the full two-node topology, first submit `scripts/lumi_hierarchical_weight_transfer_probe.sbatch`, then
+render and submit `lumi-math-oellm9b-256k-sft-hierarchical-2node.yaml`. Hierarchical mode sends every packed
+weight tensor once across nodes to a rollout relay, which fans it out through seven pairwise local RCCL links.
+It is currently limited to eight TP=1 rollout engines on one node.
+
+After that qualification passes, follow [the 9B LUMI pilot runbook](lumi-9b-pilot.md) for the seeded
+10-update math run, restart proof, resource ceiling, and explicit go/no-go criteria.
+
+The LUMI profiles intentionally keep sequence parallelism at 1 because the pinned ROCm/FLA/Triton stack's
+context-parallel GDN kernel fails AMD MLIR compilation for some variable rollout shapes. The learner GCDs are
+used as data-parallel ranks instead; see the LUMI runbook before changing this setting.
+
+## Definition of a successful smoke
+
+The committed one-node profiles are bounded infrastructure smokes. A successful job is more than a zero
+exit status:
+
+1. every node passes the GPU/import/native-weight-transfer preflight;
+2. all Ray nodes join and learner/vLLM placement groups are created;
+3. rollouts and a learner step complete;
+4. the initial and post-step weight broadcasts complete;
+5. code runs show a sandbox reset, tool call, deferred test upload, and parsed reward;
+6. response truncation, environment errors, and policy lag remain inside the configured gates.
+
+Before scaling, run a separate signal qualification with active sampling enabled. It must contain both reward
+0 and reward 1 within prompt groups, produce nonzero gradients, and remain inside the zero-standard-deviation
+and policy-lag gates. The four-node training profile enables active sampling; do not scale a run with all-equal
+rewards merely because the bounded infrastructure smoke passes.
+
+Inspect the backend artifact directly after each probe:
+
+```bash
+oellm-rlvr inspect-rollouts --rollouts rollouts_000000.jsonl
+```
+
+`has_grouped_reward_signal` is false when aggregate accuracy looks healthy but every prompt group is
+internally constant. The same report counts submissions, truncations, timeouts, and tool-format errors.
+
+The repository's local tests cover schemas, commands, packing, verifiers, gates, and Slurm rendering. The
+one-node MI250X infrastructure smokes completed on LUMI on 2026-08-24. The math/code grouped-signal probes
+and two-update math active-sampling qualification completed on 2026-08-26; see
+[the qualification record](qualification-2026-08-24.md) for exact jobs, versions, metrics, and the
+remaining production-qualification work.
+
+## Security
+
+Generated code must run only in Apptainer/Docker sandboxes. Hidden tests must not appear in prompts, seed files, rollout traces, or model-visible tool output before submission. Use dedicated task images, read-only base images, bounded timeouts, no secrets, and no writable host bind beyond an isolated task workspace.
+
+Apache-2.0 licensed.
