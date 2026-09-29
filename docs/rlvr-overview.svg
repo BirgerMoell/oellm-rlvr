@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
+  <title id="title">How oellm-rlvr works</title>
+  <desc id="desc">A model checkpoint, prepared tasks, and a YAML configuration enter the oellm-rlvr control plane. On Slurm and Ray, a pinned training backend samples prompts, generates multiple responses, verifies math or code results, updates the learner, and synchronizes weights to rollout workers. Records and checkpoints are checked with independent evaluation before promotion.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1">
+      <stop stop-color="#101922"/>
+      <stop offset="1" stop-color="#15242A"/>
+    </linearGradient>
+    <linearGradient id="accent" x2="1">
+      <stop stop-color="#77DBC0"/>
+      <stop offset="1" stop-color="#A6C9F3"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#8FAAA9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="greenArrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#77DBC0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <pattern id="dots" width="26" height="26" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#A4C0B8" opacity=".11"/>
+    </pattern>
+    <style>
+      text { font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .eyebrow { font-size: 17px; font-weight: 750; letter-spacing: 3px; fill: #7DDCC2; }
+      .title { font-size: 52px; font-weight: 760; letter-spacing: -1.5px; fill: #F3F8F5; }
+      .subtitle { font-size: 21px; fill: #B9CDC9; }
+      .label { font-size: 16px; font-weight: 750; letter-spacing: 2px; fill: #7DDCC2; }
+      .heading { font-size: 27px; font-weight: 710; fill: #F3F8F5; }
+      .body { font-size: 19px; fill: #B9CDC9; }
+      .small { font-size: 17px; fill: #B9CDC9; }
+      .number { font-size: 19px; font-weight: 800; fill: #79DCC2; }
+      .rule { fill: none; stroke: #8FAAA9; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1400" height="900" fill="url(#bg)"/>
+  <rect width="1400" height="900" fill="url(#dots)"/>
+  <path d="M54 46 H1346" stroke="#385354" stroke-width="2"/>
+  <text x="54" y="91" class="eyebrow">OPENEUROLLM · RLVR</text>
+  <text x="54" y="153" class="title">From verifiable tasks to a better checkpoint</text>
+  <text x="54" y="187" class="subtitle">One experiment: prepare → validate → generate → verify → learn → evaluate</text>
+
+  <!-- Three user-supplied inputs. -->
+  <g>
+    <rect x="54" y="222" width="408" height="119" rx="17" fill="#1D3033" stroke="#45605D" stroke-width="2"/>
+    <rect x="496" y="222" width="408" height="119" rx="17" fill="#1D3033" stroke="#45605D" stroke-width="2"/>
+    <rect x="938" y="222" width="408" height="119" rx="17" fill="#1D3033" stroke="#45605D" stroke-width="2"/>
+    <text x="78" y="252" class="label">MODEL</text>
+    <text x="78" y="292" class="heading">Checkpoint + tokenizer</text>
+    <text x="78" y="321" class="small">The policy to improve</text>
+    <text x="520" y="252" class="label">TASKS</text>
+    <text x="520" y="292" class="heading">Prepared task pool</text>
+    <text x="520" y="321" class="small">Prompts + answers or hidden tests</text>
+    <text x="962" y="252" class="label">RUN SPECIFICATION</text>
+    <text x="962" y="292" class="heading">YAML configuration</text>
+    <text x="962" y="321" class="small">Backend · GPU layout · paths</text>
+    <path d="M258 342 V367" class="rule"/>
+    <path d="M700 342 V367" class="rule"/>
+    <path d="M1142 342 V367" class="rule"/>
+  </g>
+
+  <!-- This repository owns the orchestration boundary. -->
+  <rect x="54" y="372" width="1292" height="93" rx="18" fill="#294740" stroke="#78D7B8" stroke-width="2.5"/>
+  <rect x="54" y="372" width="10" height="93" rx="5" fill="url(#accent)"/>
+  <text x="86" y="411" class="label" fill="#A4F0D7">THIS REPOSITORY · CONTROL PLANE</text>
+  <text x="86" y="443" class="body" fill="#E6F6EC">Validate inputs and topology  ·  render the job  ·  launch and monitor on LUMI / CUDA clusters</text>
+  <path d="M700 466 V496" class="rule"/>
+
+  <!-- Training backend and the online loop. -->
+  <rect x="54" y="505" width="1292" height="240" rx="20" fill="#17262C" stroke="#507077" stroke-width="2" stroke-dasharray="9 7"/>
+  <text x="80" y="541" class="label" fill="#A6C9F3">PINNED TMAX / OPEN-INSTRUCT BACKEND · SLURM + RAY</text>
+  <text x="1269" y="541" text-anchor="end" class="small">Online DPPO / GRPO</text>
+
+  <g>
+    <rect x="80" y="563" width="275" height="112" rx="15" fill="#21363A" stroke="#4D6A6B" stroke-width="1.5"/>
+    <rect x="402" y="563" width="275" height="112" rx="15" fill="#21363A" stroke="#4D6A6B" stroke-width="1.5"/>
+    <rect x="724" y="563" width="275" height="112" rx="15" fill="#21363A" stroke="#4D6A6B" stroke-width="1.5"/>
+    <rect x="1046" y="563" width="275" height="112" rx="15" fill="#21363A" stroke="#4D6A6B" stroke-width="1.5"/>
+    <text x="103" y="594" class="number">01</text><text x="143" y="594" class="heading">Sample</text>
+    <text x="103" y="624" class="small">Prompts from the task pool</text>
+    <text x="103" y="649" class="small">are queued for workers</text>
+    <text x="425" y="594" class="number">02</text><text x="465" y="594" class="heading">Generate</text>
+    <text x="425" y="624" class="small">vLLM produces several</text>
+    <text x="425" y="649" class="small">answers per prompt</text>
+    <text x="747" y="594" class="number">03</text><text x="787" y="594" class="heading">Verify</text>
+    <text x="747" y="624" class="small">Math checks or sandboxed</text>
+    <text x="747" y="649" class="small">code tests assign rewards</text>
+    <text x="1069" y="594" class="number">04</text><text x="1109" y="594" class="heading">Learn</text>
+    <text x="1069" y="624" class="small">Mixed-reward groups</text>
+    <text x="1069" y="649" class="small">drive the policy update</text>
+    <path d="M359 619 H391" class="rule"/>
+    <path d="M681 619 H713" class="rule"/>
+    <path d="M1003 619 H1035" class="rule"/>
+  </g>
+  <path d="M1183 678 V709 H540 V679" fill="none" stroke="#77DBC0" stroke-width="2.5" marker-end="url(#greenArrow)"/>
+  <rect x="680" y="691" width="356" height="33" rx="16" fill="#17262C"/>
+  <text x="858" y="714" text-anchor="middle" class="small" fill="#A5EAD3">Sync updated weights to rollout workers</text>
+
+  <!-- Outputs and the actual go/no-go decision. -->
+  <path d="M1183 746 V773" class="rule"/>
+  <rect x="54" y="780" width="1292" height="81" rx="17" fill="#263238" stroke="#728793" stroke-width="2"/>
+  <text x="80" y="810" class="label" fill="#B8D3EF">EVIDENCE AFTER THE RUN</text>
+  <text x="80" y="841" class="body" fill="#E8F0EF">Rollout records + health checks</text>
+  <path d="M493 820 H535" class="rule"/>
+  <text x="559" y="826" class="body" fill="#E8F0EF">Saved checkpoint</text>
+  <path d="M778 820 H820" class="rule"/>
+  <text x="844" y="826" class="body" fill="#E8F0EF">Held-out evaluation</text>
+  <path d="M1070 820 H1112" class="rule"/>
+  <text x="1135" y="826" class="body" fill="#A5EAD3">Promote?</text>
+  <path d="M54 882 H1346" stroke="#385354" stroke-width="2"/>
+</svg>
