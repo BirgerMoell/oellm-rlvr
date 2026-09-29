@@ -1,5 +1,7 @@
 # oellm-rlvr
 
+![Overview of the oellm-rlvr training workflow](docs/rlvr-overview.svg)
+
 `oellm-rlvr` helps run reinforcement learning with verifiable rewards (RLVR) for OpenEuroLLM models. It is
 built for LUMI's AMD MI250X GPUs first, with CUDA configurations for NVIDIA clusters. For math, a model
 generates several answers per question, a deterministic verifier checks them, and the learner updates the
