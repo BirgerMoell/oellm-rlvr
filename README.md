@@ -33,7 +33,7 @@ for task formats and sandbox safety.
 |---|---|
 | Run one bounded math RL job | [First-run guide](docs/first-rl-run.md) |
 | Set up or troubleshoot LUMI | [LUMI runbook](docs/lumi.md) |
-| Understand current proposed multilingual math training | [Math phase plan](docs/oellm9b-math-promotion-2026-09-28.md) |
+| Understand the multilingual math stages | [Math phase plan](docs/oellm9b-math-promotion-2026-09-28.md) and [completed experiment history](docs/experiment-history.md) |
 | Train code or agentic tasks | [Data/verifier contracts](docs/data-and-verifiers.md), then [advanced reference](docs/advanced-run-reference.md) |
 | Inspect completed experiments | [Experiment history](docs/experiment-history.md) and its dated qualification records |
 | Explore future stages | [Progressive RL plan](docs/progressive-rl-runbook.md) |

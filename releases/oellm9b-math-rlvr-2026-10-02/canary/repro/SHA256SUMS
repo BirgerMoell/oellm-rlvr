@@ -1,0 +1,3 @@
+c55f686197dbbee6961a3f2f734b488a9379f566e21c54fb7116c001864f0974  canary-run.yaml
+ec33cc0fcbd6be73d87ed8f0582683cc6f2e4e56297ffa7db92f3712a5ec3aff  ../training_data/english-pilot.parquet
+c5b01a4b13d5bd76fdb4a69e73994e73704bb73e62a6a067068032f46a3f7565  ../model.safetensors

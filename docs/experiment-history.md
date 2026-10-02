@@ -2,7 +2,7 @@
 
 This index records **what ran**, rather than telling a new user what to submit. Each linked qualification
 record carries the detailed inputs, job IDs, artifacts, and limitations. Plans and unsubmitted configurations
-are listed separately. Status below is as checked on 2026-09-29; consult LUMI Slurm and the output directories
+are listed separately. Status below is as checked on 2026-10-02; consult LUMI Slurm and the output directories
 for live job status.
 
 ## OpenEuroLLM 9B math sequence
@@ -14,12 +14,13 @@ for live job status.
 | Multilingual phase-A admission | [Math phase record](oellm9b-math-promotion-2026-09-28.md), jobs `22401601` and `22401602` | The proposed 80% EU / 20% English data mix had useful model-specific reward variance | A trained multilingual checkpoint |
 | First 32-update phase-A attempt | Job `22402030` | Nothing about learning: it timed out during model initialization, before an update or checkpoint | 32-update stability or any quality change |
 | Repaired startup, one update | Job `22406985`, control commit `5ee2e1e` | Node-local checkpoint staging and bounded learner startup completed; 64 rollouts, one finite nonzero-gradient update, weight sync, and complete export | Sustained 32-update training or multilingual improvement; the exact original startup failure mechanism remains unproven |
+| Multilingual math Phase A | Job `22432251`, 32 updates, final [experimental checkpoint](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-phase-a-32step-experimental) from the [16-step canary](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-canary-step16-experimental) | Two-node TMAX/DAPO run completed with nonzero gradients and a full step-32 export; frozen multilingual exact accuracy rose 36.33% → 38.87% over 512 paired prompts | Broad math improvement: exact McNemar p=0.0596; DAPO-Math remained near floor (4.10% → 4.59%), with no demonstrated change |
 
-The next **proposed** step is a fresh 32-update phase A from the tested control revision, with new output paths
-and a newly rendered Slurm script. At its boundary, evaluate the saved checkpoints against the frozen
-multilingual and external-family math sets before considering phase B. The old script for job `22402030` was
-rendered from a pre-fix checkout and must not be reused. See the [phase plan](oellm9b-math-promotion-2026-09-28.md)
-for the training mix and evaluation gates. This is a proposal, not a completed result.
+The Phase A release cards and exact run artifacts are also tracked under
+[`releases/oellm9b-math-rlvr-2026-10-02`](../releases/oellm9b-math-rlvr-2026-10-02/).
+The old script for job `22402030` was rendered from a pre-fix checkout and must not be reused.
+The next **proposed** step is profiling the harder Phase B components and making a separate
+promotion decision; Phase B training has not run. See the [phase plan](oellm9b-math-promotion-2026-09-28.md).
 
 ## Other reference experiments
 

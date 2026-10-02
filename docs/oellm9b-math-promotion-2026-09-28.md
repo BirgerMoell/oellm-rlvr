@@ -98,3 +98,21 @@ LUMI from the pinned clean control checkout is
 `9cc087c70e24b3613746af49d3b713dc6f29ed21ba88374e7bc2b96c47e2eb9f`.
 
 Phase A was submitted as LUMI job `22402030` only after the admission metrics above were read and checked.
+
+## Phase A outcome — 2026-10-02
+
+The first submission (`22402030`) timed out before training; a repaired one-update job
+(`22406985`) qualified startup and weight sync. The subsequent full Phase A job
+`22432251` completed 32 updates with finite nonzero gradients and a complete step-32
+export. This was **TMAX/Open-Instruct DAPO**, not the separate Verl experiment.
+
+Paired greedy evaluation against the exact step-16 starting checkpoint completed on
+the frozen 512-prompt multilingual set (`22484174`) and 1,024-prompt DAPO diagnostic
+(`22484176`). Multilingual exact-answer accuracy moved 36.33% → 38.87% (+2.54 points;
+5,000-sample paired-bootstrap 95% interval +0.20 to +5.08; exact two-sided McNemar
+`p=0.0596`). DAPO-Math moved 4.10% → 4.59% (+0.49 points; interval -0.68 to +1.66).
+Both evaluations used identical frozen inputs and generation settings across the pair.
+Phase B has **not** run. The [experimental model release](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-phase-a-32step-experimental)
+contains the exact Phase A run and evaluation artifacts; the published
+[step-16 parent](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-canary-step16-experimental)
+preserves the lineage.

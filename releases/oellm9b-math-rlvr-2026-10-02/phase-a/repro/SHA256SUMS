@@ -1,0 +1,6 @@
+9fe14e592f21b02bc13522f8c4927bf3c528f4a1d85c28e9db84d0c8e7d8186f  phase-a-run.yaml
+2bc1fd6d86ddb33b32424a51391a77391acfbdab87d8f78964a2f57fe8489555  phase-a-run.sbatch
+ac6df376da2b65d52677905d221ac2a9c857b8c88fdc6c3e5fe47d52066a1bda  phase-a-data-manifest.json
+2c48c91df99cd1116fafd8f1f96f3ad26000711ebac5e3d3d925cfd66fc49eb6  ../training_data/eu-math.parquet
+ec33cc0fcbd6be73d87ed8f0582683cc6f2e4e56297ffa7db92f3712a5ec3aff  ../training_data/english-pilot.parquet
+7f9ad2b9783263b516cdfbff338be21862c526e50e4a1a96ab9bf95d7097f4be  ../model.safetensors
