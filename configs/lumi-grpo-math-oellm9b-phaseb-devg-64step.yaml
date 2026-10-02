@@ -1,5 +1,5 @@
 version: 1
-name: grpo-math-oellm9b-phaseb-devg-64step
+name: grpo-math-oellm9b-phaseb-devg-64step-mixfix
 platform:
   accelerator: rocm
   nodes: 2
@@ -28,13 +28,17 @@ model:
   pack_length: 3072
 datasets:
   - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/oellm9b-math-promotion-20260928/phase-b/eu-math.parquet
-    weight: 0.64
+    # TMAX interprets this as a fraction of this file, not a final mix share:
+    # int(2944 * 0.8696) = 2560 rows.
+    weight: 0.8696
     split: train
   - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/oellm9b-math-promotion-20260928/phase-b/english-replay.parquet
-    weight: 0.16
+    # int(2048 * 0.3125) = 640 rows.
+    weight: 0.3125
     split: train
   - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/oellm9b-math-promotion-20260928/phase-a/all-math.parquet
-    weight: 0.20
+    # int(4992 * 0.1603) = 800 rows; 2560/640/800 gives 64/16/20.
+    weight: 0.1603
     split: train
 task:
   kind: math
@@ -65,14 +69,14 @@ training:
   beta: 0.0
   save_freq: 32
   checkpoint_state_freq: 32
-  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-phaseb-devg-64step-state
+  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-phaseb-devg-64step-mixfix-state
   gradient_checkpointing: true
   use_liger_loss: true
   learner_initialization_timeout_seconds: 600
 output:
-  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-phaseb-devg-64step
-  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-phaseb-devg-64step
-  experiment_name: lumi_grpo_math_oellm9b_phaseb_devg_64step
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-phaseb-devg-64step-mixfix
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-phaseb-devg-64step-mixfix
+  experiment_name: lumi_grpo_math_oellm9b_phaseb_devg_64step_mixfix
   with_tracking: true
   wandb_mode: offline
   wandb_entity: local

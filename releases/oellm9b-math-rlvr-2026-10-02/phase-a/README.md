@@ -59,7 +59,7 @@ The `model.safetensors` file is 18,203,942,400 bytes; SHA-256:
 | Accelerator allocation | Two LUMI-G nodes; eight MI250X GCD learner + eight rollout, about 7.28 allocated GCD-hours |
 | Algorithm | DAPO, verifiable math outcome reward, active sampling, asynchronous rollouts |
 | Update shape | Eight unique prompts × eight samples, 32 updates, 2,048 accepted trajectories |
-| Mixture | 80% EU-language pool, 20% English replay by sampling weight |
+| Mixture | Configured factors `0.8` EU and `0.2` English were **per-file fractions**, not final sampling shares: TMAX selected 2,355 EU and 51 English rows, approximately 97.9%/2.1% of the transformed pool. Actual accepted-rollout shares were not separately audited. |
 | Parameters | Temperature 1.0, LR `5e-7` constant, `beta=0`, BF16, DeepSpeed ZeRO-3, seed 42 |
 | Backend | [`OpenEuroLLM/tmax-reproduction`](https://github.com/OpenEuroLLM/tmax-reproduction) at `3f80d37042402b8363f39c9535723b0d4cb8de54` |
 | Control code | [`BirgerMoell/oellm-rlvr`](https://github.com/BirgerMoell/oellm-rlvr) at `f22ba2d18e1763474b8bd00d280c6fe135d8eaa6` |
@@ -69,9 +69,13 @@ teardown, although the top-level job completed `0:0`, all 32 learner updates fin
 and the step-32 model and restart state were written. The inner-step anomaly has not
 been root-caused; this release is a training result, not a claim of flawless orchestration.
 
-The EU component is 2,944 difficulty-1-to-3 problems: 128 per each of 23 non-English
+The source EU component is 2,944 difficulty-1-to-3 problems: 128 per each of 23 non-English
 EU official languages. The English replay is the **original 256-row canary training pool**,
-not the larger 2,048-row English pool listed in the data builder's manifest. Both exact
+not the larger 2,048-row English pool listed in the data builder's manifest. The control
+configuration intended an 80/20 final mix, but the pinned TMAX backend interprets each
+factor as the fraction to retain from its own file. Its job log records 2,355 EU and 51
+English transformed rows. This is an important limitation of the experiment; it was
+not an 80/20 final training mixture. Both exact source
 training files are bundled as [`training_data/eu-math.parquet`](training_data/eu-math.parquet)
 and [`training_data/english-pilot.parquet`](training_data/english-pilot.parquet). Their
 SHA-256 values are `2c48c91df99cd1116fafd8f1f96f3ad26000711ebac5e3d3d925cfd66fc49eb6`

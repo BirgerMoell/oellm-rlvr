@@ -112,7 +112,19 @@ the frozen 512-prompt multilingual set (`22484174`) and 1,024-prompt DAPO diagno
 5,000-sample paired-bootstrap 95% interval +0.20 to +5.08; exact two-sided McNemar
 `p=0.0596`). DAPO-Math moved 4.10% → 4.59% (+0.49 points; interval -0.68 to +1.66).
 Both evaluations used identical frozen inputs and generation settings across the pair.
-Phase B has **not** run. The [experimental model release](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-phase-a-32step-experimental)
+At this Phase A evaluation boundary, Phase B had **not** run. The later bounded
+[dev-g Phase B qualification](qualification-oellm9b-math-phaseb-devg-2026-10-02.md)
+was submitted on 2026-10-02; its training and evaluation outcomes are separate.
+The [experimental model release](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-phase-a-32step-experimental)
 contains the exact Phase A run and evaluation artifacts; the published
 [step-16 parent](https://huggingface.co/birgermoell/oellm-9b-math-rlvr-canary-step16-experimental)
 preserves the lineage.
+
+Correction, 2026-10-02: the pinned TMAX backend treats `dataset_mixer_list` values
+as **fractions of each file to retain**, not normalized final sampling weights.
+Phase A's `0.8`/`0.2` factors yielded 2,355 EU rows and 51 English rows in the
+transformed pool (about 97.9%/2.1%), as the job log records. The 80/20 values above
+were the intended mix and the weights used to estimate the admission profile; they
+were **not** the effective final training-pool ratio. Actual accepted-rollout source
+shares were not independently tallied. The next dev-g experiment corrects this by
+deriving factors from source-file sizes and checking the backend's selected-row counts.

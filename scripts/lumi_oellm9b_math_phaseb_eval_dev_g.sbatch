@@ -18,7 +18,7 @@ CAMPAIGN="$ROOT/runs/oellm9b-math-phaseb-devg-20261002"
 CONTROL=/scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260928-promotion/control
 CONTAINER=/appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
 PYTHON=/scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260924/venv/bin/python
-EXPORT_ROOT="$ROOT/outputs/grpo-math-oellm9b-phaseb-devg-64step"
+EXPORT_ROOT="$ROOT/outputs/grpo-math-oellm9b-phaseb-devg-64step-mixfix"
 BASELINE="$ROOT/evals/oellm9b-math-promotion-20260928"
 
 test "$(git -C "$CONTROL" rev-parse HEAD)" = f22ba2d18e1763474b8bd00d280c6fe135d8eaa6
