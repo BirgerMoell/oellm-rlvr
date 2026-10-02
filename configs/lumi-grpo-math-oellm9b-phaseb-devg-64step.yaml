@@ -1,0 +1,96 @@
+version: 1
+name: grpo-math-oellm9b-phaseb-devg-64step
+platform:
+  accelerator: rocm
+  nodes: 2
+  gpus_per_node: 8
+  container: /appl/local/laifs/containers/lumi-multitorch-u24r70f21m50t210-20260807_115122/lumi-multitorch-full-u24r70f21m50t210-20260807_115122.sif
+  account: project_465002530
+  partition: dev-g
+  walltime: 02:00:00
+  cpus_per_task: 56
+  memory: 480G
+  binds: [/pfs, /scratch, /flash, /project, /projappl, /appl, /opt/cray, /var/spool/slurmd]
+  network_interface: hsn
+backend:
+  repo_path: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260928-promotion/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /scratch/project_465002530/users/bmoell/oellm-rlvr-runtime-20260924/venv/bin/python
+  extra_args: [--save_filtered_rollouts]
+model:
+  name_or_path: local/oellm9b-math-phase-a-step32
+  local_path: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-promotion-phase-a-32step-20260929/grpo_math_oellm9b_promotion_phase_a_32step_20260929__42__1790783063_checkpoints/step_32
+  revision: job22432251-step32
+  stage_to_local: true
+  max_prompt_tokens: 1024
+  response_tokens: 2048
+  per_turn_tokens: 2048
+  pack_length: 3072
+datasets:
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/oellm9b-math-promotion-20260928/phase-b/eu-math.parquet
+    weight: 0.64
+    split: train
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/oellm9b-math-promotion-20260928/phase-b/english-replay.parquet
+    weight: 0.16
+    split: train
+  - path: /scratch/project_465002530/users/bmoell/oellm-rlvr/data/oellm9b-math-promotion-20260928/phase-a/all-math.parquet
+    weight: 0.20
+    split: train
+task:
+  kind: math
+  max_steps: 1
+  pool_size: 64
+rollout:
+  engines: 8
+  tensor_parallel_size: 1
+  weight_transfer: hierarchical
+  unique_prompts: 8
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.65
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enable_prefix_caching: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [8]
+  sequence_parallel_size: 1
+  learning_rate: 5.0e-7
+  total_episodes: 4096
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dapo
+  beta: 0.0
+  save_freq: 32
+  checkpoint_state_freq: 32
+  checkpoint_state_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-phaseb-devg-64step-state
+  gradient_checkpointing: true
+  use_liger_loss: true
+  learner_initialization_timeout_seconds: 600
+output:
+  directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/outputs/grpo-math-oellm9b-phaseb-devg-64step
+  rollout_directory: /scratch/project_465002530/users/bmoell/oellm-rlvr/rollouts/grpo-math-oellm9b-phaseb-devg-64step
+  experiment_name: lumi_grpo_math_oellm9b_phaseb_devg_64step
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.15
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+  min_mean_reward: 0.10
+environment:
+  HF_HOME: /scratch/project_465002530/users/bmoell/oellm-rlvr/cache/huggingface
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_RAY_ROCM_VISIBILITY: "1"
+  OELLM_PATCH_VLLM_WEIGHT_UPDATE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  OELLM_PATCH_MCP_STREAMABLE_HTTP: "1"
+  VLLM_NO_USAGE_STATS: "1"
+  NCCL_DEBUG: INFO
+  NCCL_DEBUG_SUBSYS: INIT,NET
