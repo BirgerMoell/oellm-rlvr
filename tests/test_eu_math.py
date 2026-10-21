@@ -99,3 +99,24 @@ def test_build_eu_math_pools_excludes_multiple_frozen_pools(tmp_path) -> None:
     assert {row["semantic_group_id"] for row in combined}.isdisjoint({"group-1", "group-2", "group-3"})
     assert report["excluded_semantic_groups"] == 3
     assert [item["semantic_groups"] for item in report["exclusions"]] == [2, 1]
+
+
+def test_build_eu_math_pools_can_require_source_train_split(tmp_path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    import pyarrow.parquet as pq
+
+    source = tmp_path / "source.parquet"
+    rows = []
+    for group in range(100):
+        for language in ("de", "sv", "en"):
+            row = _row(group, language)
+            row["split"] = "test" if group < 40 else "train"
+            rows.append(row)
+    pq.write_table(pa.Table.from_pylist(rows), source)
+    report = build_eu_math_pools(
+        source, tmp_path / "pools", eu_per_language=8, english_count=12,
+        languages=("de", "sv"), source_split="train",
+    )
+    combined = pq.read_table(tmp_path / "pools/all-math.parquet").to_pylist()
+    assert report["source_split"] == "train"
+    assert all(row["split"] == "train" for row in combined)

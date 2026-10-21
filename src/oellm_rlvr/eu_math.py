@@ -153,6 +153,7 @@ def build_eu_math_pools(
     seed: int = 20260914,
     languages: Iterable[str] = EU24_NON_ENGLISH,
     exclude: Iterable[str | Path] = (),
+    source_split: str | None = None,
 ) -> dict[str, Any]:
     """Build balanced EU and disjoint English RLVR pools.
 
@@ -177,6 +178,8 @@ def build_eu_math_pools(
     excluded_groups, exclusion_manifests = _excluded_semantic_groups(exclude)
     eu_heaps: dict[str, list[tuple[int, str, dict[str, Any]]]] = {language: [] for language in language_codes}
     for row in _iter_rows(source_path):
+        if source_split is not None and row.get("split") != source_split:
+            continue
         language = str(row.get("language", ""))
         if language not in eu_heaps:
             continue
@@ -205,6 +208,8 @@ def build_eu_math_pools(
 
     english_heap: list[tuple[int, str, dict[str, Any]]] = []
     for row in _iter_rows(source_path):
+        if source_split is not None and row.get("split") != source_split:
+            continue
         if row.get("language") != "en":
             continue
         difficulty = int(row.get("difficulty", 0))
@@ -240,6 +245,7 @@ def build_eu_math_pools(
         "source": str(source_path),
         "source_sha256": _sha256(source_path),
         "difficulty_range": [min_difficulty, max_difficulty],
+        "source_split": source_split,
         "eu_languages": list(language_codes),
         "excluded_semantic_groups": len(excluded_groups),
         "exclusions": exclusion_manifests,

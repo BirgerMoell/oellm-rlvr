@@ -387,6 +387,9 @@ def run_reasoning_eval(
                                 "canonical_variant",
                                 "subdomain",
                                 "difficulty",
+                                "semantic_group_id",
+                                "generator_family",
+                                "oellm_curriculum_pool",
                             )
                             if key in row
                         },

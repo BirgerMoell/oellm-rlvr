@@ -16,6 +16,7 @@ def main() -> None:
     parser.add_argument("--min-difficulty", type=int, default=3)
     parser.add_argument("--max-difficulty", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260914)
+    parser.add_argument("--source-split", help="require this split in the source row, e.g. train")
     parser.add_argument("--languages", default=",".join(EU24_NON_ENGLISH))
     parser.add_argument(
         "--exclude",
@@ -35,6 +36,7 @@ def main() -> None:
         seed=args.seed,
         languages=languages,
         exclude=args.exclude,
+        source_split=args.source_split,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
 
