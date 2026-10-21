@@ -37,6 +37,7 @@ for task formats and sandbox safety.
 | Train code or agentic tasks | [Data/verifier contracts](docs/data-and-verifiers.md), then [advanced reference](docs/advanced-run-reference.md) |
 | Inspect completed experiments | [Experiment history](docs/experiment-history.md) and its dated qualification records |
 | Explore future stages | [Progressive RL plan](docs/progressive-rl-runbook.md) |
+| Plan the post-SFT/DPO RL stage (pools, tiers, rewards) | [Stage 5 RL plan](docs/oellm9b-stage5-rl-plan.md) |
 
 Plans and YAML configurations are **not** claims that a job has run. [Experiment history](docs/experiment-history.md)
 labels completed, failed, and proposed work separately. Do not submit an example configuration unchanged: its
