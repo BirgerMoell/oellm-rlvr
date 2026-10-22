@@ -22,10 +22,10 @@ PY
 MATH=$SRC/oellm-math-rlvr/data/train-00000-of-00001.parquet
 for lang in sv fi da pl cs nl it pt ro el hu bg; do
   py -m oellm_rlvr.cli sample-math --source "$MATH" --output "$OUT/parts/eu-$lang.parquet" --count 84 --language $lang \
-     --min-difficulty 1 --max-difficulty 3 --diverse-by subdomain --seed 20261022
+     --min-difficulty 1 --max-difficulty 3 --seed 20261022
 done
 py -m oellm_rlvr.cli sample-math --source "$MATH" --output "$OUT/parts/en.parquet" --count 400 --language en \
-   --min-difficulty 1 --max-difficulty 3 --diverse-by subdomain --seed 20261022
+   --min-difficulty 1 --max-difficulty 3 --seed 20261022
 py -m oellm_rlvr.cli prepare-gsm8k --train-source "$SRC/gsm8k/main/train-00000-of-00001.parquet" \
    --test-source "$SRC/gsm8k/main/test-00000-of-00001.parquet" --output-dir "$OUT/gsm8k" \
    --revision 740312add88f781978c0658806c59bc2815b9866 --prompt-style natural
