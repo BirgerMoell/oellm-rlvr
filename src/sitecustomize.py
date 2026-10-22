@@ -52,6 +52,14 @@ if os.environ.get("OELLM_PATCH_TMAX_MULTILINGUAL_MATH") == "1":
         patch_tmax_multilingual_math_verifier,
     )
 
+if os.environ.get("OELLM_PATCH_REQUIRE_THINK_CLOSE") == "1":
+    from oellm_rlvr.compat import patch_require_closed_think
+
+    install_post_import_patch(
+        "open_instruct.ground_truth_utils",
+        patch_require_closed_think,
+    )
+
 if os.environ.get("OELLM_PATCH_HARBOR_VLLM_TOKENS") == "1":
     from oellm_rlvr.compat import patch_harbor_litellm_module
 

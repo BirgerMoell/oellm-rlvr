@@ -481,6 +481,29 @@ def patch_math_equivalence_module(module: ModuleType) -> bool:
     return True
 
 
+def patch_require_closed_think(module: ModuleType) -> bool:
+    """Make every Open-Instruct verifier score an unclosed reasoning trace as empty.
+
+    Upstream ``remove_thinking_section`` returns ``prediction.split("</think>")[-1]``: when a
+    thinking-mode response never closes its trace (a loop or a runaway), the *whole* trace is
+    graded, so a ``\\boxed{}`` inside an unfinished trace can still earn reward. With templates that
+    pre-fill ``<think>`` in the generation prompt, the generated text must contain exactly one
+    ``</think>``; otherwise the answer is empty and every verifier returns zero.
+    """
+    if getattr(module, "_oellm_require_closed_think", False):
+        return False
+    original = module.remove_thinking_section
+
+    def remove_thinking_section(prediction: str) -> str:
+        if prediction.count("</think>") != 1 or "<think>" in prediction.split("</think>", 1)[1]:
+            return ""
+        return original(prediction)
+
+    module.remove_thinking_section = remove_thinking_section
+    module._oellm_require_closed_think = True
+    return True
+
+
 def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
     """Register a conjunctive exact-answer, language, and form verifier.
 

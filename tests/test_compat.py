@@ -667,3 +667,18 @@ def test_rank_zero_builds_one_trainer_relay_group_and_leaf_links() -> None:
     assert actor.model_update_group == "trainer-group"
     assert len(progress_refs) == 3
     assert barrier_calls == [True]
+
+
+def test_require_closed_think_empties_unfinished_traces():
+    import types
+
+    from oellm_rlvr.compat import patch_require_closed_think
+
+    module = types.ModuleType("fake_ground_truth_utils")
+    module.remove_thinking_section = lambda prediction: prediction.split("</think>")[-1].strip()
+    assert patch_require_closed_think(module) is True
+    assert patch_require_closed_think(module) is False  # idempotent
+    assert module.remove_thinking_section("plan\n</think>\n\n\\boxed{4}") == "\\boxed{4}"
+    assert module.remove_thinking_section("loop loop \\boxed{4}") == ""          # never closed
+    assert module.remove_thinking_section("a</think>b</think>\\boxed{4}") == ""  # closed twice
+    assert module.remove_thinking_section("a</think><think>b \\boxed{4}") == ""  # reopened
