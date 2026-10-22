@@ -682,3 +682,41 @@ def test_require_closed_think_empties_unfinished_traces():
     assert module.remove_thinking_section("loop loop \\boxed{4}") == ""          # never closed
     assert module.remove_thinking_section("a</think>b</think>\\boxed{4}") == ""  # closed twice
     assert module.remove_thinking_section("a</think><think>b \\boxed{4}") == ""  # reopened
+
+
+def test_policy_cpu_adam_patch_swaps_optimizer_only_under_offload(monkeypatch):
+    import sys
+    import types
+
+    from oellm_rlvr.compat import patch_policy_cpu_adam_offload
+
+    class TorchAdamW:
+        def __init__(self, params, lr=1e-3, fused=None):
+            self.lr = lr
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.optim = types.SimpleNamespace(AdamW=TorchAdamW)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    built = {}
+
+    class FakeCPUAdam:
+        def __init__(self, params, lr, betas, eps, weight_decay, adamw_mode):
+            built.update(lr=lr, weight_decay=weight_decay, adamw_mode=adamw_mode)
+
+    fake_ops = types.ModuleType("deepspeed.ops.adam")
+    fake_ops.DeepSpeedCPUAdam = FakeCPUAdam
+    monkeypatch.setitem(sys.modules, "deepspeed", types.ModuleType("deepspeed"))
+    monkeypatch.setitem(sys.modules, "deepspeed.ops", types.ModuleType("deepspeed.ops"))
+    monkeypatch.setitem(sys.modules, "deepspeed.ops.adam", fake_ops)
+
+    class Policy:
+        def from_pretrained(self, args):
+            return fake_torch.optim.AdamW(["param"], lr=2e-6, fused=None)
+
+    module = types.SimpleNamespace(PolicyTrainerRayProcess=types.SimpleNamespace(__ray_actor_class__=Policy))
+    assert patch_policy_cpu_adam_offload(module)
+    assert not patch_policy_cpu_adam_offload(module)
+    assert isinstance(Policy().from_pretrained(types.SimpleNamespace(deepspeed_offload_optimizer=False)), TorchAdamW)
+    on = Policy().from_pretrained(types.SimpleNamespace(deepspeed_offload_optimizer=True))
+    assert isinstance(on, FakeCPUAdam) and built == {"lr": 2e-6, "weight_decay": 0.01, "adamw_mode": True}
+    assert fake_torch.optim.AdamW is TorchAdamW

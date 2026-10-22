@@ -504,6 +504,44 @@ def patch_require_closed_think(module: ModuleType) -> bool:
     return True
 
 
+def patch_policy_cpu_adam_offload(module: ModuleType) -> bool:
+    """Use DeepSpeedCPUAdam for the policy when ``--deepspeed_offload_optimizer`` is set.
+
+    TMAX builds the policy optimizer as ``torch.optim.AdamW`` unconditionally (only the value model
+    switches to ``DeepSpeedCPUAdam`` under offload), and DeepSpeed refuses ZeRO-Offload with a
+    client-provided torch optimizer. During ``PolicyTrainerRayProcess.from_pretrained`` with offload
+    enabled, ``torch.optim.AdamW`` is replaced by a factory returning ``DeepSpeedCPUAdam`` with the
+    same parameter groups, learning rate and weight decay (AdamW mode); it is restored afterwards.
+    """
+    actor = getattr(module, "PolicyTrainerRayProcess", None)
+    cls = getattr(actor, "__ray_actor_class__", actor)
+    if cls is None or getattr(cls, "_oellm_policy_cpu_adam", False):
+        return False
+    original = cls.from_pretrained
+
+    def from_pretrained(self, args, *rest, **kwargs):
+        if not getattr(args, "deepspeed_offload_optimizer", False):
+            return original(self, args, *rest, **kwargs)
+        import torch
+        from deepspeed.ops.adam import DeepSpeedCPUAdam
+
+        torch_adamw = torch.optim.AdamW
+
+        def cpu_adamw(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01, fused=None, **_):
+            del fused
+            return DeepSpeedCPUAdam(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, adamw_mode=True)
+
+        torch.optim.AdamW = cpu_adamw
+        try:
+            return original(self, args, *rest, **kwargs)
+        finally:
+            torch.optim.AdamW = torch_adamw
+
+    cls.from_pretrained = from_pretrained
+    cls._oellm_policy_cpu_adam = True
+    return True
+
+
 def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
     """Register a conjunctive exact-answer, language, and form verifier.
 

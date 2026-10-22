@@ -91,5 +91,6 @@ environment:
   TRANSFORMERS_OFFLINE: "1"
   OELLM_PATCH_MATH_EQUIV_THREADS: "1"
   OELLM_PATCH_REQUIRE_THINK_CLOSE: "1"
+  OELLM_PATCH_POLICY_CPU_ADAM: "1"   # TMAX uses torch AdamW for the policy even under optimizer offload
   RAY_NUM_CPUS: "64"   # TMAX reserves 10 CPUs per learner GPU; booster nodes have 32 cores
   TORCH_EXTENSIONS_DIR: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam

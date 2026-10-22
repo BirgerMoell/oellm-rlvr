@@ -52,6 +52,14 @@ if os.environ.get("OELLM_PATCH_TMAX_MULTILINGUAL_MATH") == "1":
         patch_tmax_multilingual_math_verifier,
     )
 
+if os.environ.get("OELLM_PATCH_POLICY_CPU_ADAM") == "1":
+    from oellm_rlvr.compat import patch_policy_cpu_adam_offload
+
+    install_post_import_patch(
+        "open_instruct.grpo_fast",
+        patch_policy_cpu_adam_offload,
+    )
+
 if os.environ.get("OELLM_PATCH_REQUIRE_THINK_CLOSE") == "1":
     from oellm_rlvr.compat import patch_require_closed_think
 
