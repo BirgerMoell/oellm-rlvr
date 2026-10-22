@@ -2,7 +2,7 @@ version: 1
 # Thinking-mode RL probe on Leonardo (A100 64 GB): does DAPO with a closed-trace-or-zero reward cut
 # reasoning loops and raise accuracy at a fixed budget? Diagnostic branch from the Stage-3 SFT
 # checkpoint, not the production RL stage. Learner: 4 GPUs (ZeRO-3) on node 0; 4 vLLM engines on node 1.
-# Launched by scripts/leonardo_think_probe.sbatch (native uv venv inside a glibc>=2.31 container).
+# Render the launcher on Leonardo with `oellm-rlvr render-slurm` (native uv venv inside a glibc>=2.31 container).
 name: grpo-math-oellm9b-think-probe
 platform:
   accelerator: cuda
@@ -16,13 +16,13 @@ platform:
   memory: 480G
   binds: [/leonardo_work, /leonardo_scratch]
 backend:
-  repo_path: /leonardo_scratch/large/userexternal/pmoell00/rlvr/tmax-reproduction
+  repo_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
-  python: /leonardo_scratch/large/userexternal/pmoell00/rlvr/tmax-reproduction/.venv/bin/python
+  python: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction/.venv/bin/python
   extra_args: [--save_filtered_rollouts]
 model:
   name_or_path: local/oellm9b-stage3-tooluse-v1-think
-  local_path: /leonardo_scratch/large/userexternal/pmoell00/rlvr/models/stage3-tooluse-v1-think
+  local_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/models/stage3-tooluse-v1-think
   revision: stage3-tooluse-v1
   stage_to_local: false
   max_prompt_tokens: 1024
@@ -32,7 +32,7 @@ model:
 datasets:
   # One pre-mixed file with exact counts (1,000 EU-language d1-3, 400 English d1-3, 600 GSM8K train):
   # TMAX mixer weights are not a reliable way to realize a target mix (see experiment history).
-  - path: /leonardo_scratch/large/userexternal/pmoell00/rlvr/data/think-probe/train-mixed.parquet
+  - path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/data/think-probe/train-mixed.parquet
     weight: 1.0
     split: train
 task:
@@ -63,13 +63,13 @@ training:
   beta: 0.0
   save_freq: 24
   checkpoint_state_freq: 24
-  checkpoint_state_directory: /leonardo_scratch/large/userexternal/pmoell00/rlvr/outputs/think-probe-state
+  checkpoint_state_directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/outputs/think-probe-state
   gradient_checkpointing: true
   use_liger_loss: true
   learner_initialization_timeout_seconds: 900
 output:
-  directory: /leonardo_scratch/large/userexternal/pmoell00/rlvr/outputs/think-probe
-  rollout_directory: /leonardo_scratch/large/userexternal/pmoell00/rlvr/rollouts/think-probe
+  directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/outputs/think-probe
+  rollout_directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/rollouts/think-probe
   experiment_name: leonardo_grpo_math_oellm9b_think_probe
   with_tracking: false
   wandb_mode: offline
@@ -81,7 +81,7 @@ gates:
   max_policy_lag: 4
   min_mean_reward: 0.05
 environment:
-  HF_HOME: /leonardo_scratch/large/userexternal/pmoell00/rlvr/hf-cache
+  HF_HOME: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/hf-cache
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
