@@ -19,7 +19,9 @@ backend:
   repo_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
   python: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction/.venv/bin/python
-  extra_args: [--save_filtered_rollouts]
+  # Per-parameter ZeRO-3 gather for the vLLM weight sync: gathering the whole 9B model (~18 GB)
+  # on top of ~31 GB of shards and optimizer state OOMs a 64 GB A100.
+  extra_args: [--save_filtered_rollouts, --gather_whole_model, "False"]
 model:
   name_or_path: local/oellm9b-stage3-tooluse-v1-think
   local_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/models/stage3-tooluse-v1-think
