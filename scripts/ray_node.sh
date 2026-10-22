@@ -8,15 +8,19 @@ RAY_BIN="${RAY_BIN:-ray}"
 SELF_HOST="$(hostname)"
 SELF_IP="$(getent hosts "$SELF_HOST" | awk 'NR==1 {print $1}')"
 mkdir -p "${RAY_TMPDIR:?RAY_TMPDIR must be set}"
+# Ray CPU counts are scheduling labels. TMAX reserves 10 CPUs per learner GPU, which a 32-core node
+# (Leonardo booster) cannot satisfy for a 4-GPU learner group; RAY_NUM_CPUS overrides the detected count.
+CPU_ARGS=()
+if [[ -n "${RAY_NUM_CPUS:-}" ]]; then CPU_ARGS=(--num-cpus="$RAY_NUM_CPUS"); fi
 "$RAY_BIN" stop --force >/dev/null 2>&1 || true
 
 if [[ "${SLURM_PROCID:-0}" == 0 ]]; then
-  exec "$RAY_BIN" start --head --node-ip-address="$SELF_IP" --port="$PORT" --num-gpus="$GPUS" \
+  exec "$RAY_BIN" start --head --node-ip-address="$SELF_IP" --port="$PORT" --num-gpus="$GPUS" "${CPU_ARGS[@]}" \
     --temp-dir="$RAY_TMPDIR" --dashboard-host=127.0.0.1 --block
 fi
 
 for _ in $(seq 1 60); do
-  if "$RAY_BIN" start --address="${HEAD_IP}:${PORT}" --node-ip-address="$SELF_IP" --num-gpus="$GPUS" --block; then
+  if "$RAY_BIN" start --address="${HEAD_IP}:${PORT}" --node-ip-address="$SELF_IP" --num-gpus="$GPUS" "${CPU_ARGS[@]}" --block; then
     exit 0
   fi
   sleep 2
