@@ -684,39 +684,37 @@ def test_require_closed_think_empties_unfinished_traces():
     assert module.remove_thinking_section("a</think><think>b \\boxed{4}") == ""  # reopened
 
 
-def test_policy_cpu_adam_patch_swaps_optimizer_only_under_offload(monkeypatch):
+def test_deepspeed_cpu_adam_patch_swaps_torch_adamw_under_offload(monkeypatch):
     import sys
     import types
 
-    from oellm_rlvr.compat import patch_policy_cpu_adam_offload
+    from oellm_rlvr.compat import patch_deepspeed_cpu_adam_offload
 
-    class TorchAdamW:
-        def __init__(self, params, lr=1e-3, fused=None):
-            self.lr = lr
+    class AdamW:  # stands in for torch.optim.AdamW
+        def __init__(self, groups):
+            self.param_groups = groups
 
-    fake_torch = types.ModuleType("torch")
-    fake_torch.optim = types.SimpleNamespace(AdamW=TorchAdamW)
-    monkeypatch.setitem(sys.modules, "torch", fake_torch)
-    built = {}
+    AdamW.__module__ = "torch.optim.adamw"
 
     class FakeCPUAdam:
-        def __init__(self, params, lr, betas, eps, weight_decay, adamw_mode):
-            built.update(lr=lr, weight_decay=weight_decay, adamw_mode=adamw_mode)
+        def __init__(self, groups, lr, betas, eps, weight_decay, adamw_mode):
+            self.param_groups, self.kwargs = groups, dict(lr=lr, weight_decay=weight_decay, adamw_mode=adamw_mode)
 
     fake_ops = types.ModuleType("deepspeed.ops.adam")
     fake_ops.DeepSpeedCPUAdam = FakeCPUAdam
-    monkeypatch.setitem(sys.modules, "deepspeed", types.ModuleType("deepspeed"))
     monkeypatch.setitem(sys.modules, "deepspeed.ops", types.ModuleType("deepspeed.ops"))
     monkeypatch.setitem(sys.modules, "deepspeed.ops.adam", fake_ops)
-
-    class Policy:
-        def from_pretrained(self, args):
-            return fake_torch.optim.AdamW(["param"], lr=2e-6, fused=None)
-
-    module = types.SimpleNamespace(PolicyTrainerRayProcess=types.SimpleNamespace(__ray_actor_class__=Policy))
-    assert patch_policy_cpu_adam_offload(module)
-    assert not patch_policy_cpu_adam_offload(module)
-    assert isinstance(Policy().from_pretrained(types.SimpleNamespace(deepspeed_offload_optimizer=False)), TorchAdamW)
-    on = Policy().from_pretrained(types.SimpleNamespace(deepspeed_offload_optimizer=True))
-    assert isinstance(on, FakeCPUAdam) and built == {"lr": 2e-6, "weight_decay": 0.01, "adamw_mode": True}
-    assert fake_torch.optim.AdamW is TorchAdamW
+    seen = {}
+    deepspeed = types.SimpleNamespace(initialize=lambda **kw: seen.update(kw) or ("engine", kw["optimizer"]))
+    assert patch_deepspeed_cpu_adam_offload(deepspeed)
+    assert not patch_deepspeed_cpu_adam_offload(deepspeed)
+    group = {"params": ["p"], "lr": 1e-6, "betas": (0.9, 0.999), "eps": 1e-8, "weight_decay": 0.0, "initial_lr": 1e-6,
+             "foreach": None, "fused": None}
+    scheduler = types.SimpleNamespace(optimizer=None)
+    offload = {"zero_optimization": {"offload_optimizer": {"device": "cpu"}}}
+    _, opt = deepspeed.initialize(model="m", optimizer=AdamW([dict(group)]), config=offload, lr_scheduler=scheduler)
+    assert isinstance(opt, FakeCPUAdam) and scheduler.optimizer is opt
+    assert opt.param_groups[0] == {k: group[k] for k in ("params", "lr", "betas", "eps", "weight_decay", "initial_lr")}
+    assert opt.kwargs == {"lr": 1e-6, "weight_decay": 0.0, "adamw_mode": True}
+    _, plain = deepspeed.initialize(model="m", optimizer=AdamW([dict(group)]), config={"zero_optimization": {}})
+    assert isinstance(plain, AdamW)

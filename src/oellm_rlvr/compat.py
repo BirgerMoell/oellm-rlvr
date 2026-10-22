@@ -504,41 +504,41 @@ def patch_require_closed_think(module: ModuleType) -> bool:
     return True
 
 
-def patch_policy_cpu_adam_offload(module: ModuleType) -> bool:
-    """Use DeepSpeedCPUAdam for the policy when ``--deepspeed_offload_optimizer`` is set.
+def patch_deepspeed_cpu_adam_offload(module: ModuleType) -> bool:
+    """Swap a torch AdamW for DeepSpeedCPUAdam inside ``deepspeed.initialize`` under optimizer offload.
 
-    TMAX builds the policy optimizer as ``torch.optim.AdamW`` unconditionally (only the value model
-    switches to ``DeepSpeedCPUAdam`` under offload), and DeepSpeed refuses ZeRO-Offload with a
-    client-provided torch optimizer. During ``PolicyTrainerRayProcess.from_pretrained`` with offload
-    enabled, ``torch.optim.AdamW`` is replaced by a factory returning ``DeepSpeedCPUAdam`` with the
-    same parameter groups, learning rate and weight decay (AdamW mode); it is restored afterwards.
+    TMAX builds the policy optimizer as ``torch.optim.AdamW`` unconditionally, and DeepSpeed refuses
+    ZeRO-Offload with a client torch optimizer. The policy class is defined in a script run as
+    ``__main__`` and shipped to Ray actors by value, so it cannot be patched by module name; every
+    process imports ``deepspeed`` by name, so the swap happens here. The new optimizer reuses the same
+    parameter groups (lr, betas, eps, weight decay, AdamW mode) and the LR scheduler is re-pointed at it.
     """
-    actor = getattr(module, "PolicyTrainerRayProcess", None)
-    cls = getattr(actor, "__ray_actor_class__", actor)
-    if cls is None or getattr(cls, "_oellm_policy_cpu_adam", False):
+    if getattr(module, "_oellm_cpu_adam_offload", False):
         return False
-    original = cls.from_pretrained
+    original = module.initialize
 
-    def from_pretrained(self, args, *rest, **kwargs):
-        if not getattr(args, "deepspeed_offload_optimizer", False):
-            return original(self, args, *rest, **kwargs)
-        import torch
-        from deepspeed.ops.adam import DeepSpeedCPUAdam
+    def initialize(*args, **kwargs):
+        config = kwargs.get("config") or {}
+        optimizer = kwargs.get("optimizer")
+        offload = ((config.get("zero_optimization") or {}).get("offload_optimizer") or {}).get("device")
+        if offload == "cpu" and type(optimizer).__name__ == "AdamW" and type(optimizer).__module__.startswith("torch"):
+            from deepspeed.ops.adam import DeepSpeedCPUAdam
 
-        torch_adamw = torch.optim.AdamW
+            groups = [
+                {key: group[key] for key in ("params", "lr", "betas", "eps", "weight_decay", "initial_lr") if key in group}
+                for group in optimizer.param_groups
+            ]
+            first = optimizer.param_groups[0]
+            replacement = DeepSpeedCPUAdam(groups, lr=first["lr"], betas=first["betas"], eps=first["eps"],
+                                           weight_decay=first["weight_decay"], adamw_mode=True)
+            scheduler = kwargs.get("lr_scheduler")
+            if scheduler is not None and hasattr(scheduler, "optimizer"):
+                scheduler.optimizer = replacement
+            kwargs["optimizer"] = replacement
+        return original(*args, **kwargs)
 
-        def cpu_adamw(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01, fused=None, **_):
-            del fused
-            return DeepSpeedCPUAdam(params, lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, adamw_mode=True)
-
-        torch.optim.AdamW = cpu_adamw
-        try:
-            return original(self, args, *rest, **kwargs)
-        finally:
-            torch.optim.AdamW = torch_adamw
-
-    cls.from_pretrained = from_pretrained
-    cls._oellm_policy_cpu_adam = True
+    module.initialize = initialize
+    module._oellm_cpu_adam_offload = True
     return True
 
 
