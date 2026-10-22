@@ -23,7 +23,7 @@ backend:
 model:
   name_or_path: local/oellm9b-stage3-tooluse-v1-think
   local_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/models/stage3-tooluse-v1-think
-  revision: stage3-tooluse-v1
+  revision: 888756294b3dba80917deba24adf86c5a2568343   # HF stage3-tooluse-v1 @ v1.1 (tag-row repair) + RL thinking template
   stage_to_local: false
   max_prompt_tokens: 1024
   response_tokens: 6144
