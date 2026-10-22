@@ -21,7 +21,9 @@ backend:
   python: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction/.venv/bin/python
   # Per-parameter ZeRO-3 gather for the vLLM weight sync: gathering the whole 9B model (~18 GB)
   # on top of ~31 GB of shards and optimizer state OOMs a 64 GB A100.
-  extra_args: [--save_filtered_rollouts, --gather_whole_model, "False"]
+  # AdamW state on CPU: ~27 GB per learner GPU under ZeRO-3 over 4 GPUs leaves no room for the
+  # 263K-vocabulary logits of a 7K-token pack (OOM at the first training step).
+  extra_args: [--save_filtered_rollouts, --gather_whole_model, "False", --deepspeed_offload_optimizer, "True"]
 model:
   name_or_path: local/oellm9b-stage3-tooluse-v1-think
   local_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/models/stage3-tooluse-v1-think
@@ -90,3 +92,4 @@ environment:
   OELLM_PATCH_MATH_EQUIV_THREADS: "1"
   OELLM_PATCH_REQUIRE_THINK_CLOSE: "1"
   RAY_NUM_CPUS: "64"   # TMAX reserves 10 CPUs per learner GPU; booster nodes have 32 cores
+  TORCH_EXTENSIONS_DIR: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam
