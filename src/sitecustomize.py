@@ -120,3 +120,11 @@ if os.environ.get("OELLM_WEIGHT_TRANSFER") == "hierarchical":
         "open_instruct.grpo_fast",
         patch_open_instruct_grpo_module,
     )
+
+if os.environ.get("OELLM_PATCH_DIRECT_MODE_VERIFIERS") == "1":
+    from oellm_rlvr.compat import patch_direct_mode_verifiers
+
+    install_post_import_patch(
+        "open_instruct.ground_truth_utils",
+        patch_direct_mode_verifiers,
+    )

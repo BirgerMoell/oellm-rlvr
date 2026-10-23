@@ -516,6 +516,58 @@ def patch_require_closed_think(module: ModuleType) -> bool:
     return True
 
 
+def patch_direct_mode_verifiers(module: ModuleType) -> bool:
+    """Register default-mode (no reasoning) verifiers for mixed-mode RL rows.
+
+    Rows rendered without a thinking block (template `rl_mode: default`) must answer in exactly the requested form:
+    - ``math_direct``: the whole reply is ``\\boxed{answer}`` (or the bare answer), equivalent to the label;
+    - ``mcq_letter_direct``: the whole reply is the label letter (``C``, ``C.``, ``(C)`` or ``C)``).
+    Any think tag, extra text or wrong answer scores 0. They never call ``remove_thinking_section``, so the
+    closed-trace contract of thinking rows does not apply to them.
+    """
+    if getattr(module, "_oellm_direct_mode_verifiers", False):
+        return False
+
+    def bare(prediction: str) -> str | None:
+        if "<think>" in prediction or "</think>" in prediction:
+            return None
+        return prediction.strip()
+
+    class DirectMathVerifier(module.VerifierFunction):
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("math_direct", verifier_config=verifier_config, weight=1.0)
+            self.math_verifier = module.MathVerifier(verifier_config)
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            text = bare(prediction)
+            if not text:
+                return module.VerificationResult(score=0.0, reasoning="think tag or empty")
+            text = text.rstrip(".").strip()
+            inner = re.fullmatch(r"\\boxed\{(.+)\}", text, flags=re.DOTALL)
+            answer = inner.group(1).strip() if inner else text
+            if "\n" in answer or len(answer) > 64 or " " in answer.replace(", ", ","):
+                return module.VerificationResult(score=0.0, reasoning="not a bare answer")
+            result = self.math_verifier(tokenized_prediction, "\\boxed{%s}" % answer, str(label))
+            return module.VerificationResult(score=float(result.score), reasoning="bare answer")
+
+    class DirectLetterVerifier(module.VerifierFunction):
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("mcq_letter_direct", verifier_config=verifier_config, weight=1.0)
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            text = bare(prediction)
+            letter = str(label).strip().upper()
+            ok = bool(text) and text.upper() in {letter, letter + ".", f"({letter})", letter + ")"}
+            return module.VerificationResult(score=float(ok))
+
+    DirectMathVerifier.__name__ = "DirectMathVerifier"
+    DirectLetterVerifier.__name__ = "DirectLetterVerifier"
+    module.DirectMathVerifier = DirectMathVerifier
+    module.DirectLetterVerifier = DirectLetterVerifier
+    module._oellm_direct_mode_verifiers = True
+    return True
+
+
 def patch_deepspeed_cpu_adam_offload(module: ModuleType) -> bool:
     """Swap a torch AdamW for DeepSpeedCPUAdam inside ``deepspeed.initialize`` under optimizer offload.
 

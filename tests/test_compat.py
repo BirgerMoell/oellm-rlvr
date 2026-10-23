@@ -741,3 +741,39 @@ def test_deepspeed_cpu_adam_patch_swaps_torch_adamw_under_offload(monkeypatch):
     assert opt.kwargs == {"lr": 1e-6, "weight_decay": 0.0, "adamw_mode": True}
     _, plain = deepspeed.initialize(model="m", optimizer=AdamW([dict(group)]), config={"zero_optimization": {}})
     assert isinstance(plain, AdamW)
+
+
+def test_direct_mode_verifiers_require_bare_correct_answers():
+    import types
+
+    from oellm_rlvr.compat import patch_direct_mode_verifiers
+
+    class VerificationResult:
+        def __init__(self, score, reasoning=None):
+            self.score, self.reasoning = score, reasoning
+
+    class VerifierFunction:
+        def __init__(self, name, verifier_config=None, weight=1.0):
+            self.name = name
+
+    class MathVerifier(VerifierFunction):  # stands in for TMAX's: equality of the boxed content
+        def __init__(self, verifier_config=None):
+            super().__init__("math")
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            return VerificationResult(float(prediction == "\\boxed{%s}" % label))
+
+    module = types.ModuleType("fake_ground_truth_utils")
+    module.VerificationResult, module.VerifierFunction, module.MathVerifier = VerificationResult, VerifierFunction, MathVerifier
+    assert patch_direct_mode_verifiers(module) is True
+    assert patch_direct_mode_verifiers(module) is False
+    math = module.DirectMathVerifier()
+    assert math.name == "math_direct"
+    assert math([], "\\boxed{44/5}", "44/5").score == 1.0
+    assert math([], " 44/5. ", "44/5").score == 1.0
+    assert math([], "24/5 + 16/4 = \\boxed{44/5}", "44/5").score == 0.0      # working shown
+    assert math([], "\\boxed{9}", "44/5").score == 0.0                        # wrong
+    assert math([], "x</think>\\boxed{44/5}", "44/5").score == 0.0           # think tag in default mode
+    letter = module.DirectLetterVerifier()
+    assert letter.name == "mcq_letter_direct"
+    assert [letter([], p, "C").score for p in ("C", "c.", "(C)", "C)", "C. At ten.", "B", "")] == [1, 1, 1, 1, 0, 0, 0]

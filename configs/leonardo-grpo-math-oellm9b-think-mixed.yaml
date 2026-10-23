@@ -1,0 +1,99 @@
+version: 1
+# Ablation A3 (qwen35-posttrain docs/OELLM_RL_RUN_PROGRAM.md): mixed-mode RL from Stage-3 v1.1 with the A2a recipe
+# (non-stop penalty -0.5). Pool: RL-0 thinking rows + 30 % default-mode rows (rl_mode: default; math final-answer-only
+# and letter-only MCQ, rewarded only for a bare correct answer). Model directory carries the RL mixed template
+# (thinking by default, no thinking block for rl_mode=default rows). Question: does training both modes fix the direct
+# mode (strict format, numeric) without hurting the thinking-mode gains? Compare with A2a.
+name: think-mixed
+platform:
+  accelerator: cuda
+  nodes: 2
+  gpus_per_node: 4
+  container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
+  account: aifac_f02_352
+  partition: boost_usr_prod
+  walltime: 05:00:00
+  cpus_per_task: 32
+  memory: 480G
+  binds: [/leonardo_work, /leonardo_scratch]
+backend:
+  repo_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction/.venv/bin/python
+  # Per-parameter ZeRO-3 gather for the vLLM weight sync: gathering the whole 9B model (~18 GB)
+  # on top of ~31 GB of shards and optimizer state OOMs a 64 GB A100.
+  # AdamW state on CPU: ~27 GB per learner GPU under ZeRO-3 over 4 GPUs leaves no room for the
+  # 263K-vocabulary logits of a 7K-token pack (OOM at the first training step).
+  extra_args: [--save_filtered_rollouts, --gather_whole_model, "False", --deepspeed_offload_optimizer, "True", --non_stop_penalty, "True", --non_stop_penalty_value, "-0.5"]
+model:
+  name_or_path: local/oellm9b-stage3-tooluse-v1-mixed
+  local_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/models/stage3-tooluse-v1-mixed
+  revision: 888756294b3dba80917deba24adf86c5a2568343   # HF stage3-tooluse-v1 @ v1.1 (tag-row repair) + RL thinking template
+  stage_to_local: false
+  max_prompt_tokens: 1024
+  response_tokens: 6144
+  per_turn_tokens: 6144
+  pack_length: 7168
+datasets:
+  # One pre-mixed file with exact counts (1,000 EU-language d1-3, 400 English d1-3, 600 GSM8K train):
+  # TMAX mixer weights are not a reliable way to realize a target mix (see experiment history).
+  - path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/data/a3-mixed/train-mixed.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: math
+  max_steps: 1
+  pool_size: 64
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  unique_prompts: 16
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.80
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enable_prefix_caching: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 6144          # 48 updates x 16 prompts x 8 samples
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dapo
+  beta: 0.0
+  save_freq: 24
+  checkpoint_state_freq: 24
+  checkpoint_state_directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/outputs/think-mixed-state
+  gradient_checkpointing: true
+  use_liger_loss: true
+  learner_initialization_timeout_seconds: 900
+output:
+  directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/outputs/think-mixed
+  rollout_directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/rollouts/think-mixed
+  experiment_name: leonardo_think_mixed
+  with_tracking: false
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.60   # the probe starts from a model that often does not close its trace
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+  min_mean_reward: 0.05
+environment:
+  HF_HOME: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/hf-cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  OELLM_PATCH_REQUIRE_THINK_CLOSE: "1"
+  OELLM_PATCH_DIRECT_MODE_VERIFIERS: "1"   # math_direct, mcq_letter_direct for rl_mode=default rows
+  OELLM_PATCH_POLICY_CPU_ADAM: "1"   # DeepSpeedCPUAdam for the policy under optimizer offload (patched in deepspeed.initialize)
+  DS_SKIP_CUDA_CHECK: "1"   # container CUDA 13.0 vs torch cu128; cpu_adam is a CPU kernel
+  RAY_NUM_CPUS: "64"   # TMAX reserves 10 CPUs per learner GPU; booster nodes have 32 cores
+  TORCH_EXTENSIONS_DIR: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam
