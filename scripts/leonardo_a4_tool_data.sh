@@ -14,7 +14,7 @@ TOOLDATA=${TOOLDATA:-/leonardo_work/AIFAC_F02_352/pmoell00/sft-migration-preflig
 OUT=$ROOT/data/a4-tool
 mkdir -p "$OUT" "$ROOT/data/sources/oellm-eu-tooluse-v1"
 singularity exec -B /leonardo_work,/leonardo_scratch "$C" env HF_HOME="$ROOT/hf-cache" python - "$ROOT" "$OUT" "$TOOLDATA" <<'PY'
-import ast, collections, glob, hashlib, json, random, sys
+import ast, collections, glob, hashlib, json, random, re, sys
 import pyarrow as pa, pyarrow.parquet as pq
 from huggingface_hub import hf_hub_download
 from transformers import AutoTokenizer
@@ -32,6 +32,7 @@ def as_list(v):
     return v if isinstance(v, list) else ast.literal_eval(v) if isinstance(v, str) else list(v)
 
 records = []
+skipped = collections.Counter()
 grpo = hf_hub_download("birgermoell/oellm-eu-tooluse-v1", "grpo/train.jsonl", repo_type="dataset",
                        revision="b131d571a9", local_dir=f"{root}/data/sources/oellm-eu-tooluse-v1")
 rows = [json.loads(l) for l in open(grpo, encoding="utf-8")]
@@ -41,9 +42,16 @@ for i, r in enumerate(rows):
     if any(m["role"] == "tool" for m in msgs) or msgs[0]["role"] != "system" or msgs[-1]["role"] != "user":
         continue
     sys_content = msgs[0]["content"]
-    base, _, rest = sys_content.partition("\n\n# Tools")
-    block = rest.split("<tools>\n", 1)[1].split("\n</tools>", 1)[0]
-    tools = [{"type": "function", "function": json.loads(line)} for line in block.splitlines() if line.strip()]
+    found = re.search(r"<tools>\s*(.*?)\s*</tools>", sys_content, flags=re.DOTALL)
+    if "# Tools" not in sys_content or not found:
+        skipped["unparsed_system"] += 1
+        continue
+    base = sys_content.split("# Tools", 1)[0].strip()
+    try:
+        tools = [{"type": "function", "function": json.loads(line)} for line in found.group(1).splitlines() if line.strip()]
+    except json.JSONDecodeError:
+        skipped["bad_tool_json"] += 1
+        continue
     gold = json.loads(r["answer"]) if isinstance(r["answer"], str) else r["answer"]
     messages = [{"role": "system", "content": system_text(base, tools)}] + [{"role": m["role"], "content": m["content"]} for m in msgs[1:]]
     records.append({"id": f"grpo-{hashlib.sha256(json.dumps(msgs).encode()).hexdigest()[:16]}", "messages": messages,
@@ -104,7 +112,7 @@ schema = pa.schema([("id", pa.string()), ("messages", pa.list_(pa.struct([("role
 pq.write_table(pa.Table.from_pylist([{k: r[k] for k in ("id", "messages", "ground_truth", "dataset")} for r in records], schema=schema),
                f"{out}/train.parquet")
 sha = hashlib.sha256(open(f"{out}/train.parquet", "rb").read()).hexdigest()
-manifest = {"kind": "a4_tool_pool", "rows": len(records), "by_kind": dict(collections.Counter(r["kind"] for r in records)),
+manifest = {"kind": "a4_tool_pool", "rows": len(records), "skipped_grpo": dict(skipped), "by_kind": dict(collections.Counter(r["kind"] for r in records)),
             "languages": dict(collections.Counter(r["language"] for r in records)), "sha256": sha,
             "sources": ["birgermoell/oellm-eu-tooluse-v1@b131d571a9 grpo", "birgermoell/openeurollm-tool-use-v1 (Stage-3 data, held-out bucket excluded)"]}
 json.dump(manifest, open(f"{out}/manifest.json", "w"), indent=1)
