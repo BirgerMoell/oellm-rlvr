@@ -5,7 +5,7 @@ from pathlib import Path
 
 from jinja2 import Environment, StrictUndefined
 
-from .config import RunConfig
+from .config import RunConfig, config_env_references
 
 
 def render_slurm(config: RunConfig, config_path: str | Path) -> str:
@@ -17,6 +17,8 @@ def render_slurm(config: RunConfig, config_path: str | Path) -> str:
     return template.render(
         config=config,
         config_path=str(Path(config_path).resolve()),
+        # The job re-reads the config (run-backend), so it needs the site values the config references.
+        config_env=config_env_references(config_path),
         control_root=str(control_root),
         # LUMI AI Factory images ship their matching ROCm userspace. Passing
         # Singularity's --rocm replaces it with host libraries and can create

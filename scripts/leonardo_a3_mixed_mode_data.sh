@@ -9,7 +9,7 @@
 set -euo pipefail
 ROOT=${ROOT:-$SCRATCH/oellm-rl}
 C=/leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
-TEMPLATE=${TEMPLATE:-/leonardo_work/AIFAC_F02_352/pmoell00/sft-migration-preflight/oellm_qwen3_two_stage_v2_1_rl_mixed.jinja}
+TEMPLATE=${TEMPLATE:-${OELLM_WORK:?source leonardo.env}/sft-migration-preflight/oellm_qwen3_two_stage_v2_1_rl_mixed.jinja}
 FORMAT_PROMPTS=${FORMAT_PROMPTS:-$SCRATCH/oellm-dpo/format-v1/prompts.jsonl}
 MCQ=$(ls $SCRATCH/oellm-dpo/hf-cache/hub/datasets--birgermoell--oellm-eu-exam-mcq-v1/snapshots/*/grpo/train.jsonl | head -1)
 OUT=$ROOT/data/a3-mixed

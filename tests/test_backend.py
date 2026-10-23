@@ -237,7 +237,9 @@ def test_hybrid_math_opd_selects_project_reward() -> None:
     assert _hydra_value(argv, "custom_reward_function.name") == "compute_math_score"
 
 
-def test_code_api_adds_loopback_url_binary_threshold_and_contained_server() -> None:
+def test_code_api_adds_loopback_url_binary_threshold_and_contained_server(monkeypatch) -> None:
+    for name in ("OELLM_ACCOUNT", "OELLM_WORK", "OELLM_SCRATCH"):
+        monkeypatch.setenv(name, f"/site/{name.lower()}")
     from oellm_rlvr.slurm import render_slurm
 
     path = Path(__file__).resolve().parents[1] / "configs" / "leonardo-grpo-math-oellm9b-think-probe.yaml"

@@ -165,3 +165,30 @@ def test_opd_rejects_multi_teacher_replica_that_straddles_nodes() -> None:
     ]
     with pytest.raises(ValidationError, match="crosses an avoidable node boundary"):
         config_type.model_validate(raw)
+
+
+def test_leonardo_configs_take_site_values_from_the_environment(monkeypatch, tmp_path) -> None:
+    config = ROOT / "configs" / "leonardo-grpo-math-oellm9b-think-tool.yaml"
+    assert "${OELLM_ACCOUNT}" in config.read_text()
+    monkeypatch.delenv("OELLM_ACCOUNT", raising=False)
+    with pytest.raises(ValueError, match="OELLM_ACCOUNT"):
+        load_config(config)
+    monkeypatch.setenv("OELLM_ACCOUNT", "acct_1")
+    monkeypatch.setenv("OELLM_WORK", "/work/acct/user")
+    monkeypatch.setenv("OELLM_SCRATCH", "/scratch/user")
+    loaded = load_config(config)
+    assert loaded.platform.account == "acct_1"
+    assert loaded.output.directory.startswith("/scratch/user/oellm-rl/")
+    assert "${" not in loaded.as_json()
+
+
+def test_rendered_job_exports_the_site_values(monkeypatch) -> None:
+    from oellm_rlvr.slurm import render_slurm
+
+    config = ROOT / "configs" / "leonardo-grpo-math-oellm9b-think-tool.yaml"
+    for name, value in {"OELLM_ACCOUNT": "acct_1", "OELLM_WORK": "/w", "OELLM_SCRATCH": "/s"}.items():
+        monkeypatch.setenv(name, value)
+    script = render_slurm(load_config(config), config)
+    assert "#SBATCH --account=acct_1" in script
+    assert 'export OELLM_SCRATCH="/s"' in script
+    assert script.index('export OELLM_SCRATCH="/s"') < script.index("run-backend")

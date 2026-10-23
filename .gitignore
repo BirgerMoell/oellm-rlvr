@@ -11,3 +11,6 @@ outputs/
 rollouts/
 *.sbatch.rendered
 .DS_Store
+
+# site settings (account, personal paths)
+leonardo.env

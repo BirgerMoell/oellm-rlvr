@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -444,9 +445,39 @@ class RunConfig(StrictModel):
         return json.dumps(self.model_dump(mode="json"), indent=2, sort_keys=True)
 
 
+_ENV_REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def expand_env_references(value: Any) -> Any:
+    """Replace ``${NAME}`` in every string of a parsed config with the environment value.
+
+    Site-specific values (Slurm account, personal work/scratch roots) live in an untracked settings file
+    (``leonardo.env``) instead of the tracked configs. An unset variable is an error, not an empty string.
+    """
+    if isinstance(value, dict):
+        return {key: expand_env_references(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [expand_env_references(item) for item in value]
+    if isinstance(value, str):
+        def substitute(match: re.Match[str]) -> str:
+            name = match.group(1)
+            if name not in os.environ:
+                raise ValueError(f"config references ${{{name}}} but it is not set (source the site settings file)")
+            return os.environ[name]
+
+        return _ENV_REFERENCE.sub(substitute, value)
+    return value
+
+
+def config_env_references(path: str | Path) -> dict[str, str]:
+    """The ``${NAME}`` variables a config file uses, with their current values (unset ones are omitted)."""
+    names = sorted(set(_ENV_REFERENCE.findall(Path(path).read_text())))
+    return {name: os.environ[name] for name in names if name in os.environ}
+
+
 def load_config(path: str | Path) -> RunConfig:
     config_path = Path(path)
-    raw: Any = yaml.safe_load(config_path.read_text())
+    raw: Any = expand_env_references(yaml.safe_load(config_path.read_text()))
     config = RunConfig.model_validate(raw)
     system_prompt = config.task.system_prompt_file
     if system_prompt and not Path(system_prompt).is_absolute():

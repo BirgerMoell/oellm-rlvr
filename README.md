@@ -43,6 +43,13 @@ Plans and YAML configurations are **not** claims that a job has run. [Experiment
 labels completed, failed, and proposed work separately. Do not submit an example configuration unchanged: its
 account, input paths, and output paths may belong to a past run. Running `sbatch` allocates GPUs.
 
+## Site settings (Leonardo)
+
+The `configs/leonardo-*.yaml` files and `scripts/leonardo_*.sh` read the Slurm account and personal paths from the
+environment (`${OELLM_ACCOUNT}`, `${OELLM_WORK}`, `${OELLM_SCRATCH}`) instead of hard-coding them. Copy
+`leonardo.env.example` to `leonardo.env` (git-ignored), fill it in and `source leonardo.env` before `render-slurm` or
+running a script; the rendered job exports the values it needs. An unset variable is an error.
+
 ## Local validation (no GPU job)
 
 ```bash

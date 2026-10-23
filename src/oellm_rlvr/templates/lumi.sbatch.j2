@@ -19,7 +19,8 @@ module purge
 {{ module_lines }}
 
 CONFIG={{ config_path | tojson }}
-CONTROL_ROOT={{ control_root | string | tojson }}
+{% for name, value in config_env.items() %}export {{ name }}={{ value | tojson }}
+{% endfor %}CONTROL_ROOT={{ control_root | string | tojson }}
 BACKEND_ROOT={{ config.backend.repo_path | tojson }}
 CONTAINER={{ config.platform.container | tojson }}
 BIND={{ bind_value | tojson }}

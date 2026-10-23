@@ -10,7 +10,7 @@
 set -euo pipefail
 ROOT=${ROOT:-$SCRATCH/oellm-rl}
 C=/leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
-TOOLDATA=${TOOLDATA:-/leonardo_work/AIFAC_F02_352/pmoell00/sft-migration-preflight/data/openeurollm-tool-use-v1/data}
+TOOLDATA=${TOOLDATA:-${OELLM_WORK:?source leonardo.env}/sft-migration-preflight/data/openeurollm-tool-use-v1/data}
 OUT=$ROOT/data/a4-tool
 mkdir -p "$OUT" "$ROOT/data/sources/oellm-eu-tooluse-v1"
 singularity exec -B /leonardo_work,/leonardo_scratch "$C" env HF_HOME="$ROOT/hf-cache" python - "$ROOT" "$OUT" "$TOOLDATA" <<'PY'

@@ -11,16 +11,16 @@ platform:
   nodes: 2
   gpus_per_node: 4
   container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
-  account: aifac_f02_352
+  account: ${OELLM_ACCOUNT}
   partition: boost_usr_prod
   walltime: 05:00:00
   cpus_per_task: 32
   memory: 480G
   binds: [/leonardo_work, /leonardo_scratch]
 backend:
-  repo_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction
+  repo_path: ${OELLM_SCRATCH}/oellm-rl/tmax-reproduction
   commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
-  python: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/tmax-reproduction/.venv/bin/python
+  python: ${OELLM_SCRATCH}/oellm-rl/tmax-reproduction/.venv/bin/python
   # Per-parameter ZeRO-3 gather for the vLLM weight sync: gathering the whole 9B model (~18 GB)
   # on top of ~31 GB of shards and optimizer state OOMs a 64 GB A100.
   # AdamW state on CPU: ~27 GB per learner GPU under ZeRO-3 over 4 GPUs leaves no room for the
@@ -28,7 +28,7 @@ backend:
   extra_args: [--save_filtered_rollouts, --gather_whole_model, "False", --deepspeed_offload_optimizer, "True"]
 model:
   name_or_path: local/oellm9b-stage3-tooluse-v1-think
-  local_path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/models/stage3-tooluse-v1-think
+  local_path: ${OELLM_SCRATCH}/oellm-rl/models/stage3-tooluse-v1-think
   revision: 888756294b3dba80917deba24adf86c5a2568343   # HF stage3-tooluse-v1 @ v1.1 (tag-row repair) + RL thinking template
   stage_to_local: false
   max_prompt_tokens: 1024
@@ -38,7 +38,7 @@ model:
 datasets:
   # One pre-mixed file with exact counts (1,000 EU-language d1-3, 400 English d1-3, 600 GSM8K train):
   # TMAX mixer weights are not a reliable way to realize a target mix (see experiment history).
-  - path: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/data/a5-code/train.parquet
+  - path: ${OELLM_SCRATCH}/oellm-rl/data/a5-code/train.parquet
     weight: 1.0
     split: train
 task:
@@ -69,13 +69,13 @@ training:
   beta: 0.0
   save_freq: 24
   checkpoint_state_freq: 24
-  checkpoint_state_directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/outputs/think-code-state
+  checkpoint_state_directory: ${OELLM_SCRATCH}/oellm-rl/outputs/think-code-state
   gradient_checkpointing: true
   use_liger_loss: true
   learner_initialization_timeout_seconds: 900
 output:
-  directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/outputs/think-code
-  rollout_directory: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/rollouts/think-code
+  directory: ${OELLM_SCRATCH}/oellm-rl/outputs/think-code
+  rollout_directory: ${OELLM_SCRATCH}/oellm-rl/rollouts/think-code
   experiment_name: leonardo_think_code
   with_tracking: false
   wandb_mode: offline
@@ -92,7 +92,7 @@ gates:
   max_policy_lag: 4
   min_mean_reward: 0.05
 environment:
-  HF_HOME: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/hf-cache
+  HF_HOME: ${OELLM_SCRATCH}/oellm-rl/hf-cache
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
@@ -101,4 +101,4 @@ environment:
   OELLM_PATCH_POLICY_CPU_ADAM: "1"   # DeepSpeedCPUAdam for the policy under optimizer offload (patched in deepspeed.initialize)
   DS_SKIP_CUDA_CHECK: "1"   # container CUDA 13.0 vs torch cu128; cpu_adam is a CPU kernel
   RAY_NUM_CPUS: "64"   # TMAX reserves 10 CPUs per learner GPU; booster nodes have 32 cores
-  TORCH_EXTENSIONS_DIR: /leonardo_scratch/large/userexternal/pmoell00/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam
+  TORCH_EXTENSIONS_DIR: ${OELLM_SCRATCH}/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam

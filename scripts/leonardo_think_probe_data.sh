@@ -5,7 +5,7 @@
 set -euo pipefail
 ROOT=${ROOT:-$SCRATCH/oellm-rl}
 C=/leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
-PYLIBS=/leonardo_work/AIFAC_F02_352/pmoell00/europa/pylibs
+PYLIBS=${OELLM_WORK:?source leonardo.env}/europa/pylibs
 OUT=$ROOT/data/think-probe; SRC=$ROOT/data/sources
 mkdir -p "$OUT" "$SRC"
 py() { singularity exec -B /leonardo_work,/leonardo_scratch "$C" env PYTHONPATH="$ROOT/oellm-rlvr/src:$PYLIBS" HF_HOME="$ROOT/hf-cache" python "$@"; }
