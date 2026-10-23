@@ -117,6 +117,21 @@ class SandboxConfig(StrictModel):
     prepared_scratch_root: str | None = None
 
 
+class CodeApiConfig(StrictModel):
+    """Single-turn code reward: TMAX's `code`/`code_stdio` verifiers POST programs to an execution server.
+
+    The launcher starts one server per node inside the backend container with `--contain --cleanenv --no-home`
+    (no home, no project directories; backend code and venv bound read-only; private /tmp as working directory),
+    listening on 127.0.0.1 only, and requests the nodes exclusively so no other user shares that loopback.
+    Rewards are computed inside the vLLM engine actors, so every node runs its own server.
+    """
+
+    port: int = Field(default=18080, ge=1024, le=65535)
+    workers: int = Field(default=16, ge=1)
+    max_execution_time: float = Field(default=2.0, gt=0)
+    binary_reward: bool = True   # reward 1 only if every hidden test passes (TMAX default is the pass rate)
+
+
 class TaskConfig(StrictModel):
     kind: Literal["math", "code", "prompt"]
     sandbox: SandboxConfig | None = None
@@ -300,6 +315,7 @@ class RunConfig(StrictModel):
     output: OutputConfig
     gates: GateConfig = Field(default_factory=GateConfig)
     distillation: DistillationConfig | None = None
+    code_api: CodeApiConfig | None = None
     environment: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")

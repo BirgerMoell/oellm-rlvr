@@ -500,6 +500,18 @@ def patch_require_closed_think(module: ModuleType) -> bool:
         return original(prediction)
 
     module.remove_thinking_section = remove_thinking_section
+    # CodeVerifier extracts the last ``` block from the *whole* output, so code written inside an
+    # unfinished trace would still be executed and rewarded. Apply the same contract: only the text
+    # after exactly one closing tag counts, and an unclosed trace submits an empty program.
+    code_verifier = getattr(module, "CodeVerifier", None)
+    if code_verifier is not None:
+        original_extract = code_verifier.extract_python_code
+
+        def extract_python_code(self, model_output: str) -> str:
+            answer = remove_thinking_section(model_output)
+            return original_extract(self, answer) if answer else ""
+
+        code_verifier.extract_python_code = extract_python_code
     module._oellm_require_closed_think = True
     return True
 

@@ -684,6 +684,29 @@ def test_require_closed_think_empties_unfinished_traces():
     assert module.remove_thinking_section("a</think><think>b \\boxed{4}") == ""  # reopened
 
 
+def test_require_closed_think_applies_to_code_extraction():
+    import re
+    import types
+
+    from oellm_rlvr.compat import patch_require_closed_think
+
+    class CodeVerifier:
+        def extract_python_code(self, model_output: str) -> str:
+            matches = re.findall(r"```(?:python)?(.*?)```", model_output, re.DOTALL)
+            return matches[-1].strip() if matches else model_output
+
+    module = types.ModuleType("fake_ground_truth_utils")
+    module.remove_thinking_section = lambda prediction: prediction.split("</think>")[-1].strip()
+    module.CodeVerifier = CodeVerifier
+    assert patch_require_closed_think(module) is True
+    verifier = CodeVerifier()
+    closed = "try a loop\n```python\nprint(0)\n```\n</think>\n\n```python\nprint(1)\n```"
+    assert verifier.extract_python_code(closed) == "print(1)"             # only the answer's block
+    unclosed = "draft\n```python\nprint(1)\n```\nwait, let me re-check"
+    assert verifier.extract_python_code(unclosed) == ""                    # trace never closed: no program
+    assert verifier.extract_python_code("a</think>b</think>```python\nx```") == ""
+
+
 def test_deepspeed_cpu_adam_patch_swaps_torch_adamw_under_offload(monkeypatch):
     import sys
     import types

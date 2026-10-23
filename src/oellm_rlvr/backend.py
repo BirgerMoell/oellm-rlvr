@@ -175,6 +175,17 @@ def _build_tmax_backend_argv(config: RunConfig) -> list[str]:
         )
         if config.task.system_prompt_file:
             argv.extend(["--system_prompt_override_file", config.task.system_prompt_file])
+    if config.code_api is not None:
+        argv.extend(
+            [
+                "--code_api_url",
+                f"http://127.0.0.1:{config.code_api.port}/test_program",
+                "--code_max_execution_time",
+                str(config.code_api.max_execution_time),
+                "--code_pass_rate_reward_threshold",
+                "1.0" if config.code_api.binary_reward else "0.0",
+            ]
+        )
     argv.extend(config.backend.extra_args)
     if config.training.checkpoint_state_freq > 0 or config.training.checkpoint_state_directory:
         checkpoint_state_directory = (

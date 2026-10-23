@@ -235,3 +235,23 @@ def test_hybrid_math_opd_selects_project_reward() -> None:
     assert _hydra_value(argv, "data.train_batch_size") == "4"
     assert _hydra_value(argv, "actor_rollout_ref.rollout.n") == "2"
     assert _hydra_value(argv, "custom_reward_function.name") == "compute_math_score"
+
+
+def test_code_api_adds_loopback_url_binary_threshold_and_contained_server() -> None:
+    from oellm_rlvr.slurm import render_slurm
+
+    path = Path(__file__).resolve().parents[1] / "configs" / "leonardo-grpo-math-oellm9b-think-probe.yaml"
+    config = load_config(path)
+    data = config.model_dump()
+    data["code_api"] = {"port": 18080, "workers": 4, "max_execution_time": 2.0}
+    config = RunConfig.model_validate(data)
+    argv = build_backend_argv(config)
+    assert _value(argv, "--code_api_url") == "http://127.0.0.1:18080/test_program"
+    assert _value(argv, "--code_pass_rate_reward_threshold") == "1.0"
+    assert _value(argv, "--code_max_execution_time") == "2.0"
+    script = render_slurm(config, path)
+    assert "#SBATCH --exclusive" in script
+    assert "--contain --cleanenv --no-home --pwd /tmp" in script
+    assert "--host 127.0.0.1 --port 18080" in script
+    assert ':ro" -B' in script
+    assert "#SBATCH --exclusive" not in render_slurm(load_config(path), path)
