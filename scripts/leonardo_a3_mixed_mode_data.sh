@@ -28,6 +28,11 @@ root, out, format_prompts, mcq_path, model = sys.argv[1:]
 tc = json.load(open(f"{model}/tokenizer_config.json"))
 assert "chat_template" not in tc, "tokenizer_config.json carries its own chat_template; it would shadow the jinja file"
 rng = random.Random(20261024)
+def one(value):  # oellm-math-rlvr stores ground_truth as a one-element list
+    if isinstance(value, (list, tuple)):
+        assert len(value) == 1, value
+        value = value[0]
+    return str(value)
 probe = pq.read_table(f"{root}/data/think-probe/train-mixed.parquet")
 used = set(probe["id"].to_pylist())
 used |= {json.loads(l)["id"].split("-", 2)[-1] for l in open(format_prompts)}
@@ -45,7 +50,7 @@ for lang in LANGS:
     for r in cand[: 430 // len(LANGS) + (1 if LANGS.index(lang) < 430 % len(LANGS) else 0)]:
         content = r["messages"][0]["content"]
         direct.append({"id": r["id"], "messages": [{"role": "user", "content": content, "rl_mode": "default"}],
-                       "ground_truth": str(r["ground_truth"]), "dataset": "math_direct"})
+                       "ground_truth": one(r["ground_truth"]), "dataset": "math_direct"})
 mcq = []
 for line in open(mcq_path, encoding="utf-8"):
     r = json.loads(line)
@@ -66,6 +71,7 @@ manifest = {"kind": "a3_mixed_mode_pool", "rows": len(allrows), "by_dataset": di
             "default_mode_rows": sum(1 for r in allrows if r["messages"][-1]["rl_mode"] == "default"),
             "mcq_languages": dict(collections.Counter(r["id"].split("_")[3] for r in direct if r["dataset"] == "mcq_letter_direct")),
             "model_dir": model, "sha256": sha}
+assert all(not r["ground_truth"].startswith("[") for r in allrows), "list-valued ground truth leaked"
 json.dump(manifest, open(f"{out}/manifest.json", "w"), indent=1)
 print(json.dumps(manifest, indent=1))
 PY
