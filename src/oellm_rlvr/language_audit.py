@@ -64,6 +64,21 @@ def reasoning_prose(text: str) -> str:
     return value
 
 
+def answer_prose(text: str) -> str:
+    """Extract the natural-language part of the final answer (after the reasoning trace)."""
+    value = text.split("</think>", 1)[1] if "</think>" in text else text
+    value = re.sub(r"\\boxed\{[^{}]*\}", " ", value)
+    value = re.sub(r"\$\$.*?\$\$|\$[^$]*\$|\\\[.*?\\\]|\\\(.*?\\\)", " ", value, flags=re.DOTALL)
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"\\[A-Za-z]+", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def letter_count(text: str) -> int:
+    return len(_LETTER.findall(text))
+
+
 def _build_detector() -> Any:
     try:
         from lingua import Language, LanguageDetectorBuilder

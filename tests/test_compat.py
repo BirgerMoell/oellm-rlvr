@@ -815,3 +815,46 @@ def test_tool_call_reward_components_and_modes():
     assert v([], "need the tip tool " + call, think).score == 0.0                     # call inside an unfinished trace
     assert v([], call, direct).score == 1.0
     assert v([], "x</think>" + call, direct).score == 0.0                             # think tag in default mode
+
+
+def test_multilingual_math_answer_check_ignores_trace_language(monkeypatch) -> None:
+    class Result:
+        def __init__(self, score, reasoning=None):
+            self.score = score
+            self.reasoning = reasoning
+
+    class BaseVerifier:
+        def __init__(self, name, weight=1.0, verifier_config=None):
+            self.name = name
+
+    class MathVerifier(BaseVerifier):
+        def __init__(self, verifier_config=None):
+            super().__init__("math")
+
+        def __call__(self, _tokens, prediction, label, **_kwargs):
+            return Result(float(prediction.endswith("\\boxed{%s}" % label)))
+
+    seen = []
+
+    def detect(_detector, text):
+        seen.append(text)
+        return ("sv", 0.99) if "svaret" in text else ("en", 0.99)
+
+    monkeypatch.setattr("oellm_rlvr.language_audit._build_detector", lambda: object())
+    monkeypatch.setattr("oellm_rlvr.language_audit._detect", detect)
+    module = ModuleType("fake_ground_truth_utils")
+    module.VerifierFunction = BaseVerifier
+    module.MathVerifier = MathVerifier
+    module.VerificationResult = Result
+    patch_tmax_multilingual_math_verifier(module)
+    verifier = module.MultilingualMathVerifier()
+    label = json.dumps({"answer": "7", "target_language": "sv", "check": "answer"})
+    english_trace = "Let me compute this step by step in English.</think>"
+    assert verifier([], english_trace + "Alltså är svaret sju, se nedan: \\boxed{7}", label).score == 1
+    assert seen[-1] == "Alltså är svaret sju, se nedan:"
+    assert verifier([], english_trace + "Therefore the final answer is seven: \\boxed{7}", label).score == 0
+    assert verifier([], english_trace + "\\boxed{7}", label).score == 1  # nothing to identify
+    assert json.loads(verifier([], english_trace + "$x = 7$ \\boxed{7}", label).reasoning)["short_answer"]
+    assert verifier([], english_trace + "Alltså är svaret: \\boxed{8}", label).score == 0
+    bad_check = json.dumps({"answer": "7", "target_language": "sv", "check": "both"})
+    assert verifier([], english_trace + "\\boxed{7}", bad_check).score == 0

@@ -704,6 +704,12 @@ def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
     answer and the requested ISO-639-1 language. A response earns one only if
     every condition passes; language or formatting can never rescue an
     incorrect answer.
+
+    The optional label field ``check`` picks which text must be in the target language:
+    ``"trace"`` (default, ablation A1) checks the reasoning trace; ``"answer"`` checks only the
+    final answer after ``</think>`` and lets the model reason in any language. An answer with
+    fewer than 20 letters of prose (for example a bare ``\\boxed{}``)
+    has nothing to identify and passes the language check.
     """
     if getattr(module, "_oellm_multilingual_math_verifier", False):
         return False
@@ -711,9 +717,13 @@ def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
     from oellm_rlvr.language_audit import (
         _build_detector,
         _detect,
+        answer_prose,
+        letter_count,
         reasoning_prose,
         target_language_matches,
     )
+
+    answer_min_letters = 20
 
     class MultilingualMathVerifier(module.VerifierFunction):
         _detector: Any = None
@@ -744,7 +754,10 @@ def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
                 contract = json.loads(label)
                 answer = str(contract["answer"])
                 target = str(contract["target_language"])
-            except (KeyError, TypeError, json.JSONDecodeError):
+                check = str(contract.get("check", "trace"))
+            except (AttributeError, KeyError, TypeError, json.JSONDecodeError):
+                return module.VerificationResult(score=0.0, reasoning="invalid multilingual math label")
+            if check not in {"trace", "answer"}:
                 return module.VerificationResult(score=0.0, reasoning="invalid multilingual math label")
 
             math_result = self.math_verifier(
@@ -771,11 +784,20 @@ def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
             if not channel_ok:
                 return module.VerificationResult(score=0.0, reasoning="invalid think/box format")
 
-            prose = reasoning_prose(prediction)
+            if check == "answer":
+                prose = answer_prose(prediction)
+                if letter_count(prose) < answer_min_letters:
+                    diagnostic = json.dumps({"target": target, "check": check, "language_ok": True,
+                                             "detected": None, "confidence": None, "short_answer": True},
+                                            sort_keys=True)
+                    return module.VerificationResult(score=1.0, reasoning=diagnostic)
+            else:
+                prose = reasoning_prose(prediction)
             detected, confidence = _detect(self.detector(), prose)
             language_ok = target_language_matches(target, detected, confidence)
             diagnostic = json.dumps(
                 {
+                    "check": check,
                     "target": target,
                     "detected": detected,
                     "confidence": confidence,
