@@ -128,3 +128,11 @@ if os.environ.get("OELLM_PATCH_DIRECT_MODE_VERIFIERS") == "1":
         "open_instruct.ground_truth_utils",
         patch_direct_mode_verifiers,
     )
+
+if os.environ.get("OELLM_PATCH_TOOL_CALL_VERIFIER") == "1":
+    from oellm_rlvr.compat import patch_tool_call_verifier
+
+    install_post_import_patch(
+        "open_instruct.ground_truth_utils",
+        patch_tool_call_verifier,
+    )

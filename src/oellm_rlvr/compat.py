@@ -568,6 +568,97 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
     return True
 
 
+def _canonical_argument(value: Any) -> Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            return float(stripped) if re.fullmatch(r"-?\d+(\.\d+)?", stripped) else stripped
+        except ValueError:
+            return stripped
+    if isinstance(value, list):
+        return [_canonical_argument(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _canonical_argument(v) for k, v in value.items()}
+    return value
+
+
+def score_tool_calls(answer: str, gold: list[dict[str, Any]]) -> float:
+    """ToolRL-style reward in [0, 1] for one assistant turn (text after the reasoning trace).
+
+    No call expected: 1 if the turn contains no tool call and some text, else 0.
+    Calls expected: 0.2 if every ``<tool_call>`` block is valid JSON with a string ``name`` and an object ``arguments``
+    (and at least one exists, with no unclosed tag); +0.3 if the multiset of called names equals the gold one;
+    +0.5 x the fraction of gold calls matched by a predicted call with the same name and equal arguments
+    (numbers compared as floats, strings stripped). Format credit is required for any further credit.
+    """
+    opens = answer.count("<tool_call>")
+    blocks = re.findall(r"<tool_call>\s*(.*?)\s*</tool_call>", answer, flags=re.DOTALL)
+    if not gold:
+        return float(opens == 0 and bool(answer.strip()))
+    if not blocks or opens != len(blocks):
+        return 0.0
+    calls = []
+    for block in blocks:
+        try:
+            call = json.loads(block)
+        except json.JSONDecodeError:
+            return 0.0
+        if not isinstance(call, dict) or not isinstance(call.get("name"), str) or not isinstance(call.get("arguments"), dict):
+            return 0.0
+        calls.append(call)
+    score = 0.2
+    if sorted(c["name"] for c in calls) == sorted(str(g["name"]) for g in gold):
+        score += 0.3
+    remaining = [(c["name"], _canonical_argument(c["arguments"])) for c in calls]
+    matched = 0
+    for g in gold:
+        key = (str(g["name"]), _canonical_argument(g.get("arguments") or {}))
+        if key in remaining:
+            remaining.remove(key)
+            matched += 1
+    return round(score + 0.5 * matched / len(gold), 6)
+
+
+def patch_tool_call_verifier(module: ModuleType) -> bool:
+    """Register the single-turn ``tool_call`` verifier.
+
+    Label: JSON ``{"calls": [...], "mode": "thinking" | "default"}`` (empty ``calls`` = no call expected). Thinking rows
+    are scored on the text after exactly one closing ``</think>`` (an unfinished trace scores 0, so a call inside a
+    loop earns nothing); default rows must contain no think tag at all.
+    """
+    if getattr(module, "_oellm_tool_call_verifier", False):
+        return False
+
+    class ToolCallVerifier(module.VerifierFunction):
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("tool_call", verifier_config=verifier_config, weight=1.0)
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            try:
+                contract = json.loads(label)
+                gold, mode = contract["calls"], contract.get("mode", "thinking")
+            except (KeyError, TypeError, json.JSONDecodeError):
+                return module.VerificationResult(score=0.0, reasoning="invalid tool_call label")
+            if mode == "default":
+                if "<think>" in prediction or "</think>" in prediction:
+                    return module.VerificationResult(score=0.0, reasoning="think tag in default mode")
+                answer = prediction.strip()
+            else:
+                if prediction.count("</think>") != 1 or "<think>" in prediction.split("</think>", 1)[1]:
+                    return module.VerificationResult(score=0.0, reasoning="trace not closed exactly once")
+                answer = prediction.split("</think>", 1)[1].strip()
+            return module.VerificationResult(score=score_tool_calls(answer, gold))
+
+    ToolCallVerifier.__name__ = "ToolCallVerifier"
+    module.ToolCallVerifier = ToolCallVerifier
+    module._oellm_tool_call_verifier = True
+    return True
+
+
 def patch_deepspeed_cpu_adam_offload(module: ModuleType) -> bool:
     """Swap a torch AdamW for DeepSpeedCPUAdam inside ``deepspeed.initialize`` under optimizer offload.
 

@@ -777,3 +777,41 @@ def test_direct_mode_verifiers_require_bare_correct_answers():
     letter = module.DirectLetterVerifier()
     assert letter.name == "mcq_letter_direct"
     assert [letter([], p, "C").score for p in ("C", "c.", "(C)", "C)", "C. At ten.", "B", "")] == [1, 1, 1, 1, 0, 0, 0]
+
+
+def test_tool_call_reward_components_and_modes():
+    import json
+    import types
+
+    from oellm_rlvr.compat import patch_tool_call_verifier, score_tool_calls
+
+    gold = [{"name": "calculate_tip", "arguments": {"bill_amount": 50, "tip_percentage": 20}}]
+    call = '<tool_call>\n{"name": "calculate_tip", "arguments": {"bill_amount": 50.0, "tip_percentage": "20"}}\n</tool_call>'
+    assert score_tool_calls(call, gold) == 1.0                                         # numbers as floats/strings
+    assert score_tool_calls(call.replace("50.0", "60"), gold) == 0.5                   # format + name, wrong args
+    assert score_tool_calls(call.replace("calculate_tip", "get_tip"), gold) == 0.2     # format only
+    assert score_tool_calls(call + call, gold) == 0.7                                  # extra call: names differ
+    assert score_tool_calls("<tool_call>{bad json}</tool_call>", gold) == 0.0
+    assert score_tool_calls("<tool_call>\n{\"name\": \"x\", \"arguments\": {}}", gold) == 0.0  # unclosed
+    assert score_tool_calls("Sure, the tip is 10.", gold) == 0.0
+    assert score_tool_calls("Which city do you mean?", []) == 1.0                    # no call expected
+    assert score_tool_calls(call, []) == 0.0
+
+    class VerificationResult:
+        def __init__(self, score, reasoning=None):
+            self.score, self.reasoning = score, reasoning
+
+    class VerifierFunction:
+        def __init__(self, name, verifier_config=None, weight=1.0):
+            self.name = name
+
+    module = types.ModuleType("fake_ground_truth_utils")
+    module.VerificationResult, module.VerifierFunction = VerificationResult, VerifierFunction
+    assert patch_tool_call_verifier(module) is True
+    v = module.ToolCallVerifier()
+    think = json.dumps({"calls": gold, "mode": "thinking"})
+    direct = json.dumps({"calls": gold, "mode": "default"})
+    assert v([], "need the tip tool\n</think>\n\n" + call, think).score == 1.0
+    assert v([], "need the tip tool " + call, think).score == 0.0                     # call inside an unfinished trace
+    assert v([], call, direct).score == 1.0
+    assert v([], "x</think>" + call, direct).score == 0.0                             # think tag in default mode
