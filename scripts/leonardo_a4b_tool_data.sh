@@ -91,7 +91,7 @@ def irrelevance_rows(path):
     for r in json.load(open(path, encoding="utf-8")):
         tools = [{"type": "function", "function": {"name": t["name"], "description": t.get("description", ""),
                   "parameters": {"type": "object", "properties": t.get("parameters", {})}}} for t in json.loads(r["tools"])]
-        if json.loads(r["answers"]) != []:
+        if json.loads(r["answers"]) != [] or not tools:
             continue
         yield ([{"role": "system", "content": system_text("", tools)}, {"role": "user", "content": r["query"]}], []), r["query"]
 
