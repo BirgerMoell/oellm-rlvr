@@ -96,9 +96,9 @@ def irrelevance_rows(path):
         yield ([{"role": "system", "content": system_text("", tools)}, {"role": "user", "content": r["query"]}], []), r["query"]
 
 def keep(messages):
-    ids = tok.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
-    ids = ids["input_ids"] if isinstance(ids, dict) else ids
-    return len(ids) <= max_prompt, len(ids)
+    text = tok.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    n = len(tok(text, add_special_tokens=False)["input_ids"])
+    return n <= max_prompt, n
 
 records = []
 lengths = collections.defaultdict(list)
