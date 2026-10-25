@@ -1,10 +1,10 @@
-# A4b (qwen35-posttrain docs/OELLM_RL_RUN_PROGRAM.md): tool-call RL on harder multi-turn next-action items
+# A4b (qwen35-posttrain docs/OELLM_RL_RUN_PROGRAM.md), retargeted 10-25 to the alpha-0.5 merge (the Stage-4
+# candidate): tool-call RL on harder multi-turn next-action items
 # (scripts/leonardo_a4b_tool_data.sh: 1,200 Nemotron conversational tool-use rows with Qwen3-235B pass rate 0.1-0.8,
-# 500 Nemotron function-calling rows, 300 xlam irrelevance rows; 54 % calls / 46 % plain replies), from Stage-4 DPO v2,
-# whose held-out tool check regressed (JSON 0.995 -> 0.898, arguments 0.981 -> 0.849, runaway calls). Reward
-# `tool_call` as in A4. Prompts up to 4,096 tokens (median 3.5K), responses 4,096. Questions: does the harder pool give
-# a learning signal (A4 did not), and does it repair DPO v2's tool regression on the held-out check?
-name: dpo2-tool
+# 500 Nemotron function-calling rows, 300 xlam irrelevance rows; 54 % calls / 46 % plain replies). Reward `tool_call`
+# as in A4. Prompts up to 4,096 tokens (median 3.5K), responses 4,096. Question: does the harder pool give a learning
+# signal (A4 did not) and raise the held-out tool check above the merge (decision 0.878, JSON 0.985, args 0.951)?
+name: merge-tool
 platform:
   accelerator: cuda
   nodes: 2
@@ -26,9 +26,9 @@ backend:
   # 263K-vocabulary logits of a 7K-token pack (OOM at the first training step).
   extra_args: [--save_filtered_rollouts, --gather_whole_model, "False", --deepspeed_offload_optimizer, "True", --non_stop_penalty, "True", --non_stop_penalty_value, "-0.5"]
 model:
-  name_or_path: local/oellm9b-stage4-dpo-v2-mixed
-  local_path: ${OELLM_SCRATCH}/oellm-rl/models/stage4-dpo-v2-mixed
-  revision: stage4-dpo-v2-250k   # local export + RL mixed template (thinking by default)
+  name_or_path: local/oellm9b-stage4-merge-a05-mixed
+  local_path: ${OELLM_SCRATCH}/oellm-rl/models/stage4-merge-a05-mixed
+  revision: stage4-dpo-v2-250k-merge-a0.5   # local merge + RL mixed template (thinking by default)
   stage_to_local: false
   max_prompt_tokens: 4096
   response_tokens: 4096
@@ -66,14 +66,14 @@ training:
   beta: 0.0
   save_freq: 24
   checkpoint_state_freq: 24
-  checkpoint_state_directory: ${OELLM_SCRATCH}/oellm-rl/outputs/dpo2-tool-state
+  checkpoint_state_directory: ${OELLM_SCRATCH}/oellm-rl/outputs/merge-tool-state
   gradient_checkpointing: true
   use_liger_loss: true
   learner_initialization_timeout_seconds: 900
 output:
-  directory: ${OELLM_SCRATCH}/oellm-rl/outputs/dpo2-tool
-  rollout_directory: ${OELLM_SCRATCH}/oellm-rl/rollouts/dpo2-tool
-  experiment_name: leonardo_dpo2_tool
+  directory: ${OELLM_SCRATCH}/oellm-rl/outputs/merge-tool
+  rollout_directory: ${OELLM_SCRATCH}/oellm-rl/rollouts/merge-tool
+  experiment_name: leonardo_merge_tool
   with_tracking: false
   wandb_mode: offline
   wandb_entity: local
