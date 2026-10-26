@@ -1,0 +1,109 @@
+version: 1
+# W2 core window (qwen35-posttrain docs/OELLM_RL_RUN_PROGRAM.md), overnight on 2 nodes from the W2 base (staged into
+# models/w2-base-mixed with the RL mixed template once the W1a / A4b / combination evals select it).
+# Pool scripts/leonardo_w2_data.sh (2,560 prompts, exact counts): 896 profiled thinking-mode math (solved 1-7 of 8 on
+# the base; EU `multilingual_math` check=answer, English `math`), 192 `math_direct_shaped` + 192 `mcq_letter_direct`
+# (default mode), 256 `ifeval_direct` + 128 `ifeval_think` (verifiable instruction following), 384 `code_stdio`,
+# 512 `tool_call` (A4b multi-turn pool incl. a translated slice). Changes vs W1a: 7K responses (6K), tool prompts up to
+# 3K, concave length penalty (TMAX defaults: ~-0.06 at 4K tokens, ~-0.10 at 8K) on top of the -0.5 non-stop penalty,
+# 160 updates. Estimate ~9-11 h (~700-900 local-h); walltime 16 h; checkpoints every 32 updates.
+name: w2
+platform:
+  accelerator: cuda
+  nodes: 2
+  gpus_per_node: 4
+  container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
+  account: ${OELLM_ACCOUNT}
+  partition: boost_usr_prod
+  walltime: "16:00:00"
+  cpus_per_task: 32
+  memory: 480G
+  binds: [/leonardo_work, /leonardo_scratch]
+backend:
+  repo_path: ${OELLM_SCRATCH}/oellm-rl/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: ${OELLM_SCRATCH}/oellm-rl/tmax-reproduction/.venv/bin/python
+  # Per-parameter ZeRO-3 gather for the vLLM weight sync: gathering the whole 9B model (~18 GB)
+  # on top of ~31 GB of shards and optimizer state OOMs a 64 GB A100.
+  # AdamW state on CPU: ~27 GB per learner GPU under ZeRO-3 over 4 GPUs leaves no room for the
+  # 263K-vocabulary logits of a 7K-token pack (OOM at the first training step).
+  extra_args: [--save_filtered_rollouts, --gather_whole_model, "False", --deepspeed_offload_optimizer, "True", --non_stop_penalty, "True", --non_stop_penalty_value, "-0.5", --add_concave_length_penalty, "True"]
+model:
+  name_or_path: local/oellm9b-w2-base-mixed
+  local_path: ${OELLM_SCRATCH}/oellm-rl/models/w2-base-mixed
+  revision: w2-base   # see models/w2-base-mixed/SOURCE (selected checkpoint) + RL mixed template
+  stage_to_local: false
+  max_prompt_tokens: 3072
+  response_tokens: 7168
+  per_turn_tokens: 7168
+  pack_length: 10240
+datasets:
+  # One pre-mixed file with exact counts (TMAX mixer weights do not realize a target mix reliably).
+  - path: ${OELLM_SCRATCH}/oellm-rl/data/w2/train-mixed.parquet   # see data/w2/manifest.json
+    weight: 1.0
+    split: train
+task:
+  kind: math        # single-turn, ground-truth verified; the verifier is chosen per row (`dataset`)
+  max_steps: 1
+  pool_size: 64
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  unique_prompts: 16
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.80
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enable_prefix_caching: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 20480         # 160 updates x 16 prompts x 8 samples = one pass over 2,560 prompts
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dapo
+  beta: 0.0
+  save_freq: 32
+  checkpoint_state_freq: 32
+  checkpoint_state_directory: ${OELLM_SCRATCH}/oellm-rl/outputs/w2-state
+  gradient_checkpointing: true
+  use_liger_loss: true
+  learner_initialization_timeout_seconds: 900
+output:
+  directory: ${OELLM_SCRATCH}/oellm-rl/outputs/w2
+  rollout_directory: ${OELLM_SCRATCH}/oellm-rl/rollouts/w2
+  experiment_name: leonardo_w2
+  with_tracking: false
+  wandb_mode: offline
+  wandb_entity: local
+code_api:
+  port: 18080
+  workers: 16
+  max_execution_time: 2.0   # the dataset's per-test time limit
+  binary_reward: true       # 1 only if every hidden test passes
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.60   # the probe starts from a model that often does not close its trace
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+  min_mean_reward: 0.05
+environment:
+  HF_HOME: ${OELLM_SCRATCH}/oellm-rl/hf-cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  OELLM_PATCH_REQUIRE_THINK_CLOSE: "1"
+  OELLM_PATCH_TMAX_MULTILINGUAL_MATH: "1"   # multilingual_math (check=answer rows)
+  OELLM_PATCH_DIRECT_MODE_VERIFIERS: "1"    # math_direct_shaped, mcq_letter_direct, ifeval_direct, ifeval_think
+  OELLM_PATCH_TOOL_CALL_VERIFIER: "1"       # tool_call (A4b pool)
+  VLLM_NO_USAGE_STATS: "1"                  # no telemetry attempts from offline compute nodes
+  OELLM_PATCH_POLICY_CPU_ADAM: "1"   # DeepSpeedCPUAdam for the policy under optimizer offload (patched in deepspeed.initialize)
+  DS_SKIP_CUDA_CHECK: "1"   # container CUDA 13.0 vs torch cu128; cpu_adam is a CPU kernel
+  RAY_NUM_CPUS: "64"   # TMAX reserves 10 CPUs per learner GPU; booster nodes have 32 cores
+  TORCH_EXTENSIONS_DIR: ${OELLM_SCRATCH}/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam
