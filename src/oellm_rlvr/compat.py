@@ -524,7 +524,8 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
     - ``math_direct``: the whole reply is ``\\boxed{answer}`` (or the bare answer), equivalent to the label;
     - ``mcq_letter_direct``: the whole reply is the label letter (``C``, ``C.``, ``(C)`` or ``C)``);
     - ``math_direct_shaped``: as ``math_direct`` but correct replies with working get graded partial credit (W2);
-    - ``ifeval_direct``: verifiable instruction-following constraints on the whole default-mode reply (W2).
+    - ``ifeval_direct``: verifiable instruction-following constraints on the whole default-mode reply (W2);
+    - ``ifeval_think``: the same constraints on the answer after one closed trace (thinking-mode rows, W2).
     Any think tag, extra text or wrong answer scores 0. They never call ``remove_thinking_section``, so the
     closed-trace contract of thinking rows does not apply to them.
     """
@@ -606,10 +607,13 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
         def __init__(self, verifier_config: Any = None) -> None:
             super().__init__("ifeval_direct", verifier_config=verifier_config, weight=1.0)
 
+        def answer_text(self, prediction: str) -> str | None:
+            return bare(prediction)
+
         def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
-            text = bare(prediction)
+            text = self.answer_text(prediction)
             if not text:
-                return module.VerificationResult(score=0.0, reasoning="think tag or empty")
+                return module.VerificationResult(score=0.0, reasoning="think tag, unclosed trace or empty")
             constraint = label
             if isinstance(constraint, str):
                 try:
@@ -630,8 +634,24 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
                 return module.VerificationResult(score=0.0, reasoning="no constraints")
             return module.VerificationResult(score=sum(scores) / len(scores), reasoning=f"{sum(scores):.0f}/{len(scores)}")
 
+    class ThinkIFEvalVerifier(DirectIFEvalVerifier):
+        """``ifeval_think``: the same constraints on the answer after exactly one closed trace (thinking-mode rows).
+
+        Used instead of upstream ``ifeval``, whose ``ast.literal_eval`` label parsing rejects JSON ``null``.
+        """
+
+        def __init__(self, verifier_config: Any = None) -> None:
+            module.VerifierFunction.__init__(self, "ifeval_think", verifier_config=verifier_config, weight=1.0)
+
+        def answer_text(self, prediction: str) -> str | None:
+            if prediction.count("</think>") != 1 or "<think>" in prediction.split("</think>", 1)[1]:
+                return None
+            return prediction.split("</think>", 1)[1].strip()
+
     DirectIFEvalVerifier.__name__ = "DirectIFEvalVerifier"
+    ThinkIFEvalVerifier.__name__ = "ThinkIFEvalVerifier"
     module.DirectIFEvalVerifier = DirectIFEvalVerifier
+    module.ThinkIFEvalVerifier = ThinkIFEvalVerifier
     DirectMathShapedVerifier.__name__ = "DirectMathShapedVerifier"
     module.DirectMathShapedVerifier = DirectMathShapedVerifier
     DirectMathVerifier.__name__ = "DirectMathVerifier"

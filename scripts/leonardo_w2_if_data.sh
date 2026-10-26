@@ -4,7 +4,7 @@
 # nvidia/Nemotron-RL-instruction_following @ bcdec57a (ODC-BY), 46,391 English prompts.
 #   - 1,000 default-mode rows (`ifeval_direct`: constraints checked on the whole reply, no think tags; rl_mode=default)
 #     - the mode EUROPA measures, and the one whose strict-format compliance is weak;
-#   - 500 thinking-mode rows (TMAX `ifeval`: constraints checked on the text after the closed trace).
+#   - 500 thinking-mode rows (`ifeval_think`: the same constraints on the text after one closed trace).
 # Every kept row's constraints are built with TMAX's own registry (open_instruct.IFEvalG), so the verifier cannot fail
 # at train time; prompts over MAX_PROMPT tokens (model template) are dropped. Score = fraction of constraints met.
 set -euo pipefail
@@ -60,7 +60,7 @@ for k, r in enumerate(kept):
     default = k < 1000
     msg = {"role": "user", "content": r["prompt"], "rl_mode": "default" if default else None}
     records.append({"id": f"if-{r['id']}", "messages": [msg], "ground_truth": label,
-                    "dataset": "ifeval_direct" if default else "ifeval"})
+                    "dataset": "ifeval_direct" if default else "ifeval_think"})
 rng.shuffle(records)
 schema = pa.schema([("id", pa.string()),
                     ("messages", pa.list_(pa.struct([("role", pa.string()), ("content", pa.string()), ("rl_mode", pa.string())]))),

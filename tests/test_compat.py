@@ -840,6 +840,10 @@ def test_ifeval_direct_checks_whole_default_mode_reply():
     assert verifier([], "Not lower, done.", label).score == 0.5
     assert verifier([], "x</think>all lower, done.", label).score == 0.0
     assert verifier([], "all lower, done.", repr([label])).score == 1.0     # upstream list-wrapped form
+    think = module.ThinkIFEvalVerifier()
+    assert think.name == "ifeval_think"
+    assert think([], "Some Trace\n</think>\n\nall lower, done.", label).score == 1.0
+    assert think([], "unclosed trace, all lower, done.", label).score == 0.0
 
 
 def test_tool_call_reward_components_and_modes():
