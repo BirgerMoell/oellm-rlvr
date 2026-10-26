@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.abc
 import importlib.machinery
 import json
@@ -522,7 +523,8 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
     Rows rendered without a thinking block (template `rl_mode: default`) must answer in exactly the requested form:
     - ``math_direct``: the whole reply is ``\\boxed{answer}`` (or the bare answer), equivalent to the label;
     - ``mcq_letter_direct``: the whole reply is the label letter (``C``, ``C.``, ``(C)`` or ``C)``);
-    - ``math_direct_shaped``: as ``math_direct`` but correct replies with working get graded partial credit (W2).
+    - ``math_direct_shaped``: as ``math_direct`` but correct replies with working get graded partial credit (W2);
+    - ``ifeval_direct``: verifiable instruction-following constraints on the whole default-mode reply (W2).
     Any think tag, extra text or wrong answer scores 0. They never call ``remove_thinking_section``, so the
     closed-trace contract of thinking rows does not apply to them.
     """
@@ -592,6 +594,44 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
             score = 0.2 + 0.4 * max(0.0, 1.0 - len(text) / 800.0)
             return module.VerificationResult(score=round(score, 4), reasoning="correct with working")
 
+    class DirectIFEvalVerifier(module.VerifierFunction):
+        """``ifeval_direct``: TMAX's ``ifeval`` check for default-mode rows (W2).
+
+        The upstream verifier strips the reasoning section first, which under the closed-trace contract empties every
+        default-mode reply. This variant checks the whole reply (no think tags allowed) against each constraint and
+        returns the fraction satisfied, like upstream. Label: {"instruction_id": [...], "kwargs": [...]} as JSON, or
+        the list-wrapped form upstream accepts.
+        """
+
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("ifeval_direct", verifier_config=verifier_config, weight=1.0)
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            text = bare(prediction)
+            if not text:
+                return module.VerificationResult(score=0.0, reasoning="think tag or empty")
+            constraint = label
+            if isinstance(constraint, str):
+                try:
+                    constraint = json.loads(constraint)
+                except json.JSONDecodeError:
+                    constraint = ast.literal_eval(constraint)
+            if isinstance(constraint, list):
+                constraint = constraint[0]
+            if isinstance(constraint, str):
+                constraint = json.loads(constraint)
+            registry = module.instructions_registry.INSTRUCTION_DICT
+            scores = []
+            for key, kwargs in zip(constraint["instruction_id"], constraint["kwargs"]):
+                instruction = registry[key](key)
+                instruction.build_description(**{k: v for k, v in (kwargs or {}).items() if v is not None})
+                scores.append(1.0 if instruction.check_following(text) else 0.0)
+            if not scores:
+                return module.VerificationResult(score=0.0, reasoning="no constraints")
+            return module.VerificationResult(score=sum(scores) / len(scores), reasoning=f"{sum(scores):.0f}/{len(scores)}")
+
+    DirectIFEvalVerifier.__name__ = "DirectIFEvalVerifier"
+    module.DirectIFEvalVerifier = DirectIFEvalVerifier
     DirectMathShapedVerifier.__name__ = "DirectMathShapedVerifier"
     module.DirectMathShapedVerifier = DirectMathShapedVerifier
     DirectMathVerifier.__name__ = "DirectMathVerifier"

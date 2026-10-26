@@ -792,6 +792,56 @@ def test_direct_mode_verifiers_require_bare_correct_answers():
     assert shaped([], "x</think>\\boxed{44/5}", "44/5").score == 0.0
 
 
+def test_ifeval_direct_checks_whole_default_mode_reply():
+    import json
+    import types
+
+    from oellm_rlvr.compat import patch_direct_mode_verifiers
+
+    class VerificationResult:
+        def __init__(self, score, reasoning=None):
+            self.score, self.reasoning = score, reasoning
+
+    class VerifierFunction:
+        def __init__(self, name, verifier_config=None, weight=1.0):
+            self.name = name
+
+    class LowercaseOnly:
+        def __init__(self, key):
+            pass
+
+        def build_description(self, **kwargs):
+            return ""
+
+        def check_following(self, text):
+            return text == text.lower()
+
+    class EndsWith:
+        def __init__(self, key):
+            pass
+
+        def build_description(self, end_phrase=None):
+            self.end = end_phrase
+
+        def check_following(self, text):
+            return text.strip().endswith(self.end)
+
+    module = types.ModuleType("fake_ground_truth_utils")
+    module.VerificationResult, module.VerifierFunction = VerificationResult, VerifierFunction
+    module.MathVerifier = VerifierFunction
+    module.instructions_registry = types.SimpleNamespace(
+        INSTRUCTION_DICT={"change_case:english_lowercase": LowercaseOnly, "startend:end_checker": EndsWith})
+    patch_direct_mode_verifiers(module)
+    verifier = module.DirectIFEvalVerifier()
+    assert verifier.name == "ifeval_direct"
+    label = json.dumps({"instruction_id": ["change_case:english_lowercase", "startend:end_checker"],
+                        "kwargs": [None, {"end_phrase": "done."}]})
+    assert verifier([], "all lower case, done.", label).score == 1.0
+    assert verifier([], "Not lower, done.", label).score == 0.5
+    assert verifier([], "x</think>all lower, done.", label).score == 0.0
+    assert verifier([], "all lower, done.", repr([label])).score == 1.0     # upstream list-wrapped form
+
+
 def test_tool_call_reward_components_and_modes():
     import json
     import types
