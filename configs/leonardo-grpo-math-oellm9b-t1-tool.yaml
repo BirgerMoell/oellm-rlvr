@@ -1,0 +1,98 @@
+version: 1
+# T1 tool specialist (qwen35-posttrain docs/OELLM_RL_RUN_PROGRAM.md, specialist-and-merge test): the A4b recipe
+# (multi-turn next-action tool RL, `tool_call` reward, 4K prompts / 4K responses, non-stop penalty) started from W1a
+# step 128 (models/w2-base-mixed, the same base as W2) for 96 updates on scripts/leonardo_t1_tool_data.sh (A4b pool +
+# translated slice). After W2 and T1 finish, W1a + (W2 - W1a) + w (T1 - W1a) for w in 1.0 / 1.5 / 2.0 and a TIES
+# merge are compared with W2 (slurm/merge_task_arithmetic_leonardo.sbatch). Estimate ~3.7 h, ~240 local-h.
+name: t1-tool
+platform:
+  accelerator: cuda
+  nodes: 2
+  gpus_per_node: 4
+  container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
+  account: ${OELLM_ACCOUNT}
+  partition: boost_usr_prod
+  walltime: "06:00:00"
+  cpus_per_task: 32
+  memory: 480G
+  binds: [/leonardo_work, /leonardo_scratch]
+backend:
+  repo_path: ${OELLM_SCRATCH}/oellm-rl/tmax-reproduction
+  commit: 3f80d37042402b8363f39c9535723b0d4cb8de54
+  python: ${OELLM_SCRATCH}/oellm-rl/tmax-reproduction/.venv/bin/python
+  # Per-parameter ZeRO-3 gather for the vLLM weight sync: gathering the whole 9B model (~18 GB)
+  # on top of ~31 GB of shards and optimizer state OOMs a 64 GB A100.
+  # AdamW state on CPU: ~27 GB per learner GPU under ZeRO-3 over 4 GPUs leaves no room for the
+  # 263K-vocabulary logits of a 7K-token pack (OOM at the first training step).
+  extra_args: [--save_filtered_rollouts, --gather_whole_model, "False", --deepspeed_offload_optimizer, "True", --non_stop_penalty, "True", --non_stop_penalty_value, "-0.5"]
+model:
+  name_or_path: local/oellm9b-w2-base-mixed
+  local_path: ${OELLM_SCRATCH}/oellm-rl/models/w2-base-mixed
+  revision: w1a-step128   # see models/w2-base-mixed/SOURCE + RL mixed template
+  stage_to_local: false
+  max_prompt_tokens: 4096
+  response_tokens: 4096
+  per_turn_tokens: 4096
+  pack_length: 8192
+datasets:
+  - path: ${OELLM_SCRATCH}/oellm-rl/data/t1-tool/train.parquet   # see data/t1-tool/manifest.json
+    weight: 1.0
+    split: train
+task:
+  kind: math
+  max_steps: 1
+  pool_size: 64
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  unique_prompts: 16
+  samples_per_prompt: 8
+  temperature: 1.0
+  gpu_memory_utilization: 0.80
+  async_steps: 2
+  active_sampling: true
+  inflight_updates: true
+  enable_prefix_caching: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 12288         # 96 updates x 16 prompts x 8 samples
+  epochs: 1
+  deepspeed_stage: 3
+  loss: dapo
+  beta: 0.0
+  save_freq: 24
+  checkpoint_state_freq: 24
+  checkpoint_state_directory: ${OELLM_SCRATCH}/oellm-rl/outputs/t1-tool-state
+  gradient_checkpointing: true
+  use_liger_loss: true
+  learner_initialization_timeout_seconds: 900
+output:
+  directory: ${OELLM_SCRATCH}/oellm-rl/outputs/t1-tool
+  rollout_directory: ${OELLM_SCRATCH}/oellm-rl/rollouts/t1-tool
+  experiment_name: leonardo_t1_tool
+  with_tracking: false
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_zero_std_fraction: 0.80
+  max_truncation_fraction: 0.60   # the probe starts from a model that often does not close its trace
+  max_error_fraction: 0.02
+  max_policy_lag: 4
+  min_mean_reward: 0.05
+environment:
+  HF_HOME: ${OELLM_SCRATCH}/oellm-rl/hf-cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  OELLM_PATCH_MATH_EQUIV_THREADS: "1"
+  OELLM_PATCH_REQUIRE_THINK_CLOSE: "1"
+  OELLM_PATCH_TOOL_CALL_VERIFIER: "1"
+  VLLM_NO_USAGE_STATS: "1"   # tool_call: ToolRL-style reward, no-call rows rewarded only without a call
+  OELLM_PATCH_POLICY_CPU_ADAM: "1"   # DeepSpeedCPUAdam for the policy under optimizer offload (patched in deepspeed.initialize)
+  DS_SKIP_CUDA_CHECK: "1"   # container CUDA 13.0 vs torch cu128; cpu_adam is a CPU kernel
+  RAY_NUM_CPUS: "64"   # TMAX reserves 10 CPUs per learner GPU; booster nodes have 32 cores
+  TORCH_EXTENSIONS_DIR: ${OELLM_SCRATCH}/oellm-rl/cache/torch_extensions   # prebuilt DeepSpeedCPUAdam
