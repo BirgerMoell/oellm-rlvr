@@ -521,7 +521,8 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
 
     Rows rendered without a thinking block (template `rl_mode: default`) must answer in exactly the requested form:
     - ``math_direct``: the whole reply is ``\\boxed{answer}`` (or the bare answer), equivalent to the label;
-    - ``mcq_letter_direct``: the whole reply is the label letter (``C``, ``C.``, ``(C)`` or ``C)``).
+    - ``mcq_letter_direct``: the whole reply is the label letter (``C``, ``C.``, ``(C)`` or ``C)``);
+    - ``math_direct_shaped``: as ``math_direct`` but correct replies with working get graded partial credit (W2).
     Any think tag, extra text or wrong answer scores 0. They never call ``remove_thinking_section``, so the
     closed-trace contract of thinking rows does not apply to them.
     """
@@ -560,6 +561,39 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
             ok = bool(text) and text.upper() in {letter, letter + ".", f"({letter})", letter + ")"}
             return module.VerificationResult(score=float(ok))
 
+    class DirectMathShapedVerifier(module.VerifierFunction):
+        """``math_direct_shaped``: graded credit so RL can move a model that never answers bare.
+
+        A bare correct answer (the whole reply is ``\\boxed{x}`` or ``x``) scores 1. A correct last ``\\boxed{}``
+        after shown working scores 0.2 + 0.4 * max(0, 1 - len(reply) / 800), so shorter correct replies earn more but
+        never reach the bare-answer score. Wrong, missing or think-tagged answers score 0.
+        """
+
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("math_direct_shaped", verifier_config=verifier_config, weight=1.0)
+            self.math_verifier = module.MathVerifier(verifier_config)
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            text = bare(prediction)
+            if not text:
+                return module.VerificationResult(score=0.0, reasoning="think tag or empty")
+            stripped = text.rstrip(".").strip()
+            inner = re.fullmatch(r"\\boxed\{(.+)\}", stripped, flags=re.DOTALL)
+            candidate = inner.group(1).strip() if inner else stripped
+            if "\n" not in candidate and len(candidate) <= 64 and " " not in candidate.replace(", ", ","):
+                result = self.math_verifier(tokenized_prediction, "\\boxed{%s}" % candidate, str(label))
+                if float(result.score) == 1.0:
+                    return module.VerificationResult(score=1.0, reasoning="bare correct")
+            if "\\boxed" not in text:
+                return module.VerificationResult(score=0.0, reasoning="no boxed answer")
+            result = self.math_verifier(tokenized_prediction, text, str(label))  # last \boxed{} in the reply
+            if float(result.score) != 1.0:
+                return module.VerificationResult(score=0.0, reasoning="incorrect")
+            score = 0.2 + 0.4 * max(0.0, 1.0 - len(text) / 800.0)
+            return module.VerificationResult(score=round(score, 4), reasoning="correct with working")
+
+    DirectMathShapedVerifier.__name__ = "DirectMathShapedVerifier"
+    module.DirectMathShapedVerifier = DirectMathShapedVerifier
     DirectMathVerifier.__name__ = "DirectMathVerifier"
     DirectLetterVerifier.__name__ = "DirectLetterVerifier"
     module.DirectMathVerifier = DirectMathVerifier

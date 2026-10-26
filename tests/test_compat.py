@@ -756,12 +756,14 @@ def test_direct_mode_verifiers_require_bare_correct_answers():
         def __init__(self, name, verifier_config=None, weight=1.0):
             self.name = name
 
-    class MathVerifier(VerifierFunction):  # stands in for TMAX's: equality of the boxed content
+    class MathVerifier(VerifierFunction):  # stands in for TMAX's: equality of the last boxed content
         def __init__(self, verifier_config=None):
             super().__init__("math")
 
         def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
-            return VerificationResult(float(prediction == "\\boxed{%s}" % label))
+            import re
+            boxes = re.findall(r"\\boxed\{([^{}]*)\}", prediction)
+            return VerificationResult(float(bool(boxes) and boxes[-1] == label))
 
     module = types.ModuleType("fake_ground_truth_utils")
     module.VerificationResult, module.VerifierFunction, module.MathVerifier = VerificationResult, VerifierFunction, MathVerifier
@@ -777,6 +779,17 @@ def test_direct_mode_verifiers_require_bare_correct_answers():
     letter = module.DirectLetterVerifier()
     assert letter.name == "mcq_letter_direct"
     assert [letter([], p, "C").score for p in ("C", "c.", "(C)", "C)", "C. At ten.", "B", "")] == [1, 1, 1, 1, 0, 0, 0]
+    shaped = module.DirectMathShapedVerifier()
+    assert shaped.name == "math_direct_shaped"
+    assert shaped([], "\\boxed{44/5}", "44/5").score == 1.0                       # bare
+    assert shaped([], "44/5.", "44/5").score == 1.0
+    short = shaped([], "24/5 + 16/4 = \\boxed{44/5}", "44/5").score              # working shown, short
+    long_ = shaped([], "Step " * 120 + "\\boxed{44/5}", "44/5").score            # working shown, long
+    assert 0.2 <= long_ < short < 0.6
+    assert shaped([], "x " * 600 + "\\boxed{44/5}", "44/5").score == 0.2         # floor for very long correct replies
+    assert shaped([], "24/5 + 16/4 = \\boxed{9}", "44/5").score == 0.0           # wrong
+    assert shaped([], "the answer is 44/5", "44/5").score == 0.0                  # no box and not bare
+    assert shaped([], "x</think>\\boxed{44/5}", "44/5").score == 0.0
 
 
 def test_tool_call_reward_components_and_modes():
