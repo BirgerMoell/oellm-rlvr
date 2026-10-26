@@ -16,6 +16,12 @@
 # (temperature 1.0, 8,192 new tokens) on MODEL (with the RL thinking-default template) by oellm_rlvr eval-reasoning,
 # 4 GPUs in parallel; prompts are then banded (unsolved / hard / medium / easy / solved at 8).
 #   MODEL=<dir> [TEMPLATE=<rl mixed jinja>] sbatch scripts/leonardo_w2_math_profile.sbatch   (submit from $SCRATCH/oellm-rl/runs)
+# STAGE splits the work so it fits a full partition (small 1-GPU jobs backfill; whole nodes wait for hours):
+#   STAGE=prep      (login node, no GPU)   candidates + thinking-default model copy
+#   STAGE=shard     (sbatch --array=0-3 --gpus-per-node=1 --cpus-per-task=8 --mem=60G --time=01:45:00)
+#                   samples candidates-$SLURM_ARRAY_TASK_ID on one GPU (eval-reasoning appends, so a re-run resumes)
+#   STAGE=summarize (CPU)                  bands -> profile.json
+#   unset           all of it in one 4-GPU job (original behaviour)
 set -euo pipefail
 [[ -n ${OELLM_WORK:-} ]] || source "${OELLM_ENV:-$HOME/.oellm/leonardo.env}"
 ROOT=$OELLM_SCRATCH/oellm-rl
@@ -26,13 +32,17 @@ SRC=$OELLM_SCRATCH/oellm-dpo/hf-cache/hub/datasets--birgermoell--oellm-math-rlvr
 QUICK=$OELLM_WORK/sft-migration-preflight/data/eval-quick/reasoning_quick.jsonl
 OUT=$ROOT/data/w2-math-profile; mkdir -p "$OUT"
 # Thinking-default copy of the model (eval-reasoning renders with the model's own template).
-M=$OUT/model; mkdir -p "$M"
+STAGE=${STAGE:-all}
+M=$OUT/model
+if [[ $STAGE == all || $STAGE == prep ]]; then
+mkdir -p "$M"
 for f in "$MODEL"/*; do case "$(basename "$f")" in chat_template.jinja) ;; *) ln -f "$f" "$M/" ;; esac; done
 cp "$TEMPLATE" "$M/chat_template.jinja"
+fi
 PY=$ROOT/tmax-reproduction/.venv/bin/python
 run() { singularity exec --nv -B /leonardo_work,/leonardo_scratch "$C" env PYTHONPATH=$ROOT/oellm-rlvr/src HF_HUB_OFFLINE=1 \
           VLLM_NO_USAGE_STATS=1 OELLM_PATCH_MATH_EQUIV_THREADS=1 "$PY" "$@"; }
-if [[ ! -s $OUT/candidates-3.parquet ]]; then
+if [[ ( $STAGE == all || $STAGE == prep ) && ! -s $OUT/candidates-3.parquet ]]; then
 run - "$SRC" "$QUICK" "$ROOT/data" "$OUT" "$OELLM_SCRATCH/oellm-dpo/format-v1/prompts.jsonl" <<'PY'
 import collections, glob, json, random, sys
 import pyarrow as pa, pyarrow.parquet as pq
@@ -77,12 +87,16 @@ json.dump({"candidates": len(picked), "languages": dict(collections.Counter(r["l
 print(open(f"{out}/candidates.json").read())
 PY
 fi
-for g in 0 1 2 3; do
-  CUDA_VISIBLE_DEVICES=$g run -m oellm_rlvr.cli eval-reasoning --model "$M" --dataset "$OUT/candidates-$g.parquet" \
-    --output "$OUT/predictions-$g.jsonl" --samples-per-prompt 8 --temperature 1.0 --max-new-tokens 8192 \
-    --max-model-len 9216 --batch-size 32 --gpu-memory-utilization 0.85 --seed 2026102$g > "$OUT/sample-$g.log" 2>&1 &
-done
-wait
+sample() {
+  CUDA_VISIBLE_DEVICES=$2 run -m oellm_rlvr.cli eval-reasoning --model "$M" --dataset "$OUT/candidates-$1.parquet" \
+    --output "$OUT/predictions-$1.jsonl" --samples-per-prompt 8 --temperature 1.0 --max-new-tokens 8192 \
+    --max-model-len 9216 --batch-size 32 --gpu-memory-utilization 0.85 --seed 2026102$1 > "$OUT/sample-$1.log" 2>&1
+}
+case $STAGE in
+  all) for g in 0 1 2 3; do sample $g $g & done; wait ;;
+  shard) sample "${SLURM_ARRAY_TASK_ID:?array task}" 0 ;;
+esac
+[[ $STAGE == all || $STAGE == summarize ]] || exit 0
 run - "$OUT" <<'PY'
 import collections, glob, json, sys
 out = sys.argv[1]
