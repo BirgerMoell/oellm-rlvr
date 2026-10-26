@@ -6,7 +6,8 @@ version: 1
 # (default mode), 256 `ifeval_direct` + 128 `ifeval_think` (verifiable instruction following), 384 `code_stdio`,
 # 512 `tool_call` (A4b multi-turn pool incl. a translated slice). Changes vs W1a: 7K responses (6K), tool prompts up to
 # 3K, concave length penalty (TMAX defaults: ~-0.06 at 4K tokens, ~-0.10 at 8K) on top of the -0.5 non-stop penalty,
-# 160 updates. Estimate ~9-11 h (~700-900 local-h); walltime 16 h; checkpoints every 32 updates.
+# 160 updates. Estimate from W1a (2.1 min/update, 64 local-h per hour on 2 nodes): ~6-8 h, ~400-550 local-h incl.
+# the canary; walltime 12 h (hard cap ~770 local-h); checkpoints every 32 updates.
 name: w2
 platform:
   accelerator: cuda
@@ -15,7 +16,7 @@ platform:
   container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
   account: ${OELLM_ACCOUNT}
   partition: boost_usr_prod
-  walltime: "16:00:00"
+  walltime: "12:00:00"
   cpus_per_task: 32
   memory: 480G
   binds: [/leonardo_work, /leonardo_scratch]
