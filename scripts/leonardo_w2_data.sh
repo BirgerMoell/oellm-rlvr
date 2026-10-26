@@ -39,10 +39,14 @@ w1a_ids = {r["id"] for r in rows(f"{d}/w1a/train-mixed.parquet")}
 picked, notes = [], {}
 
 # Thinking math from the profile.
-profile = {r["id"]: r for r in json.load(open(f"{d}/w2-math-profile/profile.json"))}
+try:
+    profile = {r["id"]: r for r in json.load(open(f"{d}/w2-math-profile/profile.json"))}
+except FileNotFoundError:  # profiling did not run: all math comes from the filler below
+    profile = {}
+    notes["profile_missing"] = True
 cands = {r["id"]: r for p in glob.glob(f"{d}/w2-math-profile/candidates-*.parquet") for r in rows(p)}
 order = {"hard": 0, "medium": 1, "easy": 2}
-informative = [cands[i] for i, p in profile.items() if p["band"] in order]
+informative = [cands[i] for i, p in profile.items() if p["band"] in order and i in cands]
 informative.sort(key=lambda r: (order[profile[r["id"]]["band"]], hashlib.sha256(r["id"].encode()).hexdigest()))
 math = []
 for r in informative[:896]:
