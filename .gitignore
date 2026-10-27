@@ -14,3 +14,5 @@ rollouts/
 
 # site settings (account, personal paths)
 leonardo.env
+data/eu-qa-raw/
+data/eu-tasks/

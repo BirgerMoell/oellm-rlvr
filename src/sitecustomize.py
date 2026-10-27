@@ -136,3 +136,11 @@ if os.environ.get("OELLM_PATCH_TOOL_CALL_VERIFIER") == "1":
         "open_instruct.ground_truth_utils",
         patch_tool_call_verifier,
     )
+
+if os.environ.get("OELLM_PATCH_EU_TASK_VERIFIERS") == "1":
+    from oellm_rlvr.compat import patch_eu_task_verifiers
+
+    install_post_import_patch(
+        "open_instruct.ground_truth_utils",
+        patch_eu_task_verifiers,
+    )

@@ -753,6 +753,40 @@ def patch_tool_call_verifier(module: ModuleType) -> bool:
     return True
 
 
+def patch_eu_task_verifiers(module: ModuleType) -> bool:
+    """Register the ``eu_qa`` (calibrated factual QA) and ``eu_doc`` (document tasks) verifiers.
+
+    Label: JSON from ``oellm_rlvr.eu_tasks`` with ``suite`` and ``mode``. ``eu_qa`` returns +1 correct, 0 for
+    ``ANSWER: UNKNOWN`` and -1 for a wrong or missing answer; ``eu_doc`` returns 1 / 0 (JSON extraction: fraction of
+    fields). Thinking rows are scored after exactly one closing ``</think>``; default rows must contain no think tag.
+    """
+    if getattr(module, "_oellm_eu_task_verifiers", False):
+        return False
+    from oellm_rlvr import eu_tasks
+
+    def make(name: str) -> type:
+        class EUTaskVerifier(module.VerifierFunction):
+            def __init__(self, verifier_config: Any = None) -> None:
+                super().__init__(name, verifier_config=verifier_config, weight=1.0)
+
+            def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+                try:
+                    contract = json.loads(label) if isinstance(label, str) else label
+                    reward = eu_tasks.score(prediction, contract)
+                except (KeyError, TypeError, ValueError) as error:
+                    return module.VerificationResult(score=0.0, reasoning=f"invalid {name} label: {error}")
+                return module.VerificationResult(score=float(reward))
+
+        return EUTaskVerifier
+
+    module.EUQAVerifier = make("eu_qa")
+    module.EUQAVerifier.__name__ = "EUQAVerifier"
+    module.EUDocVerifier = make("eu_doc")
+    module.EUDocVerifier.__name__ = "EUDocVerifier"
+    module._oellm_eu_task_verifiers = True
+    return True
+
+
 def patch_deepspeed_cpu_adam_offload(module: ModuleType) -> bool:
     """Swap a torch AdamW for DeepSpeedCPUAdam inside ``deepspeed.initialize`` under optimizer offload.
 
