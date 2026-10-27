@@ -7,7 +7,7 @@
 #   512 math     - answer-language pool rows unused by W1a and W2 (EU `multilingual_math` check=answer, English `math`);
 #   256 IF       - 192 `ifeval_direct` + 64 `ifeval_think` unused by W2;
 #   256 code     - `code_stdio` rows unused by W1a and W2;
-#   384 tools    - A4b English rows unused by W2 (prompt <= TOOL_MAX_PROMPT tokens).
+#   384 tools    - A4b rows (English + translated slice) unused by W1a and W2.
 # The replay share keeps W2's skills while the two new suites are learned. Every prompt must fit MAX_PROMPT tokens.
 set -euo pipefail
 ROOT=${ROOT:-$SCRATCH/oellm-rl}
@@ -56,7 +56,8 @@ iff = [r for r in rows(f"{d}/w2-if/train.parquet") if r["id"] not in used]
 picked += [norm(r) for r in take([r for r in iff if r["dataset"] == "ifeval_direct"], 192, "ifeval_direct")]
 picked += [norm(r) for r in take([r for r in iff if r["dataset"] == "ifeval_think"], 64, "ifeval_think")]
 picked += [norm(r) for r in take([r for r in rows(f"{d}/a5-code/train.parquet") if r["id"] not in used], 256, "code")]
-picked += [norm(r) for r in take([r for r in rows(f"{d}/a4b-tool/train.parquet") if r["id"] not in used], 384, "tools")]
+tool_pool = rows(f"{d}/a4b-tool/train.parquet") + rows(f"{d}/a4b-tool-translated/train.parquet")
+picked += [norm(r) for r in take([r for r in tool_pool if r["id"] not in used], 384, "tools")]
 ids = [r["id"] for r in picked]
 assert len(ids) == len(set(ids)) == 2560, (len(ids), len(set(ids)))
 rng.shuffle(picked)
