@@ -237,6 +237,34 @@ def command_prepare_dapo_math(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_pass_rate_sample(args: argparse.Namespace) -> int:
+    from .pass_rate import sample
+
+    print(json.dumps(sample(args.pool, args.model, args.output, samples=args.samples, temperature=args.temperature,
+                            top_p=args.top_p, max_new_tokens=args.max_new_tokens, max_model_len=args.max_model_len,
+                            seed=args.seed, shard=args.shard, shards=args.shards, batch_size=args.batch_size,
+                            gpu_memory_utilization=args.gpu_memory_utilization, limit=args.limit), indent=2))
+    return 0
+
+
+def command_pass_rate_score(args: argparse.Namespace) -> int:
+    from .pass_rate import score
+
+    print(json.dumps(score(args.pool, args.samples_files, args.output, code_api_url=args.code_api_url,
+                           threads=args.threads), indent=2))
+    return 0
+
+
+def command_pass_rate_select(args: argparse.Namespace) -> int:
+    from .pass_rate import select
+
+    caps = {k: int(v) for k, v in (item.split("=", 1) for item in args.cap)} if args.cap else None
+    print(json.dumps(select(args.pool, args.scores, args.output, samples=args.samples, min_solve=args.min_solve,
+                            max_solve=args.max_solve, max_truncated=args.max_truncated, cap_per_dataset=caps,
+                            model=args.model or ""), indent=2))
+    return 0
+
+
 def command_eval_reasoning(args: argparse.Namespace) -> int:
     _json(
         run_reasoning_eval(
@@ -564,6 +592,43 @@ def build_parser() -> argparse.ArgumentParser:
     dapo.add_argument("--evaluation-count", type=int, default=1024)
     dapo.add_argument("--split-seed", type=int, default=20260916)
     dapo.set_defaults(handler=command_prepare_dapo_math)
+
+    pr_sample = sub.add_parser("pass-rate-sample", help="k samples per pool prompt on the current checkpoint")
+    pr_sample.add_argument("--pool", required=True, help="training-schema parquet (id, messages, ground_truth, dataset)")
+    pr_sample.add_argument("--model", required=True, help="checkpoint with the RL chat template it will train with")
+    pr_sample.add_argument("--output", required=True, help="append-only samples JSONL")
+    pr_sample.add_argument("--samples", type=int, default=8)
+    pr_sample.add_argument("--temperature", type=float, default=1.0)
+    pr_sample.add_argument("--top-p", type=float, default=1.0)
+    pr_sample.add_argument("--max-new-tokens", type=int, default=8192)
+    pr_sample.add_argument("--max-model-len", type=int, default=16384)
+    pr_sample.add_argument("--batch-size", type=int, default=64)
+    pr_sample.add_argument("--gpu-memory-utilization", type=float, default=0.85)
+    pr_sample.add_argument("--seed", type=int, default=20261029)
+    pr_sample.add_argument("--shard", type=int, default=0)
+    pr_sample.add_argument("--shards", type=int, default=1)
+    pr_sample.add_argument("--limit", type=int)
+    pr_sample.set_defaults(handler=command_pass_rate_sample)
+
+    pr_score = sub.add_parser("pass-rate-score", help="score samples with the training verifiers (per dataset)")
+    pr_score.add_argument("--pool", required=True)
+    pr_score.add_argument("--samples-files", nargs="+", required=True)
+    pr_score.add_argument("--output", required=True, help="append-only scores JSONL")
+    pr_score.add_argument("--code-api-url", help="code execution API (http://127.0.0.1:PORT/test_program)")
+    pr_score.add_argument("--threads", type=int, default=16)
+    pr_score.set_defaults(handler=command_pass_rate_score)
+
+    pr_select = sub.add_parser("pass-rate-select", help="keep prompts with in-group reward variance")
+    pr_select.add_argument("--pool", required=True)
+    pr_select.add_argument("--scores", required=True)
+    pr_select.add_argument("--output", required=True, help="filtered training-schema parquet")
+    pr_select.add_argument("--samples", type=int, default=8)
+    pr_select.add_argument("--min-solve", type=float, default=0.0)
+    pr_select.add_argument("--max-solve", type=float, default=1.0)
+    pr_select.add_argument("--max-truncated", type=float, default=0.5)
+    pr_select.add_argument("--cap", action="append", help="DATASET=N cap on kept prompts; repeatable")
+    pr_select.add_argument("--model", help="checkpoint the profile belongs to (recorded in the manifest)")
+    pr_select.set_defaults(handler=command_pass_rate_select)
 
     reasoning_eval = sub.add_parser("eval-reasoning", help="run resumable vLLM math-reasoning evaluation")
     reasoning_eval.add_argument("--model", required=True, help="immutable local Hugging Face checkpoint")
