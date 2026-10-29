@@ -31,11 +31,9 @@ class _PostImportLoader(importlib.abc.Loader):
     def __init__(
         self,
         original: importlib.abc.Loader,
-        callback: ModulePatch,
         finder: _PostImportFinder,
     ) -> None:
         self.original = original
-        self.callback = callback
         self.finder = finder
 
     def create_module(self, spec: Any) -> ModuleType | None:
@@ -45,10 +43,12 @@ class _PostImportLoader(importlib.abc.Loader):
     def exec_module(self, module: ModuleType) -> None:
         try:
             self.original.exec_module(module)
-            self.callback(module)
+            for callback in self.finder.callbacks:
+                callback(module)
         finally:
             if self.finder in sys.meta_path:
                 sys.meta_path.remove(self.finder)
+            _PENDING_FINDERS.pop(self.finder.module_name, None)
 
     def get_code(self, fullname: str) -> Any:
         """Preserve loaders used by ``python -m`` and vLLM inspectors."""
@@ -59,9 +59,16 @@ class _PostImportLoader(importlib.abc.Loader):
 
 
 class _PostImportFinder(importlib.abc.MetaPathFinder):
-    def __init__(self, module_name: str, callback: ModulePatch) -> None:
+    """One finder per module carrying every registered callback (in registration order).
+
+    One finder per *callback* was wrong: the first finder on ``sys.meta_path`` loads the module and runs only its own
+    callback, so with several patches on one module (the verifier patches on ``open_instruct.ground_truth_utils``)
+    only the last-registered patch took effect.
+    """
+
+    def __init__(self, module_name: str) -> None:
         self.module_name = module_name
-        self.callback = callback
+        self.callbacks: list[ModulePatch] = []
 
     def find_spec(self, fullname: str, path: object = None, target: ModuleType | None = None) -> Any:
         if fullname != self.module_name:
@@ -69,17 +76,28 @@ class _PostImportFinder(importlib.abc.MetaPathFinder):
         spec = importlib.machinery.PathFinder.find_spec(fullname, path, target)
         if spec is None or spec.loader is None:
             return None
-        spec.loader = _PostImportLoader(spec.loader, self.callback, self)
+        spec.loader = _PostImportLoader(spec.loader, self)
         return spec
 
 
+_PENDING_FINDERS: dict[str, _PostImportFinder] = {}
+
+
 def install_post_import_patch(module_name: str, callback: ModulePatch) -> bool:
-    """Patch an imported module, or register a one-shot hook without importing it."""
+    """Patch an imported module, or register a one-shot hook without importing it.
+
+    Several patches may target the same module; all of them run, in registration order, once it is imported.
+    """
     module = sys.modules.get(module_name)
     if module is not None:
         callback(module)
         return False
-    sys.meta_path.insert(0, _PostImportFinder(module_name, callback))
+    finder = _PENDING_FINDERS.get(module_name)
+    if finder is None or finder not in sys.meta_path:
+        finder = _PostImportFinder(module_name)
+        _PENDING_FINDERS[module_name] = finder
+        sys.meta_path.insert(0, finder)
+    finder.callbacks.append(callback)
     return True
 
 

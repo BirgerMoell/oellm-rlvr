@@ -157,6 +157,24 @@ def test_post_import_patch_is_lazy_and_one_shot(tmp_path, monkeypatch) -> None:
     assert calls == [module_name]
 
 
+def test_every_post_import_patch_on_one_module_runs(tmp_path, monkeypatch) -> None:
+    """Regression (W1a/W2): with one finder per patch only the last-registered verifier patch ran."""
+    module_name = "oellm_post_import_multi_target"
+    (tmp_path / f"{module_name}.py").write_text("VALUE = 1\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    sys.modules.pop(module_name, None)
+    calls: list[str] = []
+
+    for name in ("multilingual_math", "require_think_close", "direct_mode", "tool_call", "eu_tasks"):
+        assert install_post_import_patch(module_name, lambda module, name=name: calls.append(name)) is True
+    importlib.import_module(module_name)
+    assert calls == ["multilingual_math", "require_think_close", "direct_mode", "tool_call", "eu_tasks"]
+    assert not any(getattr(finder, "module_name", None) == module_name for finder in sys.meta_path)
+    # A later registration on the now-loaded module applies immediately.
+    assert install_post_import_patch(module_name, lambda module: calls.append("late")) is False
+    assert calls[-1] == "late"
+
+
 def test_post_import_patch_handles_loaded_module(monkeypatch) -> None:
     module_name = "oellm_already_loaded_target"
     module = ModuleType(module_name)
