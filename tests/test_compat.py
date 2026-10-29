@@ -862,6 +862,9 @@ def test_ifeval_direct_checks_whole_default_mode_reply():
     assert think.name == "ifeval_think"
     assert think([], "Some Trace\n</think>\n\nall lower, done.", label).score == 1.0
     assert think([], "unclosed trace, all lower, done.", label).score == 0.0
+    # build_all_verifiers instantiates direct VerifierFunction subclasses only (ifeval_think was missing in W2).
+    registered = {cls().name for cls in VerifierFunction.__subclasses__()}
+    assert {"ifeval_direct", "ifeval_think", "math_direct", "mcq_letter_direct", "math_direct_shaped"} <= registered
 
 
 def test_tool_call_reward_components_and_modes():

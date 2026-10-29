@@ -652,11 +652,15 @@ def patch_direct_mode_verifiers(module: ModuleType) -> bool:
                 return module.VerificationResult(score=0.0, reasoning="no constraints")
             return module.VerificationResult(score=sum(scores) / len(scores), reasoning=f"{sum(scores):.0f}/{len(scores)}")
 
-    class ThinkIFEvalVerifier(DirectIFEvalVerifier):
+    class ThinkIFEvalVerifier(module.VerifierFunction):
         """``ifeval_think``: the same constraints on the answer after exactly one closed trace (thinking-mode rows).
 
         Used instead of upstream ``ifeval``, whose ``ast.literal_eval`` label parsing rejects JSON ``null``.
+        A direct ``VerifierFunction`` subclass on purpose: ``build_all_verifiers`` only instantiates direct
+        subclasses, so subclassing ``DirectIFEvalVerifier`` left ``ifeval_think`` unregistered (W2).
         """
+
+        __call__ = DirectIFEvalVerifier.__call__
 
         def __init__(self, verifier_config: Any = None) -> None:
             module.VerifierFunction.__init__(self, "ifeval_think", verifier_config=verifier_config, weight=1.0)
