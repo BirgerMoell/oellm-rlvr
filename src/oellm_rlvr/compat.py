@@ -865,31 +865,27 @@ def patch_tmax_multilingual_math_verifier(module: ModuleType) -> bool:
         return False
 
     from oellm_rlvr.language_audit import (
-        _build_detector,
         _detect,
         answer_prose,
         letter_count,
         reasoning_prose,
+        shared_detector,
         target_language_matches,
     )
 
     answer_min_letters = 20
 
     class MultilingualMathVerifier(module.VerifierFunction):
-        _detector: Any = None
-        _detector_lock = threading.Lock()
+        # No lock or detector on the class: Ray cloudpickles this patch-local class by value (W3 failed on
+        # "cannot pickle '_thread.lock'"); the detector lives in language_audit.shared_detector.
 
         def __init__(self, verifier_config: Any = None) -> None:
             super().__init__("multilingual_math", verifier_config=verifier_config, weight=1.0)
             self.math_verifier = module.MathVerifier(verifier_config)
 
-        @classmethod
-        def detector(cls) -> Any:
-            if cls._detector is None:
-                with cls._detector_lock:
-                    if cls._detector is None:
-                        cls._detector = _build_detector()
-            return cls._detector
+        @staticmethod
+        def detector() -> Any:
+            return shared_detector()
 
         def __call__(
             self,

@@ -359,6 +359,7 @@ def test_multilingual_math_reward_is_conjunctive(monkeypatch) -> None:
             return Result(float(label == "7"))
 
     monkeypatch.setattr("oellm_rlvr.language_audit._build_detector", lambda: object())
+    monkeypatch.setattr("oellm_rlvr.language_audit._DETECTOR", None)
     monkeypatch.setattr("oellm_rlvr.language_audit._detect", lambda _detector, _text: ("sv", 0.99))
     module = ModuleType("fake_ground_truth_utils")
     module.VerifierFunction = BaseVerifier
@@ -367,6 +368,9 @@ def test_multilingual_math_reward_is_conjunctive(monkeypatch) -> None:
 
     assert patch_tmax_multilingual_math_verifier(module) is True
     assert patch_tmax_multilingual_math_verifier(module) is False
+    # Ray cloudpickles this patch-local class by value: no locks on it (W3 crashed on '_thread.lock').
+    lock_type = type(threading.Lock())
+    assert not any(isinstance(v, lock_type) for v in vars(module.MultilingualMathVerifier).values())
     verifier = module.MultilingualMathVerifier()
     response = "Det här är en utförlig svensk förklaring.</think>\\boxed{7}"
     label = json.dumps({"answer": "7", "target_language": "sv"})
@@ -929,6 +933,7 @@ def test_multilingual_math_answer_check_ignores_trace_language(monkeypatch) -> N
         return ("sv", 0.99) if "svaret" in text else ("en", 0.99)
 
     monkeypatch.setattr("oellm_rlvr.language_audit._build_detector", lambda: object())
+    monkeypatch.setattr("oellm_rlvr.language_audit._DETECTOR", None)
     monkeypatch.setattr("oellm_rlvr.language_audit._detect", detect)
     module = ModuleType("fake_ground_truth_utils")
     module.VerifierFunction = BaseVerifier

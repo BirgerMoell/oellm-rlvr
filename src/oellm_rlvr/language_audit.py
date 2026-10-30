@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from collections import defaultdict
 from pathlib import Path
 from statistics import fmean
@@ -89,6 +90,21 @@ def _build_detector() -> Any:
     languages = [getattr(Language, name) for name in sorted(set(_LINGUA_NAMES.values()))]
     languages.append(Language.NYNORSK)
     return LanguageDetectorBuilder.from_languages(*languages).with_low_accuracy_mode().build()
+
+
+_DETECTOR: Any = None
+_DETECTOR_LOCK = threading.Lock()
+
+
+def shared_detector() -> Any:
+    """One detector per process, built on first use. Module-level so that verifiers holding no lock or detector
+    stay picklable (Ray cloudpickles the reward config, by value for classes defined inside patches)."""
+    global _DETECTOR
+    if _DETECTOR is None:
+        with _DETECTOR_LOCK:
+            if _DETECTOR is None:
+                _DETECTOR = _build_detector()
+    return _DETECTOR
 
 
 def _detect(detector: Any, text: str) -> tuple[str | None, float | None]:
