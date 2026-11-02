@@ -53,3 +53,16 @@ def test_patch_registers_tool_that_calls_the_server():
     assert result.result.startswith("[1] Selma") and sent["payload"] == {"query": "Selma Lagerlöf", "language": "sv", "k": 5}
     empty = asyncio.run(tool.step(SimpleNamespace(args={"query": " "})))
     assert empty.metadata["error"] == "empty query"
+
+
+def test_title_hits_put_the_named_entity_first():
+    titles = ["Selma Lagerlöf", "Selma Lagerlöf (målning)", "Mårbacka", "År", "Selma"]
+    exact, bare = {}, {}
+    for doc, t in enumerate(titles):
+        keys = W.title_keys(t)
+        exact.setdefault(keys[0], []).append(doc)
+        for key in keys[1:]:
+            bare.setdefault(key, []).append(doc)
+    assert W.title_hits("Vilket år föddes Selma Lagerlöf?", exact, bare) == [0, 1]
+    assert W.title_hits("vilket år föddes hon", exact, bare) == []  # one-word, lower-case "år" does not match
+    assert W.title_hits("Mårbacka gård", exact, bare) == [2]

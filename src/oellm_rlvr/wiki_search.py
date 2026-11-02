@@ -107,6 +107,45 @@ def build_index(leads_path: str | Path, language: str, output_dir: str | Path) -
     return meta
 
 
+_WORD = re.compile(r"[^\W_]+(?:[-'’][^\W_]+)*", re.UNICODE)
+
+
+def norm_title(text: str) -> str:
+    return " ".join(w.casefold() for w in _WORD.findall(text))
+
+
+def title_keys(title: str) -> list[str]:
+    """Exact key and, for "Name (qualifier)", the bare name as a weaker key."""
+    keys = [norm_title(title)]
+    bare = re.sub(r"\s*\([^)]*\)\s*$", "", title)
+    if bare != title:
+        keys.append(norm_title(bare))
+    return [k for k in keys if k]
+
+
+def title_hits(query: str, exact: dict[str, list[int]], bare: dict[str, list[int]], max_hits: int = 2) -> list[int]:
+    """Documents whose title occurs in the query as a whole word sequence, longest match first.
+
+    BM25 alone ranks the article about an entity below shorter articles that mention it in their title (long leads
+    are length-penalised), so a query naming the entity gets its article first. One-word titles count only if the
+    word is capitalised in the query and at least 4 letters long, so common words do not match.
+    """
+    words = _WORD.findall(query)
+    found: list[int] = []
+    for n in range(min(6, len(words)), 0, -1):
+        for i in range(len(words) - n + 1):
+            span = words[i:i + n]
+            if n == 1 and (len(span[0]) < 4 or not span[0][:1].isupper()):
+                continue
+            key = " ".join(w.casefold() for w in span)
+            for doc in exact.get(key, []) + bare.get(key, []):
+                if doc not in found:
+                    found.append(doc)
+                if len(found) >= max_hits:
+                    return found
+    return found
+
+
 class Searcher:
     """Loads one index per language on first use (memory-mapped) with its leads."""
 
@@ -121,20 +160,37 @@ class Searcher:
 
             retriever = bm25s.BM25.load(str(self.root / "index" / language), mmap=True)
             table = pq.read_table(self.root / "leads" / f"{language}.parquet", columns=["title", "lead"])
-            self._indexes[language] = (retriever, table.column("title").to_pylist(), table.column("lead").to_pylist())
+            titles = table.column("title").to_pylist()
+            exact: dict[str, list[int]] = {}
+            bare: dict[str, list[int]] = {}
+            for doc, title in enumerate(titles):
+                keys = title_keys(title)
+                exact.setdefault(keys[0], []).append(doc)
+                for key in keys[1:]:
+                    bare.setdefault(key, []).append(doc)
+            self._indexes[language] = (retriever, titles, table.column("lead").to_pylist(), exact, bare)
         return self._indexes[language]
 
     def search(self, query: str, language: str = "en", k: int = 5) -> list[dict[str, Any]]:
         import bm25s
 
         language = language if language in LANGUAGES else "en"
-        retriever, titles, leads = self._load(language)
+        retriever, titles, leads, exact, bare = self._load(language)
+        picked = [(d, None) for d in title_hits(query, exact, bare)]
         tokens = bm25s.tokenize([query], show_progress=False, **_tokenizer_args(language))
-        if not tokens.vocab:
-            return []
-        docs, scores = retriever.retrieve(tokens, k=k, show_progress=False)
-        return [{"title": titles[d], "language": language, "snippet": snippet(leads[d]), "score": round(float(s), 3)}
-                for d, s in zip(docs[0], scores[0]) if s > 0]
+        if tokens.vocab:
+            docs, scores = retriever.retrieve(tokens, k=k + len(picked), show_progress=False)
+            picked += [(int(d), float(s)) for d, s in zip(docs[0], scores[0]) if s > 0]
+        out, seen = [], set()
+        for d, s in picked:
+            if d in seen:
+                continue
+            seen.add(d)
+            out.append({"title": titles[d], "language": language, "snippet": snippet(leads[d]),
+                        "score": None if s is None else round(s, 3), "match": "title" if s is None else "bm25"})
+            if len(out) >= k:
+                break
+        return out
 
 
 def snippet(text: str, max_chars: int = SNIPPET_CHARS) -> str:
