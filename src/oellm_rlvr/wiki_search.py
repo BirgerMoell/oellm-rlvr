@@ -158,7 +158,10 @@ class Searcher:
             import bm25s
             import pyarrow.parquet as pq
 
+            start = time.time()
             retriever = bm25s.BM25.load(str(self.root / "index" / language), mmap=True)
+            # Leads stay an Arrow column (millions of Python strings take minutes to build); titles are needed as
+            # Python strings once, for the exact-title maps.
             table = pq.read_table(self.root / "leads" / f"{language}.parquet", columns=["title", "lead"])
             titles = table.column("title").to_pylist()
             exact: dict[str, list[int]] = {}
@@ -168,7 +171,8 @@ class Searcher:
                 exact.setdefault(keys[0], []).append(doc)
                 for key in keys[1:]:
                     bare.setdefault(key, []).append(doc)
-            self._indexes[language] = (retriever, titles, table.column("lead").to_pylist(), exact, bare)
+            self._indexes[language] = (retriever, titles, table.column("lead").combine_chunks(), exact, bare)
+            print(f"[wiki_search] loaded {language}: {len(titles)} articles in {time.time() - start:.0f}s", flush=True)
         return self._indexes[language]
 
     def search(self, query: str, language: str = "en", k: int = 5) -> list[dict[str, Any]]:
@@ -186,7 +190,7 @@ class Searcher:
             if d in seen:
                 continue
             seen.add(d)
-            out.append({"title": titles[d], "language": language, "snippet": snippet(leads[d]),
+            out.append({"title": titles[d], "language": language, "snippet": snippet(leads[d].as_py()),
                         "score": None if s is None else round(s, 3), "match": "title" if s is None else "bm25"})
             if len(out) >= k:
                 break
@@ -208,9 +212,15 @@ def create_app(root: str | Path, preload: list[str] | None = None):
     from pydantic import BaseModel
 
     searcher = Searcher(root)
-    for language in preload or []:
-        searcher._load(language)
     app = FastAPI()
+    if preload:  # load in the background; /health reports progress, requests for a loaded language work at once
+        import threading
+
+        def load_all() -> None:
+            for language in preload:
+                searcher._load(language)
+
+        threading.Thread(target=load_all, daemon=True).start()
 
     class Query(BaseModel):
         query: str
