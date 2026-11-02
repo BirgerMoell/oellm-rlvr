@@ -96,6 +96,7 @@ environment:
   HF_HUB_OFFLINE: "1"
   HF_DATASETS_OFFLINE: "1"
   TRANSFORMERS_OFFLINE: "1"
+  NLTK_DATA: ${OELLM_SCRATCH}/oellm-rl/nltk_data   # punkt/punkt_tab for the ifeval verifiers (offline nodes; W3 failed at step 1 without)
   OELLM_PATCH_MATH_EQUIV_THREADS: "1"
   OELLM_PATCH_REQUIRE_THINK_CLOSE: "1"
   OELLM_PATCH_TMAX_MULTILINGUAL_MATH: "1"   # multilingual_math (check=answer rows)

@@ -28,7 +28,7 @@ SHARDS=${SHARDS:-4}
 mkdir -p "$OUT"
 # Same verifier patches as the training configs (leonardo-grpo-math-oellm9b-w3.yaml `environment`).
 run() { singularity exec --nv -B /leonardo_work,/leonardo_scratch "$C" env PYTHONPATH=$ROOT/oellm-rlvr/src:$ROOT/tmax-reproduction \
-          HF_HUB_OFFLINE=1 VLLM_NO_USAGE_STATS=1 VLLM_WORKER_MULTIPROC_METHOD=fork OELLM_PATCH_MATH_EQUIV_THREADS=1 \
+          HF_HUB_OFFLINE=1 NLTK_DATA=$ROOT/nltk_data VLLM_NO_USAGE_STATS=1 VLLM_WORKER_MULTIPROC_METHOD=fork OELLM_PATCH_MATH_EQUIV_THREADS=1 \
           OELLM_PATCH_REQUIRE_THINK_CLOSE=1 OELLM_PATCH_TMAX_MULTILINGUAL_MATH=1 OELLM_PATCH_DIRECT_MODE_VERIFIERS=1 \
           OELLM_PATCH_TOOL_CALL_VERIFIER=1 OELLM_PATCH_EU_TASK_VERIFIERS=1 "$PY" "$@"; }
 case $STAGE in
