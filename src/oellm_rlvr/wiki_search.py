@@ -173,7 +173,7 @@ class Searcher:
                 exact.setdefault(keys[0], []).append(doc)
                 for key in keys[1:]:
                     bare.setdefault(key, []).append(doc)
-            self._indexes[language] = (retriever, titles, table.column("lead").combine_chunks(), exact, bare)
+            self._indexes[language] = (retriever, titles, table.column("lead"), exact, bare)  # chunked: > 2 GB of text
             print(f"[wiki_search] loaded {language}: {len(titles)} articles in {time.time() - start:.0f}s", flush=True)
         return self._indexes[language]
 
@@ -185,7 +185,7 @@ class Searcher:
         picked = [(d, None) for d in title_hits(query, exact, bare)]
         tokens = bm25s.tokenize([query], show_progress=False, **_tokenizer_args(language))
         if tokens.vocab:
-            docs, scores = retriever.retrieve(tokens, k=k + len(picked), show_progress=False)
+            docs, scores = retriever.retrieve(tokens, k=min(k + len(picked), len(titles)), show_progress=False)
             picked += [(int(d), float(s)) for d, s in zip(docs[0], scores[0]) if s > 0]
         out, seen = [], set()
         for d, s in picked:
@@ -210,8 +210,7 @@ def format_results(results: list[dict[str, Any]]) -> str:
 
 
 def create_app(root: str | Path, preload: list[str] | None = None):
-    from fastapi import FastAPI
-    from pydantic import BaseModel
+    from fastapi import FastAPI, Request
 
     searcher = Searcher(root)
     app = FastAPI()
@@ -224,19 +223,20 @@ def create_app(root: str | Path, preload: list[str] | None = None):
 
         threading.Thread(target=load_all, daemon=True).start()
 
-    class Query(BaseModel):
-        query: str
-        language: str = "en"
-        k: int = 5
-
-    @app.post("/search")
-    def search(q: Query) -> dict[str, Any]:
+    # This module has postponed annotations, so FastAPI would see the string "Request" (imported only in this
+    # function) and treat it as a query parameter (HTTP 422). Set the real class before registering the route.
+    async def search(request):
+        body = await request.json()
         start = time.time()
-        results = searcher.search(q.query, q.language, max(1, min(q.k, 10)))
+        results = searcher.search(str(body.get("query", "")), str(body.get("language") or "en"),
+                                  max(1, min(int(body.get("k", 5)), 10)))
         return {"results": results, "text": format_results(results), "runtime": round(time.time() - start, 3)}
 
+    search.__annotations__ = {"request": Request}
+    app.post("/search")(search)
+
     @app.get("/health")
-    def health() -> dict[str, Any]:
+    def health():
         return {"ok": True, "loaded": sorted(searcher._indexes)}
 
     return app

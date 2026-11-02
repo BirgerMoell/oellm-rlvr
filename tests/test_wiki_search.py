@@ -1,4 +1,5 @@
 import asyncio
+import time
 from dataclasses import asdict, dataclass
 from types import ModuleType, SimpleNamespace
 
@@ -67,3 +68,44 @@ def test_title_hits_put_the_named_entity_first():
     assert W.title_hits("vilket år föddes hon", exact, bare) == []  # one-word, lower-case "år" does not match
     assert W.title_hits("Mårbacka gård", exact, bare) == [2]
     assert W.title_keys("!!!") == [] and W.title_keys("?") == []
+
+
+def test_build_and_search_end_to_end(tmp_path):
+    import pytest
+
+    pytest.importorskip("bm25s")
+    pytest.importorskip("Stemmer")
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    src = tmp_path / "wikipedia" / "20231101.sv"
+    src.mkdir(parents=True)
+    rows = [
+        {"id": "1", "title": "Selma Lagerlöf", "text": "Selma Lagerlöf, född 20 november 1858 på Mårbacka, var en svensk författare. " * 8 + "\n\nBiografi\n\nMer."},
+        {"id": "2", "title": "Selma Lagerlöf (målning)", "text": "Selma Lagerlöf är ett porträtt av Selma Lagerlöf från 1908, målat av Carl Larsson."},
+        {"id": "3", "title": "!!!", "text": "!!! är ett amerikanskt rockband som bildades 1996 i Sacramento."},
+        {"id": "4", "title": "Mårbacka", "text": "Mårbacka är en herrgård i Sunne kommun i Värmland, känd som Selma Lagerlöfs hem."},
+    ]
+    # Two row groups / chunks, like the multi-file real snapshot.
+    pq.write_table(pa.Table.from_pylist(rows[:2]), src / "train-00000-of-00002.parquet")
+    pq.write_table(pa.Table.from_pylist(rows[2:]), src / "train-00001-of-00002.parquet")
+    root = tmp_path / "search"
+    assert W.build_leads(tmp_path / "wikipedia", "sv", root / "leads" / "sv.parquet")["articles"] == 4
+    W.build_index(root / "leads" / "sv.parquet", "sv", root / "index" / "sv")
+    results = W.Searcher(root).search("Vilket år föddes Selma Lagerlöf?", "sv", k=3)
+    assert results[0]["title"] == "Selma Lagerlöf" and results[0]["match"] == "title"
+    assert "1858" in results[0]["snippet"]
+    assert W.Searcher(root).search("rockband Sacramento", "sv", k=2)[0]["title"] == "!!!"
+
+    from fastapi.testclient import TestClient
+
+    app = W.create_app(root, preload=["sv"])
+    client = TestClient(app)
+    for _ in range(100):
+        if client.get("/health").json()["loaded"] == ["sv"]:
+            break
+        time.sleep(0.05)
+    response = client.post("/search", json={"query": "Mårbacka", "language": "sv", "k": 2})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["text"].startswith("[1] Mårbacka (sv.wikipedia)")
