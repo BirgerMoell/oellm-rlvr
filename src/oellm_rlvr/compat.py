@@ -1166,3 +1166,33 @@ def wrap_swerl_create_backend(module: ModuleType) -> bool:
     compatible_create_backend._oellm_filters_prepared_kwargs = True
     module.create_backend = compatible_create_backend
     return True
+
+
+def patch_wiki_search_tool(module: ModuleType) -> bool:
+    """Register the offline Wikipedia search tool ``wiki_search`` (oellm_rlvr.wiki_search) in open-instruct's
+    ``TOOL_REGISTRY``. Config: ``api_endpoint`` (the search server's ``/search`` URL), ``num_results``, ``timeout``.
+    grpo_fast imports the registry dict by name, so the entry is added to that same dict."""
+    if "wiki_search" in getattr(module, "TOOL_REGISTRY", {}):
+        return False
+    from dataclasses import dataclass
+
+    from oellm_rlvr.wiki_search import search_tool_class
+
+    wiki_tool = search_tool_class(module.Tool, module.StepResult, module.coerce_args, module.make_api_request,
+                                  module.log_env_call)
+    wiki_tool.__name__ = wiki_tool.__qualname__ = "WikiSearchTool"
+
+    @dataclass
+    class WikiSearchToolConfig(module.BaseEnvConfig):
+        api_endpoint: str = "http://127.0.0.1:18090/search"
+        num_results: int = 5
+        timeout: int = 10
+
+    # Set after the decorator: a string ClassVar annotation (this module has postponed annotations) would make
+    # tool_class a dataclass field, and asdict(config) would pass it to the tool's __init__.
+    WikiSearchToolConfig.tool_class = wiki_tool
+
+    module.WikiSearchTool = wiki_tool
+    module.WikiSearchToolConfig = WikiSearchToolConfig
+    module.TOOL_REGISTRY["wiki_search"] = WikiSearchToolConfig
+    return True

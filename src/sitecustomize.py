@@ -144,3 +144,11 @@ if os.environ.get("OELLM_PATCH_EU_TASK_VERIFIERS") == "1":
         "open_instruct.ground_truth_utils",
         patch_eu_task_verifiers,
     )
+
+if os.environ.get("OELLM_PATCH_WIKI_SEARCH_TOOL") == "1":
+    from oellm_rlvr.compat import patch_wiki_search_tool
+
+    install_post_import_patch(
+        "open_instruct.environments.tools.tools",
+        patch_wiki_search_tool,
+    )
