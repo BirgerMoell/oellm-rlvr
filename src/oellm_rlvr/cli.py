@@ -265,6 +265,17 @@ def command_pass_rate_select(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_hallucination_consistency(args: argparse.Namespace) -> int:
+    from .hallucination import consistency
+
+    report = consistency(args.pool, args.samples_files, dataset=args.dataset)
+    if args.output:
+        Path(args.output).write_text(json.dumps(report, indent=1) + "\n")
+    print(json.dumps({k: report[k] for k in ("prompts", "samples", "auroc_agreement_vs_correct", "as_sampled",
+                                             "policy", "reliability")}, indent=1))
+    return 0
+
+
 def command_eval_reasoning(args: argparse.Namespace) -> int:
     _json(
         run_reasoning_eval(
@@ -629,6 +640,14 @@ def build_parser() -> argparse.ArgumentParser:
     pr_select.add_argument("--cap", action="append", help="DATASET=N cap on kept prompts; repeatable")
     pr_select.add_argument("--model", help="checkpoint the profile belongs to (recorded in the manifest)")
     pr_select.set_defaults(handler=command_pass_rate_select)
+
+    halluc = sub.add_parser("hallucination-consistency",
+                            help="self-consistency of k samples as a confidence signal on eu_qa (abstention headroom)")
+    halluc.add_argument("--pool", required=True)
+    halluc.add_argument("--samples-files", nargs="+", required=True)
+    halluc.add_argument("--dataset", default="eu_qa")
+    halluc.add_argument("--output")
+    halluc.set_defaults(handler=command_hallucination_consistency)
 
     reasoning_eval = sub.add_parser("eval-reasoning", help="run resumable vLLM math-reasoning evaluation")
     reasoning_eval.add_argument("--model", required=True, help="immutable local Hugging Face checkpoint")

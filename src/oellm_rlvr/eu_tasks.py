@@ -172,6 +172,8 @@ def grade_qa(prediction: str, label: dict[str, Any]) -> str:
         return "no_answer"
     if is_abstention(value):
         return "abstain"
+    if label["kind"] == "unanswerable":  # fabricated entity (oellm_rlvr.hallucination): any answer is a hallucination
+        return "wrong"
     if label["kind"] == "year":
         years = set(re.findall(r"(?<!\d)(\d{3,4})(?!\d)", value))
         return "correct" if years == {str(label["answers"][0])} else "wrong"
