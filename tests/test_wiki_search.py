@@ -66,3 +66,4 @@ def test_title_hits_put_the_named_entity_first():
     assert W.title_hits("Vilket år föddes Selma Lagerlöf?", exact, bare) == [0, 1]
     assert W.title_hits("vilket år föddes hon", exact, bare) == []  # one-word, lower-case "år" does not match
     assert W.title_hits("Mårbacka gård", exact, bare) == [2]
+    assert W.title_keys("!!!") == [] and W.title_keys("?") == []

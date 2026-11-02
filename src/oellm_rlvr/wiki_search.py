@@ -168,6 +168,8 @@ class Searcher:
             bare: dict[str, list[int]] = {}
             for doc, title in enumerate(titles):
                 keys = title_keys(title)
+                if not keys:  # titles without letters or digits ("!!!", "?")
+                    continue
                 exact.setdefault(keys[0], []).append(doc)
                 for key in keys[1:]:
                     bare.setdefault(key, []).append(doc)
