@@ -109,3 +109,59 @@ def test_build_and_search_end_to_end(tmp_path):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["text"].startswith("[1] Mårbacka (sv.wikipedia)")
+
+
+def _render(messages, **kwargs) -> str:
+    """Release chat template v2.1 (default mode) as transformers renders it: json.dumps for tojson, no generation tags."""
+    import json
+    from pathlib import Path
+
+    import jinja2
+
+    source = (Path(__file__).parent / "data/oellm_qwen3_two_stage_v2_1.jinja").read_text()
+    source = source.replace("{% generation %}", "").replace("{% endgeneration %}", "")
+    env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True)
+    env.filters["tojson"] = lambda value, **_: json.dumps(value, ensure_ascii=False)
+
+    def raise_exception(message):
+        raise jinja2.TemplateError(message)
+
+    return env.from_string(source).render(messages=messages, raise_exception=raise_exception, enable_thinking=False, **kwargs)
+
+
+def test_oellm_hermes_parser_matches_the_chat_template_tool_loop():
+    from oellm_rlvr.compat import patch_oellm_hermes_parser
+
+    @dataclass
+    class VllmParserConfig:
+        import_path: str
+        role_templates: dict
+        output_postfix: str
+        stop_sequences: list = None
+        output_prefix: str = ""
+
+    module = ModuleType("fake_parsers")
+    module.VllmParserConfig = VllmParserConfig
+    module.VLLM_PARSERS = {"vllm_hermes": VllmParserConfig("vllm.hermes:P", {"tool": "{output}"}, "")}
+    assert patch_oellm_hermes_parser(module) and not patch_oellm_hermes_parser(module)
+    cfg = module.VLLM_PARSERS["vllm_hermes_oellm"]
+
+    def observation(outputs, role="tool"):  # open-instruct VllmToolParser.format_tool_outputs
+        return cfg.output_prefix + "".join(cfg.role_templates[role].format(output=o) for o in outputs) + cfg.output_postfix
+
+    tool = {"type": "function", "function": {"name": "wiki_search", "description": W.TOOL_DESCRIPTION,
+                                             "parameters": W.TOOL_PARAMETERS}}
+    user = {"role": "user", "content": "Wo wurde Zedd geboren?"}
+    args = {"query": "Zedd", "language": "de"}
+    call = {"role": "assistant", "content": "", "tool_calls": [{"type": "function", "function": {"name": "wiki_search", "arguments": args}}]}
+    full = _render([user, call, {"role": "tool", "content": "R1"}, {"role": "tool", "content": "R2"}], tools=[tool],
+                   add_generation_prompt=True)
+    prompt = _render([user], tools=[tool], add_generation_prompt=True)
+    model_turn = '<tool_call>\n{"name": "wiki_search", "arguments": ' + '{"query": "Zedd", "language": "de"}' + "}\n</tool_call><|im_end|>"
+    assert prompt.endswith("<|im_start|>assistant\n")
+    assert prompt + model_turn + observation(["R1", "R2"]) == full
+    # a second round continues the same way
+    full2 = _render([user, call, {"role": "tool", "content": "R1"}, call, {"role": "tool", "content": "R3"}],
+                    tools=[tool], add_generation_prompt=True)
+    assert prompt + model_turn + observation(["R1"]) + model_turn + observation(["R3"]) == full2
+    assert observation(["Bitte im Format antworten."], role="user").startswith("\n<|im_start|>user\nBitte")

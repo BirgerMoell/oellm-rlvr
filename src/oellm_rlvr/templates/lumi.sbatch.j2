@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task={{ config.platform.cpus_per_task }}
 {% if config.platform.memory %}#SBATCH --mem={{ config.platform.memory }}
-{% endif %}{% if config.code_api %}#SBATCH --exclusive
+{% endif %}{% if config.code_api or config.search_api %}#SBATCH --exclusive
 {% endif %}#SBATCH --time={{ config.platform.walltime }}
 #SBATCH --output=logs/%j.%x.out
 #SBATCH --error=logs/%j.%x.err
@@ -112,6 +112,7 @@ srun --label --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=
 cleanup() {
   if [[ -n "${RAY_STEP_PID:-}" ]]; then kill "$RAY_STEP_PID" 2>/dev/null || true; fi
   if [[ -n "${CODE_API_PID:-}" ]]; then kill "$CODE_API_PID" 2>/dev/null || true; fi
+  if [[ -n "${SEARCH_API_PID:-}" ]]; then kill "$SEARCH_API_PID" 2>/dev/null || true; fi
 }
 trap cleanup EXIT INT TERM
 {% if config.code_api %}
@@ -138,6 +139,14 @@ for _ in $(seq 1 90); do
 done
 if [[ "$code_ready" != 1 ]]; then echo "Code execution server did not become ready on every node" >&2; exit 4; fi
 echo "Code execution server ready on ${SLURM_NNODES} nodes (127.0.0.1:{{ config.code_api.port }})"
+{% endif %}
+{% if config.search_api %}
+# Offline Wikipedia search for the wiki_search tool, one server per node on 127.0.0.1 (tool actors can run on any
+# node). It runs from the search venv on the host and loads its languages in the background while Ray starts; the
+# wait before the backend launch below checks that every node has loaded all of them.
+srun --label --overlap --gpu-bind=none --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
+  bash -c 'exec {{ config.search_api.python | tojson }} "$0/scripts/wiki_search.py" serve --root {{ config.search_api.root | tojson }} --host 127.0.0.1 --port {{ config.search_api.port }} --preload {{ config.search_api.languages | join(" ") }} > "logs/${SLURM_JOB_ID}.search.$(hostname -s).log" 2>&1' "$CONTROL_ROOT" &
+SEARCH_API_PID=$!
 {% endif %}
 echo "Preflight: ${SLURM_NNODES} nodes, ${GPUS_PER_NODE} GPUs/node, head=${RAY_ADDRESS}"
 srun --label --gpu-bind=none singularity exec {{ accelerator_flag }} -B "$BIND" "$CONTAINER" \
@@ -166,7 +175,20 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 if [[ "$ready" != 1 ]]; then echo "Ray did not become ready" >&2; exit 3; fi
-
+{% if config.search_api %}
+search_ready=0
+for _ in $(seq 1 {{ config.search_api.ready_timeout_minutes * 6 }}); do
+  if srun --overlap --gpu-bind=none --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
+    bash -c 'test "$(curl -sf http://127.0.0.1:{{ config.search_api.port }}/health | grep -o "\"[a-z][a-z]\"" | grep -vc "\"ok\"")" -ge {{ config.search_api.languages | length }}' >/dev/null 2>&1; then
+    search_ready=1
+    break
+  fi
+  if ! kill -0 "$SEARCH_API_PID" 2>/dev/null; then break; fi
+  sleep 10
+done
+if [[ "$search_ready" != 1 ]]; then echo "Search server not ready on every node" >&2; tail -5 logs/"${SLURM_JOB_ID}".search.*.log >&2; exit 4; fi
+echo "Search server ready on ${SLURM_NNODES} nodes (127.0.0.1:{{ config.search_api.port }}, {{ config.search_api.languages | length }} languages)"
+{% endif %}
 {% if config.backend.kind == "verl_opd" %}echo "Launching on-policy distillation with colocated student rollout and a dedicated teacher pool"
 {% else %}echo "Launching online {{ config.task.kind }} RLVR with native learner-to-vLLM weight transfer"
 {% endif %}srun --label --overlap --gpu-bind=none --nodes=1 --ntasks=1 -w "$HEAD_NODE" \

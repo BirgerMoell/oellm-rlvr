@@ -162,9 +162,23 @@ def qa_prompt(qtype: str, lang: str, slots: dict[str, str]) -> str:
     return QA_TEMPLATES[qtype][lang].format(**slots) + "\n\n" + QA_INSTRUCTION[lang]
 
 
+FINAL_TURN = re.compile(r"\s*(?:<\|im_end\|>)?\s*(?:<\|im_start\|>)?assistant\n(.*)\Z", re.DOTALL)
+
+
+def final_turn(prediction: str) -> str:
+    """The model's last turn of a tool loop (text after the last tool response), or the whole reply without tools.
+    Search results are never graded: an ANSWER line inside a retrieved article does not count."""
+    if "</tool_response>" not in prediction:
+        return prediction
+    # rewards see the rollout decoded without special tokens ("</tool_response>\nassistant\n..."); keep both forms
+    turn = FINAL_TURN.match(prediction.rsplit("</tool_response>", 1)[1])
+    return turn.group(1) if turn else ""
+
+
 def grade_qa(prediction: str, label: dict[str, Any]) -> str:
-    """'correct' | 'abstain' | 'wrong' | 'no_answer' (no ANSWER line, or an unclosed / misplaced trace)."""
-    text = answer_part(prediction, label.get("mode", "default"))
+    """'correct' | 'abstain' | 'wrong' | 'no_answer' (no ANSWER line, or an unclosed / misplaced trace). In a tool
+    loop only the final turn counts, so running out of tool steps before answering is 'no_answer'."""
+    text = answer_part(final_turn(prediction), label.get("mode", "default"))
     if text is None:
         return "no_answer"
     value = final_answer(text)

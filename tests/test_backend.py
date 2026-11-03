@@ -1,3 +1,4 @@
+import pytest
 import json
 from pathlib import Path
 
@@ -257,3 +258,19 @@ def test_code_api_adds_loopback_url_binary_threshold_and_contained_server(monkey
     assert "--host 127.0.0.1 --port 18080" in script
     assert ':ro" -B' in script
     assert "#SBATCH --exclusive" not in render_slurm(load_config(path), path)
+
+
+def test_e8_search_tool_loop_is_wired_for_math_tasks(monkeypatch) -> None:
+    monkeypatch.setenv("OELLM_SCRATCH", "/scratch")
+    monkeypatch.setenv("OELLM_ACCOUNT", "acct")
+    config = load_config(ROOT / "configs/leonardo-grpo-math-oellm9b-e8.yaml")
+    argv = build_backend_argv(config)
+    i = argv.index("--tools")
+    assert argv[i:i + 2] == ["--tools", "wiki_search"]
+    assert json.loads(argv[i + 3])["api_endpoint"] == "http://127.0.0.1:18090/search"
+    assert argv[argv.index("--tool_parser_type") + 1] == "vllm_hermes_oellm"
+    assert argv[argv.index("--max_steps") + 1] == "4"
+    broken = config.model_dump()
+    broken["environment"].pop("OELLM_PATCH_OELLM_HERMES_PARSER")
+    with pytest.raises(ValueError, match="OELLM_PATCH_OELLM_HERMES_PARSER"):
+        type(config).model_validate(broken)

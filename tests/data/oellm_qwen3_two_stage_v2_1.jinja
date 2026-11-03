@@ -1,0 +1,84 @@
+{# OpenEuroLLM/Qwen3 ChatML template v2.1: v2 plus native tool use.
+   Think mode is a hard template switch, never a model decision:
+   - enable_thinking false (default): '<|im_start|>assistant\n'.
+   - enable_thinking true: '<|im_start|>assistant\n<think>\n'. The opening <think> is prompt-side in
+     training too, so the model never learns to emit it; no empty think block is ever synthesized.
+   Reasoning is rendered only for assistant turns after the last user message (the current turn,
+   including every step of a tool loop); earlier reasoning is dropped, as at inference.
+   Tools follow the Qwen3/Hermes format (vLLM `hermes` parser): signatures in <tools> in the system
+   turn, calls as <tool_call>{"name": ..., "arguments": ...}</tool_call>, results as <tool_response>
+   blocks in a user turn. Tool responses are never supervised. Tool-free conversations render
+   byte-identically to v2. Inline think tags in content are rejected. #}
+{%- if tools %}
+    {{- '<|im_start|>system\n' }}
+    {%- if messages[0].role == 'system' %}
+        {%- if messages[0].content is not string %}
+            {{- raise_exception('Template v2.1 requires text-only message content') }}
+        {%- endif %}
+        {{- messages[0].content + '\n\n' }}
+    {%- endif %}
+    {{- "# Tools\n\nYou may call one or more functions to assist with the user query.\n\nYou are provided with function signatures within <tools></tools> XML tags:\n<tools>" }}
+    {%- for tool in tools %}
+        {{- "\n" }}
+        {{- tool | tojson }}
+    {%- endfor %}
+    {{- "\n</tools>\n\nFor each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:\n<tool_call>\n{\"name\": <function-name>, \"arguments\": <args-json-object>}\n</tool_call><|im_end|>\n" }}
+{%- endif %}
+{%- set ns = namespace(last_query_index=-1) %}
+{%- for message in messages %}
+    {%- if message.role == 'user' %}
+        {%- set ns.last_query_index = loop.index0 %}
+    {%- endif %}
+{%- endfor %}
+{%- for message in messages %}
+    {%- if message.role not in ['system', 'user', 'assistant', 'tool'] %}
+        {{- raise_exception('Unsupported role in template v2.1: ' + message.role) }}
+    {%- endif %}
+    {%- set has_calls = message.role == 'assistant' and message.tool_calls is defined and message.tool_calls %}
+    {%- set content = message.content if message.content is string else '' %}
+    {%- if message.content is not string and not (has_calls and message.content is none) %}
+        {{- raise_exception('Template v2.1 requires text-only message content') }}
+    {%- endif %}
+    {%- if message.role == 'system' %}
+        {%- if not (tools and loop.first) %}
+            {{- '<|im_start|>system\n' + content + '<|im_end|>\n' }}
+        {%- endif %}
+    {%- elif message.role == 'user' %}
+        {{- '<|im_start|>user\n' + content + '<|im_end|>\n' }}
+    {%- elif message.role == 'assistant' %}
+        {%- if '<think>' in content or '</think>' in content %}
+            {{- raise_exception('Think tags in content; move reasoning to reasoning_content') }}
+        {%- endif %}
+        {{- '<|im_start|>assistant\n' }}
+        {%- set reasoning = message.reasoning_content if message.reasoning_content is defined and message.reasoning_content is string else '' %}
+        {%- if reasoning|trim and loop.index0 > ns.last_query_index %}
+            {{- '<think>\n' -}}
+            {% generation %}{{- (reasoning|trim) + '\n</think>\n\n' -}}{% endgeneration %}
+        {%- endif %}
+        {% generation %}{{- content -}}
+        {%- if has_calls %}
+            {%- for call in message.tool_calls %}
+                {%- set fn = call.function if call.function is defined else call %}
+                {%- if content or not loop.first %}{{- '\n' }}{%- endif %}
+                {{- '<tool_call>\n{"name": "' + fn.name + '", "arguments": ' -}}
+                {%- if fn.arguments is string %}{{- fn.arguments -}}{%- else %}{{- fn.arguments | tojson -}}{%- endif %}
+                {{- '}\n</tool_call>' -}}
+            {%- endfor %}
+        {%- endif %}
+        {{- '<|im_end|>\n' -}}{% endgeneration %}
+    {%- elif message.role == 'tool' %}
+        {%- if loop.first or messages[loop.index0 - 1].role != 'tool' %}
+            {{- '<|im_start|>user' }}
+        {%- endif %}
+        {{- '\n<tool_response>\n' + content + '\n</tool_response>' }}
+        {%- if loop.last or messages[loop.index0 + 1].role != 'tool' %}
+            {{- '<|im_end|>\n' }}
+        {%- endif %}
+    {%- endif %}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|im_start|>assistant\n' }}
+    {%- if enable_thinking is defined and enable_thinking is true %}
+        {{- '<think>\n' }}
+    {%- endif %}
+{%- endif %}

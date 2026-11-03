@@ -152,3 +152,11 @@ if os.environ.get("OELLM_PATCH_WIKI_SEARCH_TOOL") == "1":
         "open_instruct.environments.tools.tools",
         patch_wiki_search_tool,
     )
+
+if os.environ.get("OELLM_PATCH_OELLM_HERMES_PARSER") == "1":
+    from oellm_rlvr.compat import patch_oellm_hermes_parser
+
+    install_post_import_patch(
+        "open_instruct.environments.tools.parsers",
+        patch_oellm_hermes_parser,
+    )

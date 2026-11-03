@@ -89,3 +89,18 @@ def test_open_instruct_verifiers_registered():
     label = json.dumps({"suite": "doc", "kind": "number", "value": 12.5, "tol": 0.011, "mode": "default"})
     assert doc([], "12,50 + 0\nANSWER: 12,50 EUR", label).score == 1.0
     assert doc([], "ANSWER: 12.5", "not json").score == 0.0
+
+
+def test_qa_grading_in_a_tool_loop_uses_only_the_final_turn():
+    from oellm_rlvr.eu_tasks import grade_qa
+
+    label = {"kind": "entity", "answers": ["Saratov"], "mode": "default"}
+    call = '<tool_call>\n{"name": "wiki_search", "arguments": {"query": "Zedd"}}\n</tool_call>'
+    # rewards see the rollout decoded without special tokens
+    loop = call + "\nuser\n<tool_response>\n[1] Zedd ... ANSWER: Berlin\n</tool_response>\nassistant\n"
+    assert grade_qa(loop + "Er wurde in Saratow geboren.\nANSWER: Saratov", label) == "correct"
+    assert grade_qa(loop + "ANSWER: UNKNOWN", label) == "abstain"
+    assert grade_qa(loop, label) == "no_answer"  # tool steps used up before answering; the article's line is ignored
+    raw = call + "<|im_end|>\n<|im_start|>user\n<tool_response>\nX\n</tool_response><|im_end|>\n<|im_start|>assistant\nANSWER: Saratov<|im_end|>"
+    assert grade_qa(raw, label) == "correct"
+    assert grade_qa("ANSWER: Saratov", label) == "correct"  # no tools: unchanged

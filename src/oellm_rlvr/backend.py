@@ -175,6 +175,16 @@ def _build_tmax_backend_argv(config: RunConfig) -> list[str]:
         )
         if config.task.system_prompt_file:
             argv.extend(["--system_prompt_override_file", config.task.system_prompt_file])
+    if config.task.kind == "math" and config.task.tools:
+        search = config.search_api
+        tool_configs = {
+            "wiki_search": {"api_endpoint": f"http://127.0.0.1:{search.port}/search" if search else "",
+                            "num_results": search.num_results if search else 5, "timeout": search.timeout if search else 10},
+        }
+        argv.extend(["--tools", *config.task.tools, "--tool_configs",
+                     *[json.dumps(tool_configs[t], separators=(",", ":")) for t in config.task.tools],
+                     "--pool_size", str(config.task.pool_size), "--max_steps", str(config.task.max_steps),
+                     "--tool_parser_type", config.task.tool_parser])
     if config.code_api is not None:
         argv.extend(
             [

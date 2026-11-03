@@ -1196,3 +1196,30 @@ def patch_wiki_search_tool(module: ModuleType) -> bool:
     module.WikiSearchToolConfig = WikiSearchToolConfig
     module.TOOL_REGISTRY["wiki_search"] = WikiSearchToolConfig
     return True
+
+
+# Tool-loop text for chat template v2.1 (qwen35-posttrain oellm_qwen3_two_stage_v2_1.jinja), default mode. The model's
+# turn ends at <|im_end|> (no stop strings), so the observation opens with the newline the template puts after it; all
+# results of one turn share one user turn, each as "\n<tool_response>\n...\n</tool_response>"; the next default-mode
+# assistant turn is "<|im_start|>assistant\n". vLLM's stock "vllm_hermes" entry uses a "tool" role and other newlines.
+OELLM_HERMES_PARSER = {
+    "prefix": "\n<|im_start|>user",
+    "tool": "\n<tool_response>\n{output}\n</tool_response>",
+    "user": "\n{output}",
+    "postfix": "<|im_end|>\n<|im_start|>assistant\n",
+}
+
+
+def patch_oellm_hermes_parser(module: ModuleType) -> bool:
+    """Register ``vllm_hermes_oellm`` in open-instruct's ``VLLM_PARSERS``: the Hermes parser with the observation
+    format of template v2.1 in default mode (tests/test_wiki_search.py checks it token for token)."""
+    if "vllm_hermes_oellm" in getattr(module, "VLLM_PARSERS", {}):
+        return False
+    stock = module.VLLM_PARSERS["vllm_hermes"]
+    module.VLLM_PARSERS["vllm_hermes_oellm"] = module.VllmParserConfig(
+        import_path=stock.import_path,
+        role_templates={"tool": OELLM_HERMES_PARSER["tool"], "user": OELLM_HERMES_PARSER["user"]},
+        output_prefix=OELLM_HERMES_PARSER["prefix"],
+        output_postfix=OELLM_HERMES_PARSER["postfix"],
+    )
+    return True

@@ -118,6 +118,21 @@ class SandboxConfig(StrictModel):
     prepared_scratch_root: str | None = None
 
 
+class SearchApiConfig(StrictModel):
+    """Offline Wikipedia search (oellm_rlvr.wiki_search) for the ``wiki_search`` tool: one server per node on
+    127.0.0.1, started from the search venv (bm25s, PyStemmer, fastapi) before Ray. Tool calls run in Ray actors that
+    can land on any node, so every node serves the full index. Languages load in the background; the launcher waits
+    until every node reports all of them on /health."""
+
+    root: str                    # leads/<lang>.parquet + index/<lang>/ (scripts/leonardo_wiki_search_index.sbatch)
+    python: str                  # search venv interpreter
+    port: int = Field(default=18090, ge=1024, le=65535)
+    languages: list[str] = Field(default_factory=lambda: ["en", "de", "fr", "es", "it", "nl", "sv", "pl", "pt", "fi"])
+    num_results: int = Field(default=5, ge=1, le=20)
+    timeout: int = Field(default=10, ge=1)
+    ready_timeout_minutes: int = Field(default=40, ge=1)
+
+
 class CodeApiConfig(StrictModel):
     """Single-turn code reward: TMAX's `code`/`code_stdio` verifiers POST programs to an execution server.
 
@@ -139,6 +154,10 @@ class TaskConfig(StrictModel):
     system_prompt_file: str | None = None
     max_steps: int = Field(default=1, ge=1)
     pool_size: int = Field(default=128, ge=1)
+    # Tools executed in the rollout loop for math-kind tasks (rows opt in with a `tools` column; rows without it get
+    # no tool). The parser must render observations exactly as the chat template does (compat.patch_oellm_hermes_parser).
+    tools: list[Literal["wiki_search"]] = Field(default_factory=list)
+    tool_parser: str = "vllm_hermes_oellm"
 
     @model_validator(mode="after")
     def code_needs_sandbox(self) -> TaskConfig:
@@ -317,6 +336,7 @@ class RunConfig(StrictModel):
     gates: GateConfig = Field(default_factory=GateConfig)
     distillation: DistillationConfig | None = None
     code_api: CodeApiConfig | None = None
+    search_api: SearchApiConfig | None = None
     environment: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -353,6 +373,17 @@ class RunConfig(StrictModel):
             raise ValueError("active_sampling requires async_steps > 1")
         if self.task.kind == "code" and self.backend.kind == "tmax" and self.rollout.async_steps < 1:
             raise ValueError("code rollouts should use at least one async step to hide verifier latency")
+        if self.task.tools:
+            if self.task.kind != "math" or self.backend.kind != "tmax":
+                raise ValueError("task.tools are for tmax math-kind tasks (code tasks configure their sandbox tool)")
+            if "wiki_search" in self.task.tools and self.search_api is None:
+                raise ValueError("the wiki_search tool needs search_api (one server per node)")
+            if self.task.max_steps < 2:
+                raise ValueError("tool loops need task.max_steps >= 2 (calls + the final answer turn)")
+            if self.environment.get("OELLM_PATCH_WIKI_SEARCH_TOOL") != "1":
+                raise ValueError("wiki_search needs environment OELLM_PATCH_WIKI_SEARCH_TOOL=1")
+            if self.task.tool_parser == "vllm_hermes_oellm" and self.environment.get("OELLM_PATCH_OELLM_HERMES_PARSER") != "1":
+                raise ValueError("tool_parser vllm_hermes_oellm needs environment OELLM_PATCH_OELLM_HERMES_PARSER=1")
 
         if self.backend.kind == "tmax":
             if self.distillation is not None:
