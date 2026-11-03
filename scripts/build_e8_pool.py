@@ -8,7 +8,7 @@ on what doesn't exist. 2,560 prompts = 160 updates x 16, exact counts:
   qa_closed      448  no tools, half default / half thinking: 288 known (abstaining scores 0 < answering's +1: the
                       guard against W3's collapse), 64 mid, 96 unknown (abstaining beats a wrong guess);
   fab_closed      32  made-up entities, no tools, both modes;
-  replay        1344  eu_doc 320, math 384, IF 192 (144 direct + 48 think), code 192, tools 256 (A4b; their tool
+  replay        1344  eu_doc 376, math 384, IF 192 (144 direct + 48 think), code 192, tools 200 (A4b, all unused rows; their tool
                       schemas are in the prompt, no executed tool).
 
 Reward for every QA row: +1 correct, 0 ANSWER: UNKNOWN, -1 wrong or no answer (oellm_rlvr.eu_tasks). "Known" uses
@@ -35,7 +35,7 @@ SEED = 20261105
 EVAL_SEED, EVAL_PER_LANGUAGE = 20261102, 100   # hallu-v1 fabricated rows (and more) to exclude
 COUNTS = {"qa_search": {"known": 160, "mid": 160, "unknown": 320}, "fab_search": 96,
           "qa_closed": {"known": 288, "mid": 64, "unknown": 96}, "fab_closed": 32}
-REPLAY = {"eu_doc": 320, "math": 384, "ifeval_direct": 144, "ifeval_think": 48, "code": 192, "tools": 256}
+REPLAY = {"eu_doc": 376, "math": 384, "ifeval_direct": 144, "ifeval_think": 48, "code": 192, "tools": 200}
 
 
 def fabricated(a) -> None:
