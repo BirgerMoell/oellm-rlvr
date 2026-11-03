@@ -150,26 +150,27 @@ def pool(a) -> None:
     picked += [fab_row(r, "default" if i % 2 == 0 else "thinking", [], "fab_closed")
                for i, r in enumerate(fab[n_s:n_s + n_c])]
 
-    # replay, unused by W1a, W2 and W3
+    # replay: rows unused by W1a, W2 and W3 first, topped up with rows only W1a saw (two windows back)
     seen = set()
     for w in ("w1a", "w2", "w3"):
         seen |= {r["id"] for r in rows(d / f"{w}/train-mixed.parquet")}
-    doc = [r for r in rows(d / "eu-tasks/rl_doc.parquet") if r["id"] not in seen]
-    picked += [plain(r) for r in take(doc, REPLAY["eu_doc"], "eu_doc")]
-    # math: every row unused so far (306 fit), topped up with rows only W1a saw (two windows back)
-    math = rows(d / "answer-language/train-mixed.parquet")
     recent = {r["id"] for w in ("w2", "w3") for r in rows(d / f"{w}/train-mixed.parquet")}
-    fresh = take([r for r in math if r["id"] not in seen], REPLAY["math"], "math", partial=True)
-    picked += [plain(r) for r in fresh]
-    picked += [plain(r) for r in take([r for r in math if r["id"] in seen and r["id"] not in recent],
-                                      REPLAY["math"] - len(fresh), "math (W1a top-up)")]
-    iff = [r for r in rows(d / "w2-if/train.parquet") if r["id"] not in seen]
+    replay_stats = {}
+
+    def replay(pool_rows, n, what):
+        fresh = take([r for r in pool_rows if r["id"] not in seen], n, what, partial=True)
+        old = take([r for r in pool_rows if r["id"] in seen and r["id"] not in recent], n - len(fresh), f"{what} (W1a top-up)")
+        replay_stats[what] = {"unused": len(fresh), "w1a_top_up": len(old)}
+        return [plain(r) for r in fresh + old]
+
+    picked += replay(rows(d / "eu-tasks/rl_doc.parquet"), REPLAY["eu_doc"], "eu_doc")
+    picked += replay(rows(d / "answer-language/train-mixed.parquet"), REPLAY["math"], "math")
+    iff = rows(d / "w2-if/train.parquet")
     for name in ("ifeval_direct", "ifeval_think"):
-        picked += [plain(r) for r in take([r for r in iff if r["dataset"] == name], REPLAY[name], name)]
-    picked += [plain(r) for r in take([r for r in rows(d / "a5-code/train.parquet") if r["id"] not in seen],
-                                      REPLAY["code"], "code")]
-    tool_pool = rows(d / "a4b-tool/train.parquet") + rows(d / "a4b-tool-translated/train.parquet")
-    picked += [plain(r) for r in take([r for r in tool_pool if r["id"] not in seen], REPLAY["tools"], "tools")]
+        picked += replay([r for r in iff if r["dataset"] == name], REPLAY[name], name)
+    picked += replay(rows(d / "a5-code/train.parquet"), REPLAY["code"], "code")
+    picked += replay(rows(d / "a4b-tool/train.parquet") + rows(d / "a4b-tool-translated/train.parquet"),
+                     REPLAY["tools"], "tools")
 
     ids = [r["id"] for r in picked]
     assert len(ids) == len(set(ids)) == 2560, (len(ids), len(set(ids)))
@@ -190,7 +191,7 @@ def pool(a) -> None:
     manifest = {"kind": "e8_pool", "rows": len(picked), "seed": SEED,
                 "by_slice": dict(collections.Counter(slice_of(r) for r in picked)),
                 "by_slice_mode": dict(collections.Counter(f"{slice_of(r)}/{mode_of(r)}" for r in picked)),
-                "with_tools": sum(bool(r["tools"]) for r in picked), "w2_samples": str(a.w2),
+                "with_tools": sum(bool(r["tools"]) for r in picked), "replay": replay_stats, "w2_samples": str(a.w2),
                 "max_prompt_tokens": a.max_prompt, "sha256": hashlib.sha256(out.read_bytes()).hexdigest()}
     (a.out / "manifest.json").write_text(json.dumps(manifest, indent=1) + "\n")
     print(json.dumps(manifest, indent=1))
