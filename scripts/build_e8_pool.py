@@ -85,11 +85,11 @@ def pool(a) -> None:
         text = tok.apply_chat_template(msgs, tools=tools, tokenize=False, add_generation_prompt=True)
         return len(tok(text, add_special_tokens=False)["input_ids"]) <= a.max_prompt
 
-    def take(candidates, n, what):
+    def take(candidates, n, what, partial=False):
         candidates = sorted(candidates, key=lambda r: r["id"])
         rng.shuffle(candidates)
         got = [r for r in candidates if fits(r)][:n]
-        if len(got) < n:
+        if len(got) < n and not partial:
             raise SystemExit(f"{what}: want {n}, have {len(got)}")
         return got
 
@@ -156,8 +156,13 @@ def pool(a) -> None:
         seen |= {r["id"] for r in rows(d / f"{w}/train-mixed.parquet")}
     doc = [r for r in rows(d / "eu-tasks/rl_doc.parquet") if r["id"] not in seen]
     picked += [plain(r) for r in take(doc, REPLAY["eu_doc"], "eu_doc")]
-    picked += [plain(r) for r in take([r for r in rows(d / "answer-language/train-mixed.parquet") if r["id"] not in seen],
-                                      REPLAY["math"], "math")]
+    # math: every row unused so far (306 fit), topped up with rows only W1a saw (two windows back)
+    math = rows(d / "answer-language/train-mixed.parquet")
+    recent = {r["id"] for w in ("w2", "w3") for r in rows(d / f"{w}/train-mixed.parquet")}
+    fresh = take([r for r in math if r["id"] not in seen], REPLAY["math"], "math", partial=True)
+    picked += [plain(r) for r in fresh]
+    picked += [plain(r) for r in take([r for r in math if r["id"] in seen and r["id"] not in recent],
+                                      REPLAY["math"] - len(fresh), "math (W1a top-up)")]
     iff = [r for r in rows(d / "w2-if/train.parquet") if r["id"] not in seen]
     for name in ("ifeval_direct", "ifeval_think"):
         picked += [plain(r) for r in take([r for r in iff if r["dataset"] == name], REPLAY[name], name)]
