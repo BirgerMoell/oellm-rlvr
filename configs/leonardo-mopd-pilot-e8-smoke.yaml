@@ -1,0 +1,145 @@
+# 2-update smoke of the MOPD pilot (same teachers, data and topology).
+version: 1
+# MOPD pilot (qwen35-posttrain docs/OELLM_RL_RUN_PROGRAM.md §10.7, §11): multi-teacher on-policy distillation into E8.
+# Student E8 (honesty/search/tools/reasoning expert) samples once per prompt; each prompt is routed by data_source to
+# a frozen same-origin teacher that scores the student's tokens; loss = per-token reverse KL, policy-gradient form
+# (k1), advantage clamp 5 as in the MOPD paper. Teachers (KL probe eval/mopd-kl/e8: per-token KL 0.001-0.012 on
+# these domains): 4b for safety + identity, merge 0.5 for general multilingual capability (EUROPA Eval), W3 for
+# documents + code. Factual QA is not distilled (W3 / 4b diverge there: 0.34 / 0.16).
+# 6,000 prompts, 1 sample each, 64 per update = ~94 updates; 2 nodes (4 learner GPUs with colocated rollout + 4
+# teacher GPUs). Estimate ~2-3 min/update -> ~4 h -> ~250 local-h worst case; walltime 6 h.
+name: mopd-pilot-e8-smoke
+platform:
+  accelerator: cuda
+  nodes: 2
+  gpus_per_node: 4
+  container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
+  account: ${OELLM_ACCOUNT}
+  partition: boost_usr_prod
+  walltime: "01:30:00"
+  cpus_per_task: 32
+  memory: 480G
+  binds: [/leonardo_work, /leonardo_scratch]
+backend:
+  kind: verl_opd
+  repo_path: ${OELLM_SCRATCH}/oellm-rl/verl
+  commit: a9f2985159536a607211dcac730d3f5d55028950
+  python: ${OELLM_SCRATCH}/oellm-rl/verl/.venv/bin/python
+  verl:
+    actor_strategy: fsdp2
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size_per_gpu: 1
+    ppo_max_token_len_per_gpu: 12288
+    use_dynamic_batching: true
+    use_torch_compile: false
+    parameter_offload: true
+    optimizer_offload: true
+    ray_runtime_python: ${OELLM_SCRATCH}/oellm-rl/verl/.venv/bin/python
+  # flash-attn is not installed (no cu130 wheel for this commit): unpadded attention off, SDPA attention
+  extra_args: [actor_rollout_ref.model.use_remove_padding=False, +actor_rollout_ref.model.override_config.attn_implementation=sdpa]
+model:
+  name_or_path: local/oellm9b-e8-step160
+  local_path: ${OELLM_SCRATCH}/oellm-upload/oellm-9b-256k-stage5-e8-rl-step160
+  revision: local-e8-step160
+  manifest_path: ${OELLM_SCRATCH}/oellm-rl/manifests/e8-step160.json
+  max_prompt_tokens: 3072
+  response_tokens: 2048
+  per_turn_tokens: 2048
+  pack_length: 5120
+datasets:
+  - path: ${OELLM_SCRATCH}/oellm-rl/data/mopd-pilot/stage4b.parquet
+    weight: 1.0
+    split: train
+  - path: ${OELLM_SCRATCH}/oellm-rl/data/mopd-pilot/merge.parquet
+    weight: 1.0
+    split: train
+  - path: ${OELLM_SCRATCH}/oellm-rl/data/mopd-pilot/w3.parquet
+    weight: 1.0
+    split: train
+task:
+  kind: prompt
+  max_steps: 1
+  pool_size: 8
+rollout:
+  engines: 4
+  tensor_parallel_size: 1
+  weight_transfer: broadcast
+  unique_prompts: 64
+  samples_per_prompt: 1
+  temperature: 1.0
+  gpu_memory_utilization: 0.4
+  async_steps: 0
+  active_sampling: false
+  inflight_updates: false
+  enable_prefix_caching: true
+  enforce_eager: true
+  gdn_prefill_backend: null
+  colocate_with_learner: true
+training:
+  learner_gpus_per_node: [4]
+  sequence_parallel_size: 1
+  learning_rate: 1.0e-6
+  total_episodes: 128
+  epochs: 1
+  deepspeed_stage: 3
+  loss: grpo
+  beta: 0.0
+  seed: 42
+  save_freq: 0
+  checkpoint_state_freq: 0
+  gradient_checkpointing: true
+  use_liger_loss: false
+distillation:
+  teacher_gpus_per_node: [4]
+  teacher_key: data_source
+  loss_mode: k1
+  top_k: 64
+  use_policy_gradient: true
+  use_task_rewards: false
+  coefficient: 1.0
+  loss_max_clamp: 5.0
+  logprob_min_clamp: -10.0
+  shuffle: true
+  teachers:
+    - name: safety_teacher
+      key: stage4b
+      name_or_path: local/oellm9b-stage4b-w3
+      local_path: ${OELLM_SCRATCH}/oellm-dpo/export/stage4b-w3
+      revision: local-stage4b-w3
+      manifest_path: ${OELLM_SCRATCH}/oellm-rl/manifests/stage4b-w3.json
+      num_replicas: 1
+      inference: {engine: vllm, tensor_parallel_size: 1, data_parallel_size: 1, pipeline_parallel_size: 1, expert_parallel_size: 1, gpu_memory_utilization: 0.8, enforce_eager: true, max_num_batched_tokens: 8192, max_num_sequences: 64}
+    - name: general_teacher
+      key: merge
+      name_or_path: local/oellm9b-merge-w2-4b-a05
+      local_path: ${OELLM_SCRATCH}/oellm-dpo/export/merge-w2-4b-a0.5
+      revision: local-merge-w2-4b-a05
+      manifest_path: ${OELLM_SCRATCH}/oellm-rl/manifests/merge-w2-4b-a05.json
+      num_replicas: 1
+      inference: {engine: vllm, tensor_parallel_size: 1, data_parallel_size: 1, pipeline_parallel_size: 1, expert_parallel_size: 1, gpu_memory_utilization: 0.8, enforce_eager: true, max_num_batched_tokens: 8192, max_num_sequences: 64}
+    - name: docs_teacher
+      key: w3
+      name_or_path: local/oellm9b-w3-step160
+      local_path: ${OELLM_SCRATCH}/oellm-upload/oellm-9b-256k-stage5-w3-rl-step160
+      revision: local-w3-step160
+      manifest_path: ${OELLM_SCRATCH}/oellm-rl/manifests/w3-step160.json
+      num_replicas: 2
+      inference: {engine: vllm, tensor_parallel_size: 1, data_parallel_size: 1, pipeline_parallel_size: 1, expert_parallel_size: 1, gpu_memory_utilization: 0.8, enforce_eager: true, max_num_batched_tokens: 8192, max_num_sequences: 64}
+output:
+  directory: ${OELLM_SCRATCH}/oellm-rl/outputs/mopd-pilot-e8-smoke
+  rollout_directory: ${OELLM_SCRATCH}/oellm-rl/rollouts/mopd-pilot-e8-smoke
+  experiment_name: leonardo_mopd_pilot_e8_smoke
+  with_tracking: true
+  wandb_mode: offline
+  wandb_entity: local
+gates:
+  max_truncation_fraction: 0.25
+  max_error_fraction: 0.02
+  max_policy_lag: 0
+  min_distillation_coverage: 0.99
+environment:
+  HF_HOME: ${OELLM_SCRATCH}/oellm-rl/hf-cache
+  HF_HUB_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  VLLM_NO_USAGE_STATS: "1"
