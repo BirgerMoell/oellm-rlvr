@@ -5,7 +5,7 @@ version: 1
 # (k1), advantage clamp 5 as in the MOPD paper. Teachers (KL probe eval/mopd-kl/e8: per-token KL 0.001-0.012 on
 # these domains): 4b for safety + identity, merge 0.5 for general multilingual capability (EUROPA Eval), W3 for
 # documents + code. Factual QA is not distilled (W3 / 4b diverge there: 0.34 / 0.16).
-# 6,000 prompts, 1 sample each, 64 per update = 93 updates; 2 nodes (4 learner GPUs with colocated rollout + 4
+# 5,582 prompts, 1 sample each, 64 per update = 87 updates; 2 nodes (4 learner GPUs with colocated rollout + 4
 # teacher GPUs). Estimate ~2-3 min/update -> ~4 h -> ~250 local-h worst case; walltime 6 h.
 name: mopd-pilot-e8
 platform:
@@ -78,7 +78,7 @@ training:
   learner_gpus_per_node: [4]
   sequence_parallel_size: 1
   learning_rate: 1.0e-6
-  total_episodes: 5952          # 93 updates x 64 prompts x 1 sample
+  total_episodes: 5568          # 87 updates x 64 prompts x 1 sample (5,582 prompts after de-duplication)
   epochs: 1
   deepspeed_stage: 3
   loss: grpo
