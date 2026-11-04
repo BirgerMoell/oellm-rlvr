@@ -1223,3 +1223,47 @@ def patch_oellm_hermes_parser(module: ModuleType) -> bool:
         output_postfix=OELLM_HERMES_PARSER["postfix"],
     )
     return True
+
+
+def eurl_score(prediction: str, contract: dict) -> float:
+    """Reward for a european-rl typed task (github.com/BirgerMoell/european-rl): the environment's own scorer
+    (`eurl.answers.score_answer`) on the row's answer spec, after the same mode rules as the EU task suites:
+    default rows must contain no think tag, thinking rows exactly one closed trace."""
+    import os
+    import sys
+
+    root = os.environ.get("OELLM_EUROPEAN_RL")
+    if root and root not in sys.path:
+        sys.path.insert(0, root)
+    from eurl.answers import score_answer
+
+    text = (prediction or "").replace("<|im_end|>", "")
+    mode = contract.get("mode", "default")
+    if mode == "default" and ("<think>" in text or "</think>" in text):
+        return 0.0
+    if mode == "thinking" and (text.count("</think>") != 1 or "<think>" in text.split("</think>", 1)[1]):
+        return 0.0
+    return float(score_answer(contract["spec"], text)["reward"])
+
+
+def patch_eurl_verifier(module: ModuleType) -> bool:
+    """Register the ``eurl_typed`` verifier (european-rl typed-answer environments; label = the exported
+    ground truth with ``spec`` and ``mode``). Needs OELLM_EUROPEAN_RL pointing at a european-rl checkout."""
+    if getattr(module, "_oellm_eurl_verifier", False):
+        return False
+
+    class EurlTypedVerifier(module.VerifierFunction):
+        def __init__(self, verifier_config: Any = None) -> None:
+            super().__init__("eurl_typed", verifier_config=verifier_config, weight=1.0)
+
+        def __call__(self, tokenized_prediction, prediction, label, query=None, rollout_state=None):
+            try:
+                contract = json.loads(label) if isinstance(label, str) else label
+                reward = eurl_score(prediction, contract)
+            except (KeyError, TypeError, ValueError) as error:
+                return module.VerificationResult(score=0.0, reasoning=f"invalid eurl_typed label: {error}")
+            return module.VerificationResult(score=reward)
+
+    module.EurlTypedVerifier = EurlTypedVerifier
+    module._oellm_eurl_verifier = True
+    return True

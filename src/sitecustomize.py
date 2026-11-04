@@ -160,3 +160,11 @@ if os.environ.get("OELLM_PATCH_OELLM_HERMES_PARSER") == "1":
         "open_instruct.environments.tools.parsers",
         patch_oellm_hermes_parser,
     )
+
+if os.environ.get("OELLM_PATCH_EURL_VERIFIER") == "1":
+    from oellm_rlvr.compat import patch_eurl_verifier
+
+    install_post_import_patch(
+        "open_instruct.ground_truth_utils",
+        patch_eurl_verifier,
+    )
