@@ -174,15 +174,21 @@ def main() -> None:
                 keys = W.title_keys(title)
                 doc = next((d for d in exact.get(keys[0], []) if titles[d] == title), None) if keys else None
             texts[key] = E.norm_text(searcher.page_text(lang, doc)) if doc is not None else None
-            if len(texts) > 200000:
+            if len(texts) > 100000:
                 texts.clear()
         return texts[key]
 
     rows, why = [], collections.Counter()
-    for k, it in enumerate(items):
-        bridge_names = [E.norm_text(n) for n in all_names(entities.get(it["o"], {}))]
-        answers = [E.norm_text(x) for x in it["answers"]]
-        for lang in E.LANGS:
+    names = {it["s"]: ([E.norm_text(n) for n in all_names(entities.get(it["o"], {}))],
+                       [E.norm_text(x) for x in it["answers"]]) for it in items}
+    # One language at a time: the serial partition allows ~30 GB, and one edition's titles and maps take several GB.
+    for lang in E.LANGS:
+        for key in [k for k in texts if k[1] != lang]:
+            del texts[key]
+        searcher._indexes.clear()
+        searcher._pages.clear()
+        for it in items:
+            bridge_names, answers = names[it["s"]]
             subj, country = label_in(entities.get(it["s"]), lang), label_in(entities.get(it["country"]), lang)
             if not subj or not country:
                 why["no_label"] += 1
@@ -209,8 +215,7 @@ def main() -> None:
                          "label": {"suite": "qa", "kind": it["kind"], "answers": it["answers"]},
                          "source": f"wikidata:{it['s']}>{it['o']}>{it['a']}"})
             why["kept"] += 1
-        if k % 2000 == 0:
-            print(f"  {k}/{len(items)} chains, {dict(why)}", flush=True)
+        print(f"  {lang}: {dict(why)}", flush=True)
     print(f"rows {len(rows)}: {dict(why)}", flush=True)
 
     eval_rows = [r for r in rows if h(r["source"].split(">")[0] + "#eval") < 0.15]

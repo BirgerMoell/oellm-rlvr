@@ -122,19 +122,28 @@ def main() -> None:
     entities = json.loads((a.raw / "entities.json").read_text())
     searcher = W.Searcher(a.search)
     rows = [json.loads(line) for line in (a.data / "train_rows.jsonl").open()]
+    per_lang = collections.defaultdict(list)
+    for row in rows:
+        per_lang[row["language"]].append(row)
+    quota = -(-a.limit // max(1, len(per_lang)))  # the same number per language, one language loaded at a time
     stats, kept = collections.Counter(), 0
     with a.out.open("w") as fh:
-        for row in rows:
-            if kept >= a.limit:
-                break
-            messages, why = solve(searcher, row, entities)
-            stats[why] += 1
-            if messages:
-                kept += 1
-                turns = sum(m["role"] == "tool" for m in messages)
-                fh.write(json.dumps({"id": row["id"], "language": row["language"], "subset": row["subset"],
-                                     "evidence": row["evidence"], "tool_turns": turns, "messages": messages},
-                                    ensure_ascii=False) + "\n")
+        for lang, lang_rows in sorted(per_lang.items()):
+            searcher._indexes.clear()
+            searcher._pages.clear()
+            got = 0
+            for row in lang_rows:
+                if got >= quota:
+                    break
+                messages, why = solve(searcher, row, entities)
+                stats[why] += 1
+                if messages:
+                    kept += 1
+                    got += 1
+                    turns = sum(m["role"] == "tool" for m in messages)
+                    fh.write(json.dumps({"id": row["id"], "language": row["language"], "subset": row["subset"],
+                                         "evidence": row["evidence"], "tool_turns": turns, "messages": messages},
+                                        ensure_ascii=False) + "\n")
     print(json.dumps({"kept": kept, "outcomes": dict(stats)}, indent=1))
 
 
