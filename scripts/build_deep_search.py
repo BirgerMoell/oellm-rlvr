@@ -14,7 +14,7 @@ find_in_page ("body"). Subjects are split by hash, 15 % eval, 85 % train, as in 
 
 Runs where the page store is (scripts/leonardo_wiki_pages.sbatch), in the search venv:
   python scripts/build_deep_search.py --raw data/deep-search-raw --search $S --out data/deep-search
-Outputs: eval.jsonl, rl_deep_search.parquet (TMAX rows, default mode, tools column), manifest.json.
+Outputs: eval.jsonl, train_rows.jsonl (for deep_search_trajectories.py), rl_deep_search.parquet (TMAX rows, default mode, tools column), manifest.json.
 """
 from __future__ import annotations
 
@@ -216,9 +216,10 @@ def main() -> None:
     eval_rows = [r for r in rows if h(r["source"].split(">")[0] + "#eval") < 0.15]
     train_rows = [r for r in rows if h(r["source"].split(">")[0] + "#eval") >= 0.15]
     rng.shuffle(train_rows)
-    with (a.out / "eval.jsonl").open("w") as fh:
-        for r in eval_rows:
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    for name, part in (("eval.jsonl", eval_rows), ("train_rows.jsonl", train_rows)):
+        with (a.out / name).open("w") as fh:
+            for r in part:
+                fh.write(json.dumps(r, ensure_ascii=False) + "\n")
 
     import pyarrow as pa
     import pyarrow.parquet as pq
