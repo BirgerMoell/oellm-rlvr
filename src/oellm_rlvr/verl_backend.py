@@ -127,6 +127,16 @@ def build_verl_opd_argv(config: RunConfig) -> list[str]:
             ("inference.max_num_batched_tokens", inference.max_num_batched_tokens),
             ("inference.max_num_seqs", inference.max_num_sequences),
             ("inference.max_model_len", max_model_len),
+            # Entries added with "+" do not inherit verl's teacher_model defaults; without load_format=auto the
+            # teacher's vLLM engine keeps dummy weights (it never receives a weight sync) and scores every token as
+            # uniform, log(1/V) = -12.48 for our 262K vocabulary. Pin the defaults explicitly for every teacher.
+            ("inference.load_format", "auto"),
+            ("inference.dtype", "bfloat16"),
+            ("inference.temperature", config.rollout.temperature),
+            ("inference.prompt_length", config.model.max_prompt_tokens),
+            ("inference.response_length", config.model.response_tokens),
+            ("inference.free_cache_engine", True),
+            ("inference.skip_tokenizer_init", True),
         ]
         argv.extend(_override(f"{add}{prefix}.{name}", value) for name, value in teacher_settings)
 

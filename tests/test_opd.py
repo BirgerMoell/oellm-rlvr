@@ -109,3 +109,18 @@ def test_opd_reward_functions_separate_pure_and_hybrid_signals() -> None:
     assert compute_score(solution_str="anything", ground_truth="5") == 0
     assert compute_math_score(solution_str="work\n\\boxed{5}", ground_truth="5") == 1
     assert compute_math_score(solution_str="work\n\\boxed{6}", ground_truth="5") == 0
+
+
+def test_multi_teacher_entries_load_real_weights(monkeypatch) -> None:
+    """Regression: '+' teacher entries do not inherit verl's teacher defaults; dummy weights score uniform."""
+    from pathlib import Path
+
+    from oellm_rlvr.backend import build_backend_argv
+    from oellm_rlvr.config import load_config
+    monkeypatch.setenv("OELLM_SCRATCH", "/scratch")
+    monkeypatch.setenv("OELLM_ACCOUNT", "acct")
+    config = load_config(Path(__file__).parents[1] / "configs/leonardo-mopd-pilot-e8-smoke.yaml")
+    argv = build_backend_argv(config)
+    for teacher in ("safety_teacher", "general_teacher", "docs_teacher"):
+        assert f"+distillation.teacher_models.{teacher}.inference.load_format=auto" in argv
+        assert f"+distillation.teacher_models.{teacher}.inference.dtype=bfloat16" in argv
