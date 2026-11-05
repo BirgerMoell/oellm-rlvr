@@ -197,7 +197,7 @@ def find_passages(text: str, query: str, k: int = FIND_RESULTS) -> list[tuple[in
     for part_no, part in enumerate(split_parts(text), 1):
         for para in part.split("\n"):
             hits = len(want & _terms(para))
-            if hits:
+            if hits and (len(para) >= 40 or len(want) == 1):  # skip section headings that merely name a term
                 scored.append((-hits, part_no, para))
     scored.sort(key=lambda x: (x[0], x[1]))
     return [(part_no, snippet(para, 700)) for _, part_no, para in scored[:k]]
