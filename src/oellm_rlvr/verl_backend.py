@@ -136,6 +136,10 @@ def build_verl_opd_argv(config: RunConfig) -> list[str]:
         [
             _override("custom_reward_function.path", reward_path),
             _override("custom_reward_function.name", reward_function),
+            # newer verl reads reward.custom_reward_function in its reward-loop workers; set both so the neutral
+            # (or math) reward is used instead of verl's data_source lookup table
+            _override("reward.custom_reward_function.path", reward_path),
+            _override("reward.custom_reward_function.name", reward_function),
         ]
     )
     if runtime.ray_runtime_python:
