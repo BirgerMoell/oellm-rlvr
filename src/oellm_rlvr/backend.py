@@ -178,8 +178,9 @@ def _build_tmax_backend_argv(config: RunConfig) -> list[str]:
     if config.task.kind == "math" and config.task.tools:
         search = config.search_api
         tool_configs = {
-            "wiki_search": {"api_endpoint": f"http://127.0.0.1:{search.port}/search" if search else "",
-                            "num_results": search.num_results if search else 5, "timeout": search.timeout if search else 10},
+            name: {"api_endpoint": f"http://127.0.0.1:{search.port}{path}" if search else "",
+                   "num_results": search.num_results if search else 5, "timeout": search.timeout if search else 10}
+            for name, path in (("wiki_search", "/search"), ("open_page", "/open"), ("find_in_page", "/find"))
         }
         argv.extend(["--tools", *config.task.tools, "--tool_configs",
                      *[json.dumps(tool_configs[t], separators=(",", ":")) for t in config.task.tools],

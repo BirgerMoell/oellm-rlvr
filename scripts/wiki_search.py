@@ -2,6 +2,7 @@
 """Offline Wikipedia search (oellm_rlvr.wiki_search): build leads and BM25 indexes, or serve them.
 Runs in the search venv (bm25s, PyStemmer, fastapi, uvicorn), not the training container.
   python scripts/wiki_search.py build --source $S/wikipedia --root $S --language sv
+  python scripts/wiki_search.py pages --source $S/wikipedia --root $S --language sv   # full text for open_page
   python scripts/wiki_search.py serve --root $S --port 18090 [--preload en sv]
   python scripts/wiki_search.py query --root $S --language sv "Selma Lagerlöf född"
 Layout under --root: leads/<lang>.parquet, index/<lang>/ (bm25s files + oellm_meta.json).
@@ -25,6 +26,10 @@ def main() -> None:
     b.add_argument("--source", type=Path, required=True, help="snapshot of wikimedia/wikipedia (20231101.<lang>/)")
     b.add_argument("--root", type=Path, required=True)
     b.add_argument("--language", required=True, choices=W.LANGUAGES)
+    p = sub.add_parser("pages")
+    p.add_argument("--source", type=Path, required=True)
+    p.add_argument("--root", type=Path, required=True)
+    p.add_argument("--language", required=True, choices=W.LANGUAGES)
     s = sub.add_parser("serve")
     s.add_argument("--root", type=Path, required=True)
     s.add_argument("--host", default="127.0.0.1")
@@ -42,6 +47,10 @@ def main() -> None:
             print(json.dumps(W.build_leads(a.source, a.language, leads)), flush=True)
         print(json.dumps(W.build_index(leads, a.language, a.root / "index" / a.language)),
               f"{time.time() - start:.0f}s", flush=True)
+    elif a.cmd == "pages":
+        start = time.time()
+        print(json.dumps(W.build_pages(a.source, a.language, a.root / "leads" / f"{a.language}.parquet",
+                                       a.root / "pages")), f"{time.time() - start:.0f}s", flush=True)
     elif a.cmd == "serve":
         import uvicorn
 

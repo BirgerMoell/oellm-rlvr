@@ -156,7 +156,7 @@ class TaskConfig(StrictModel):
     pool_size: int = Field(default=128, ge=1)
     # Tools executed in the rollout loop for math-kind tasks (rows opt in with a `tools` column; rows without it get
     # no tool). The parser must render observations exactly as the chat template does (compat.patch_oellm_hermes_parser).
-    tools: list[Literal["wiki_search"]] = Field(default_factory=list)
+    tools: list[Literal["wiki_search", "open_page", "find_in_page"]] = Field(default_factory=list)
     tool_parser: str = "vllm_hermes_oellm"
 
     @model_validator(mode="after")
@@ -376,8 +376,8 @@ class RunConfig(StrictModel):
         if self.task.tools:
             if self.task.kind != "math" or self.backend.kind != "tmax":
                 raise ValueError("task.tools are for tmax math-kind tasks (code tasks configure their sandbox tool)")
-            if "wiki_search" in self.task.tools and self.search_api is None:
-                raise ValueError("the wiki_search tool needs search_api (one server per node)")
+            if {"wiki_search", "open_page", "find_in_page"} & set(self.task.tools) and self.search_api is None:
+                raise ValueError("the wiki_search, open_page and find_in_page tools need search_api (one server per node)")
             if self.task.max_steps < 2:
                 raise ValueError("tool loops need task.max_steps >= 2 (calls + the final answer turn)")
             if self.environment.get("OELLM_PATCH_WIKI_SEARCH_TOOL") != "1":

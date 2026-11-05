@@ -109,6 +109,70 @@ def test_build_and_search_end_to_end(tmp_path):
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["text"].startswith("[1] Mårbacka (sv.wikipedia)")
+    assert client.post("/open", json={"title": "Mårbacka", "language": "sv"}).json()["text"].startswith(
+        "No article")  # pages not built yet
+
+    # Full pages, row-aligned with the leads: open by exact title, by case-insensitive title, by a search query.
+    assert W.build_pages(tmp_path / "wikipedia", "sv", root / "leads" / "sv.parquet", root / "pages") == {
+        "language": "sv", "pages": 4, "bytes": sum(len(r["text"].encode()) for r in rows)}
+    searcher = W.Searcher(root)
+    page = searcher.open("selma lagerlöf", "sv")
+    assert page["title"] == "Selma Lagerlöf" and page["text"].endswith("Mer.") and page["parts"] == 1
+    assert searcher.open("herrgård i Sunne", "sv")["title"] == "Mårbacka"
+    assert searcher.open("Mårbacka", "sv", part=9)["part"] == 1  # clamped
+    found = searcher.find("Selma Lagerlöf (målning)", "Carl Larsson", "sv")
+    assert found["passages"] and "Carl Larsson" in found["passages"][0][1]
+    client = TestClient(W.create_app(root, preload=["sv"]))
+    opened = client.post("/open", json={"title": "Mårbacka", "language": "sv"}).json()
+    assert opened["text"].startswith("Mårbacka (sv.wikipedia), part 1 of 1.") and "Sunne" in opened["text"]
+    assert client.post("/find", json={"title": "Mårbacka", "query": "Värmland", "language": "sv"}).json()[
+        "text"].startswith("Mårbacka (sv.wikipedia):\n\n[part 1]")
+    assert client.get("/health").json()["pages"] == ["sv"]
+
+
+def test_split_parts_and_find_passages():
+    text = "\n".join(f"Stycke {i}. " + "ord " * 150 for i in range(10)) + "\nSista stycket nämner 1909 och Nobelpriset."
+    parts = W.split_parts(text, size=2000)
+    assert len(parts) > 1 and all(len(p) <= 2000 for p in parts)
+    assert " ".join(parts).split() == text.split()  # nothing lost but whitespace
+    assert W.split_parts("x" * 5000, size=2000) == ["x" * 2000, "x" * 2000, "x" * 1000]
+    [(part, para)] = W.find_passages(text, "Nobelpriset år 1909", k=1)
+    assert part == len(W.split_parts(text)) and para.startswith("Sista stycket")
+    assert W.find_passages(text, "") == []
+
+
+def test_patch_registers_browse_tools():
+    module = ModuleType("fake_tools")
+
+    class Tool:
+        pass
+
+    @dataclass
+    class BaseEnvConfig:
+        pass
+
+    sent = []
+
+    async def make_api_request(url, timeout_seconds, json_payload):
+        sent.append((url, json_payload))
+        return SimpleNamespace(error=None, data={"text": "ok"})
+
+    module.Tool, module.BaseEnvConfig, module.StepResult = Tool, BaseEnvConfig, type("StepResult", (SimpleNamespace,), {})
+    module.coerce_args = lambda params, args: dict(args)
+    module.make_api_request, module.log_env_call, module.TOOL_REGISTRY = make_api_request, lambda *a: None, {}
+    assert patch_wiki_search_tool(module)
+    assert set(module.TOOL_REGISTRY) == {"wiki_search", "open_page", "find_in_page"}
+    opener = module.TOOL_REGISTRY["open_page"]()
+    assert opener.api_endpoint.endswith("/open") and set(asdict(opener)) == {"api_endpoint", "num_results", "timeout"}
+    tool = opener.tool_class(call_name="open_page", api_endpoint=opener.api_endpoint)
+    assert tool.parameters["required"] == ["title"]
+    asyncio.run(tool.step(SimpleNamespace(args={"title": "Mårbacka", "language": "sv", "part": 2})))
+    assert sent[-1] == ("http://127.0.0.1:18090/open", {"title": "Mårbacka", "language": "sv", "part": 2})
+    finder = module.TOOL_REGISTRY["find_in_page"]()
+    tool = finder.tool_class(call_name="find_in_page", api_endpoint=finder.api_endpoint)
+    asyncio.run(tool.step(SimpleNamespace(args={"title": "Mårbacka", "query": "Sunne"})))
+    assert sent[-1] == ("http://127.0.0.1:18090/find", {"title": "Mårbacka", "query": "Sunne", "language": "en"})
+    assert asyncio.run(tool.step(SimpleNamespace(args={"title": "Mårbacka"}))).metadata["error"] == "empty query"
 
 
 def _render(messages, **kwargs) -> str:
