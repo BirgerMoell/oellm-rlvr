@@ -34,6 +34,9 @@ backend:
     parameter_offload: true
     optimizer_offload: true
     ray_runtime_python: ${OELLM_SCRATCH}/oellm-rl/verl/.venv/bin/python
+    # verl builds a validation dataset even when validation is off (test_freq -1): an empty list fails to load
+    validation_files:
+      - ${OELLM_SCRATCH}/oellm-rl/data/mopd-pilot/stage4b.parquet
   # flash-attn is not installed (no cu130 wheel for this commit): unpadded attention off, SDPA attention
   extra_args: [actor_rollout_ref.model.use_remove_padding=False, +actor_rollout_ref.model.override_config.attn_implementation=sdpa]
 model:
