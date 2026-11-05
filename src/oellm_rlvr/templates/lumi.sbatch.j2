@@ -84,11 +84,13 @@ export HWLOC_COMPONENTS=-rsmi
 export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True
 # Slurm on LUMI still sets ROCR_VISIBLE_DEVICES, but current Ray rejects that
 # deprecated name. Preserve the allocation under the HIP-standard variable.
-if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
+{% if config.platform.accelerator == "rocm" %}if [[ -n "${ROCR_VISIBLE_DEVICES:-}" ]]; then
   export HIP_VISIBLE_DEVICES="$ROCR_VISIBLE_DEVICES"
   unset ROCR_VISIBLE_DEVICES
 fi
-{% if config.platform.network_interface %}export NCCL_SOCKET_IFNAME={{ config.platform.network_interface | tojson }}
+{% else %}# CUDA: Slurm may also export ROCR/HIP device lists; verl asserts HIP == CUDA visible devices, so drop them
+unset HIP_VISIBLE_DEVICES ROCR_VISIBLE_DEVICES
+{% endif %}{% if config.platform.network_interface %}export NCCL_SOCKET_IFNAME={{ config.platform.network_interface | tojson }}
 {% endif %}{% for key, value in config.environment.items() %}export {{ key }}={{ value | tojson }}
 {% endfor %}
 
