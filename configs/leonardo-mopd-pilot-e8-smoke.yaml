@@ -29,7 +29,7 @@ backend:
     actor_strategy: fsdp2
     ppo_mini_batch_size: 32
     ppo_micro_batch_size_per_gpu: 1
-    ppo_max_token_len_per_gpu: 12288
+    ppo_max_token_len_per_gpu: 5120   # one max-length sequence: 262K-vocab logits for 12K tokens OOM a 64 GB A100
     use_dynamic_batching: true
     use_torch_compile: false
     parameter_offload: true
