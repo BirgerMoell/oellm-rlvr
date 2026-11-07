@@ -35,6 +35,8 @@ def main() -> None:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=18090)
     s.add_argument("--preload", nargs="*", default=[])
+    s.add_argument("--workers", type=int, default=1, help="server processes; each loads every --preload language "
+                   "before it accepts requests (one process handles one request at a time)")
     q = sub.add_parser("query")
     q.add_argument("--root", type=Path, required=True)
     q.add_argument("--language", default="en")
@@ -54,7 +56,18 @@ def main() -> None:
     elif a.cmd == "serve":
         import uvicorn
 
-        uvicorn.run(W.create_app(a.root, a.preload), host=a.host, port=a.port, log_level="warning")
+        if a.workers == 1:
+            uvicorn.run(W.create_app(a.root, a.preload), host=a.host, port=a.port, log_level="warning")
+        else:
+            import os
+
+            os.environ["OELLM_SEARCH_ROOT"], os.environ["OELLM_SEARCH_PRELOAD"] = str(a.root), " ".join(a.preload)
+            src = str(Path(__file__).resolve().parents[1] / "src")  # the worker processes import the app by name
+            os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [src, os.environ.get("PYTHONPATH")]))
+            # A worker loads every language before serving; building millions of titles holds the GIL for seconds,
+            # longer than uvicorn's default 5 s worker ping, which would kill and restart the worker mid-load.
+            uvicorn.run("oellm_rlvr.wiki_search:create_app_from_env", factory=True, workers=a.workers, host=a.host,
+                        port=a.port, log_level="warning", timeout_worker_healthcheck=600)
     else:
         print(W.format_results(W.Searcher(a.root).search(a.text, a.language)))
 

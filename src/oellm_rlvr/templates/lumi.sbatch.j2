@@ -147,7 +147,7 @@ echo "Code execution server ready on ${SLURM_NNODES} nodes (127.0.0.1:{{ config.
 # node). It runs from the search venv on the host and loads its languages in the background while Ray starts; the
 # wait before the backend launch below checks that every node has loaded all of them.
 srun --label --overlap --gpu-bind=none --nodes="$SLURM_NNODES" --ntasks="$SLURM_NNODES" --ntasks-per-node=1 \
-  bash -c 'exec {{ config.search_api.python | tojson }} "$0/scripts/wiki_search.py" serve --root {{ config.search_api.root | tojson }} --host 127.0.0.1 --port {{ config.search_api.port }} --preload {{ config.search_api.languages | join(" ") }} > "logs/${SLURM_JOB_ID}.search.$(hostname -s).log" 2>&1' "$CONTROL_ROOT" &
+  bash -c 'exec {{ config.search_api.python | tojson }} "$0/scripts/wiki_search.py" serve --root {{ config.search_api.root | tojson }} --host 127.0.0.1 --port {{ config.search_api.port }} --preload {{ config.search_api.languages | join(" ") }} --workers {{ config.search_api.workers }} > "logs/${SLURM_JOB_ID}.search.$(hostname -s).log" 2>&1' "$CONTROL_ROOT" &
 SEARCH_API_PID=$!
 {% endif %}
 echo "Preflight: ${SLURM_NNODES} nodes, ${GPUS_PER_NODE} GPUs/node, head=${RAY_ADDRESS}"

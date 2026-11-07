@@ -6,8 +6,9 @@
 # -1 wrong. Tool loop: up to 7 tool turns + the answer turn. Parent (scripts/leonardo_e10_web_stage.sbatch): E8 + 0.7 x
 # (MOPD pilot - E8) + 0.3 x (deep-search warm start v1 - E8): keeps E8/MOPD abstention, browses (2.5 calls, 23.7 %
 # deep_search accuracy vs E8's 1.05 / 13.7 %); the full warm start stopped abstaining.
-# Estimate: E8 took 2.2 h on 2 nodes (~140 local-h) for the same 160 updates; longer tool loops -> ~220-350 local-h
-# (to be replaced by the canary's measured update time); walltime 12 h caps it at 768 local-h.
+# Estimate: canary 2 (1 node, 2 engines + 2 learners, 4 search workers, 0 tool timeouts) took ~4 min per update after
+# ~7 min startup; 2 nodes ~2 min -> 160 updates ~5.5 h = ~350 local-h (300-400 as tool calls grow). Walltime 8 h caps
+# it at 512 local-h; state is checkpointed every 32 updates.
 version: 1
 name: e10-web
 platform:
@@ -17,7 +18,7 @@ platform:
   container: /leonardo_work/OELLM_prod2026/container_images/post-training-25.10-transformers-olmo3-patch.sif
   account: ${OELLM_ACCOUNT}
   partition: boost_usr_prod
-  walltime: "12:00:00"
+  walltime: "08:00:00"
   cpus_per_task: 32
   memory: 480G
   binds: [/leonardo_work, /leonardo_scratch]
@@ -89,6 +90,8 @@ search_api:
   root: ${OELLM_SCRATCH}/oellm-search          # leads + BM25 index + pages, 10 languages (leonardo_wiki_search_index / leonardo_wiki_pages)
   python: ${OELLM_SCRATCH}/oellm-search/.venv/bin/python
   port: 18090
+  workers: 4       # one process served ~1 s queries one at a time: the first canary timed out (10 s) on 30 % of rollouts
+  timeout: 30
 code_api:
   port: 18080
   workers: 16

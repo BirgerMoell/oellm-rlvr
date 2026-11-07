@@ -81,6 +81,8 @@ search_api:
   root: ${OELLM_SCRATCH}/oellm-search          # leads + BM25 index + pages, 10 languages (leonardo_wiki_search_index / leonardo_wiki_pages)
   python: ${OELLM_SCRATCH}/oellm-search/.venv/bin/python
   port: 18090
+  workers: 4       # one process served ~1 s queries one at a time: the first canary timed out (10 s) on 30 % of rollouts
+  timeout: 30
 code_api:
   port: 18080
   workers: 16

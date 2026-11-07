@@ -130,6 +130,7 @@ class SearchApiConfig(StrictModel):
     languages: list[str] = Field(default_factory=lambda: ["en", "de", "fr", "es", "it", "nl", "sv", "pl", "pt", "fi"])
     num_results: int = Field(default=5, ge=1, le=20)
     timeout: int = Field(default=10, ge=1)
+    workers: int = Field(default=1, ge=1, le=16)   # server processes per node (each holds the title maps, ~GBs)
     ready_timeout_minutes: int = Field(default=40, ge=1)
 
 

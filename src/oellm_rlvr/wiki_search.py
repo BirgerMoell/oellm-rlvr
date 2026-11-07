@@ -367,12 +367,15 @@ def format_results(results: list[dict[str, Any]]) -> str:
     return "\n\n".join(f"[{i}] {r['title']} ({r['language']}.wikipedia)\n{r['snippet']}" for i, r in enumerate(results, 1))
 
 
-def create_app(root: str | Path, preload: list[str] | None = None):
+def create_app(root: str | Path, preload: list[str] | None = None, background: bool = True):
     from fastapi import FastAPI, Request
 
     searcher = Searcher(root)
     app = FastAPI()
-    if preload:  # load in the background; /health reports progress, requests for a loaded language work at once
+    if preload and not background:  # one of several workers: accept requests only once every language is loaded
+        for language in preload:
+            searcher._load(language)
+    elif preload:  # load in the background; /health reports progress, requests for a loaded language work at once
         import threading
 
         def load_all() -> None:
@@ -411,10 +414,23 @@ def create_app(root: str | Path, preload: list[str] | None = None):
 
     @app.get("/health")
     def health():
+        import os
+        import resource
+
         return {"ok": True, "loaded": sorted(searcher._indexes),
-                "pages": sorted(lang for lang in LANGUAGES if searcher.has_pages(lang))}
+                "pages": sorted(lang for lang in LANGUAGES if searcher.has_pages(lang)), "pid": os.getpid(),
+                "max_rss_mb": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024}
 
     return app
+
+
+def create_app_from_env():
+    """uvicorn --workers factory (scripts/wiki_search.py serve --workers N): the timeouts in the E10-web canary
+    (10 s, a third of rollouts by its 4th update) came from one process answering ~1 s queries one at a time."""
+    import os
+
+    return create_app(os.environ["OELLM_SEARCH_ROOT"], os.environ.get("OELLM_SEARCH_PRELOAD", "").split(),
+                      background=False)
 
 
 TOOLS = {
