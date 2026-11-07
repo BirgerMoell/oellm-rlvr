@@ -80,3 +80,12 @@ def test_builder_and_solver(tmp_path):
         assert names[0] == "wiki_search" and t["messages"][-1]["content"].endswith(("ANSWER: 1961", "ANSWER: 1950"))
         if t["subset"] == "film_director_birth_year":  # director only in the body of the film article
             assert "find_in_page" in names or "open_page" in names
+
+    fab = out / "fabricated.jsonl"
+    done = subprocess.run([sys.executable, str(ROOT / "scripts/deep_search_trajectories.py"), "--raw", str(raw),
+                           "--search", str(search), "--data", str(out), "--out", str(fab),
+                           "--fabricated-fraction", "1.0"], check=True, capture_output=True, text=True)
+    assert json.loads(done.stdout[done.stdout.index("{"):])["kept"] == 2, done.stdout
+    for t in map(json.loads, fab.open()):  # a made-up subject: one search, no such article, UNKNOWN
+        assert t["kind"] == "fabricated" and t["id"].endswith("#fabricated") and t["tool_turns"] == 1
+        assert "Fönstret" not in t["messages"][0]["content"] and t["messages"][-1]["content"] == "ANSWER: UNKNOWN"

@@ -30,7 +30,9 @@ backend:
     ppo_mini_batch_size: 32
     ppo_micro_batch_size_per_gpu: 1
     ppo_max_token_len_per_gpu: 5120   # one max-length sequence: 262K-vocab logits for 12K tokens OOM a 64 GB A100
-    use_dynamic_batching: true
+    # padded path (no flash-attn): dynamic batching packs up to 5,120 real tokens but pads every response to
+    # 2,048, so 8 short answers = 8 x 2,048 x 262K fp32 logits = 16 GiB OOM (pilot 63587648, step 5)
+    use_dynamic_batching: false
     use_torch_compile: false
     parameter_offload: true
     optimizer_offload: true

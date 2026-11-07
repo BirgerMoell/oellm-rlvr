@@ -9,15 +9,23 @@ It uses the facts only to decide when it has found something (as a reader would 
 beyond the names in the question and in what it read. A trajectory is kept only if the final reply is graded
 "correct" by the RL reward (eu_tasks.grade_qa).
 
+Abstentions (v2; the v1 warm start trained only on answered chains and stopped abstaining everywhere):
+  --unknown-fraction  chains the agent could not resolve through the tools (bridge or answer not found in what it
+                      read) keep their real search history and end in ANSWER: UNKNOWN;
+  --fabricated-fraction  the subject is replaced by a made-up name (oellm_rlvr.hallucination syllables); the search
+                      finds no article of that name and the reply is ANSWER: UNKNOWN.
+Both are fractions of the kept trajectories per language; the default 0 reproduces v1.
+
 Chat format: OpenAI/Hermes messages that template v2.1 renders (user, assistant with tool_calls, tool, final assistant).
   python scripts/deep_search_trajectories.py --raw data/deep-search-raw --search $S --data data/deep-search \
-    --out data/deep-search/trajectories.jsonl [--limit 3000]
+    --out data/deep-search/trajectories.jsonl [--limit 3000] [--unknown-fraction 0.15 --fabricated-fraction 0.15]
 """
 from __future__ import annotations
 
 import argparse
 import collections
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -26,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from build_deep_search import contains  # noqa: E402
 from build_eu_task_suites import all_names, label_in  # noqa: E402
 from oellm_rlvr import eu_tasks as E  # noqa: E402
+from oellm_rlvr import hallucination as H  # noqa: E402
 from oellm_rlvr import wiki_search as W  # noqa: E402
 
 ROLE = {
@@ -68,6 +77,16 @@ class Run:
         return out
 
 
+def hits(found: str) -> dict[str, str]:
+    """Parse format_results output into {title: snippet}, exact titles only."""
+    out = {}
+    for block in found.split("\n\n["):
+        head, _, body = block.lstrip("[").partition("\n")
+        title = head.split("] ", 1)[-1].rsplit(" (", 1)[0]
+        out.setdefault(title, body)
+    return out
+
+
 def locate(run: Run, title: str, lang: str, query: str, names: list[str]) -> bool:
     """find_in_page, then read the article part by part (at most 4 parts) until one of the names shows up."""
     if contains(E.norm_text(run.call("find_in_page", {"title": title, "query": query, "language": lang})), names):
@@ -79,7 +98,11 @@ def locate(run: Run, title: str, lang: str, query: str, names: list[str]) -> boo
     return False
 
 
-def solve(searcher: W.Searcher, row: dict, entities: dict) -> tuple[list[dict] | None, str]:
+UNRESOLVED = ("bridge_not_located", "bridge_not_found", "answer_not_located")
+UNKNOWN = "ANSWER: UNKNOWN"
+
+
+def solve(searcher: W.Searcher, row: dict, entities: dict) -> tuple[list[dict] | None, str, Run]:
     s_id, o_id, a_id = row["source"].removeprefix("wikidata:").split(">")
     lang, chain = row["language"], row["subset"]
     subj = label_in(entities.get(s_id), lang)
@@ -90,25 +113,39 @@ def solve(searcher: W.Searcher, row: dict, entities: dict) -> tuple[list[dict] |
     answers = [E.norm_text(x) for x in row["label"]["answers"]]
     run = Run(searcher, row["prompt"])
     found = run.call("wiki_search", {"query": subj, "language": lang})
-    if s_title not in found:
-        return None, "subject_not_found"
-    if not contains(E.norm_text(found.split(f"] {s_title} (")[1].split("\n\n")[0]), bridge_names):
+    if s_title not in hits(found):
+        return None, "subject_not_found", run
+    if not contains(E.norm_text(hits(found)[s_title]), bridge_names):
         if not locate(run, s_title, lang, ROLE[role_of(chain)][lang], bridge_names):
-            return None, "bridge_not_located"
+            return None, "bridge_not_located", run
     found = run.call("wiki_search", {"query": bridge, "language": lang})
-    if o_title not in found:
-        return None, "bridge_not_found"
-    snippet = E.norm_text(found.split(f"] {o_title} (")[1].split("\n\n")[0])
+    if o_title not in hits(found):
+        return None, "bridge_not_found", run
+    snippet = E.norm_text(hits(found)[o_title])
     if not contains(snippet, answers):
         query = BORN[lang] if row["label"]["kind"] == "year" or "birth" in chain else bridge
         if not locate(run, o_title, lang, query, answers):
-            return None, "answer_not_located"
+            return None, "answer_not_located", run
     answer = row["label"]["answers"][0] if row["label"]["kind"] == "year" else label_in(entities.get(a_id), lang)
     final = f"{bridge}: {answer}.\n\nANSWER: {answer}"
     if E.grade_qa(final, {**row["label"], "mode": "default"}) != "correct":
-        return None, "final_not_correct"
+        return None, "final_not_correct", run
     run.messages.append({"role": "assistant", "content": final})
-    return run.messages, "ok"
+    return run.messages, "ok", run
+
+
+def fabricate(searcher: W.Searcher, row: dict, entities: dict, rng: random.Random) -> list[dict] | None:
+    """The same question about a subject that does not exist: one search, no article of that name, UNKNOWN."""
+    s_id = row["source"].removeprefix("wikidata:").split(">")[0]
+    subj = label_in(entities.get(s_id), row["language"])
+    if not subj or subj not in row["prompt"]:
+        return None
+    fake = " ".join(H.made_up_word(rng, n) for n in ((3, 2) if " " in subj else (3,)))
+    run = Run(searcher, row["prompt"].replace(subj, fake))
+    if fake in hits(run.call("wiki_search", {"query": fake, "language": row["language"]})):
+        return None
+    run.messages.append({"role": "assistant", "content": UNKNOWN})
+    return run.messages
 
 
 def main() -> None:
@@ -118,6 +155,9 @@ def main() -> None:
     ap.add_argument("--data", type=Path, required=True, help="build_deep_search.py output (train_rows.jsonl)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--limit", type=int, default=3000)
+    ap.add_argument("--unknown-fraction", type=float, default=0.0)
+    ap.add_argument("--fabricated-fraction", type=float, default=0.0)
+    ap.add_argument("--seed", type=int, default=20261107)
     a = ap.parse_args()
     entities = json.loads((a.raw / "entities.json").read_text())
     searcher = W.Searcher(a.search)
@@ -126,24 +166,45 @@ def main() -> None:
     for row in rows:
         per_lang[row["language"]].append(row)
     quota = -(-a.limit // max(1, len(per_lang)))  # the same number per language, one language loaded at a time
+    n_unknown, n_fab = round(quota * a.unknown_fraction), round(quota * a.fabricated_fraction)
     stats, kept = collections.Counter(), 0
+
+    def write(fh, row: dict, messages: list[dict], kind: str) -> None:
+        turns = sum(m["role"] == "tool" for m in messages)
+        fh.write(json.dumps({"id": row["id"] + ("" if kind == "answer" else f"#{kind}"), "language": row["language"],
+                             "subset": row["subset"], "evidence": row["evidence"], "kind": kind, "tool_turns": turns,
+                             "messages": messages}, ensure_ascii=False) + "\n")
+
     with a.out.open("w") as fh:
         for lang, lang_rows in sorted(per_lang.items()):
             searcher._indexes.clear()
             searcher._pages.clear()
-            got = 0
+            rng = random.Random(f"{a.seed}:{lang}")
+            got = {"answer": 0, "unknown": 0, "fabricated": 0}
+            want = {"answer": quota - n_unknown - n_fab, "unknown": n_unknown, "fabricated": n_fab}
             for row in lang_rows:
-                if got >= quota:
+                if got == want:
                     break
-                messages, why = solve(searcher, row, entities)
+                if got["fabricated"] < want["fabricated"] and rng.random() < a.fabricated_fraction:
+                    messages = fabricate(searcher, row, entities, rng)
+                    stats["fabricated" if messages else "fabricated_skipped"] += 1
+                    if messages:
+                        got["fabricated"] += 1
+                        kept += 1
+                        write(fh, row, messages, "fabricated")
+                    continue
+                messages, why, run = solve(searcher, row, entities)
                 stats[why] += 1
-                if messages:
+                if messages and got["answer"] < want["answer"]:
+                    got["answer"] += 1
                     kept += 1
-                    got += 1
-                    turns = sum(m["role"] == "tool" for m in messages)
-                    fh.write(json.dumps({"id": row["id"], "language": row["language"], "subset": row["subset"],
-                                         "evidence": row["evidence"], "tool_turns": turns, "messages": messages},
-                                        ensure_ascii=False) + "\n")
+                    write(fh, row, messages, "answer")
+                elif why in UNRESOLVED and got["unknown"] < want["unknown"]:
+                    run.messages.append({"role": "assistant", "content": UNKNOWN})
+                    got["unknown"] += 1
+                    kept += 1
+                    write(fh, row, run.messages, "unknown")
+            stats[f"kept:{lang}"] = sum(got.values())
     print(json.dumps({"kept": kept, "outcomes": dict(stats)}, indent=1))
 
 

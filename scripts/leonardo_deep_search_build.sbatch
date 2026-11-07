@@ -9,7 +9,7 @@
 #SBATCH --error=logs/%j.err
 # deep_search suite (scripts/build_deep_search.py) and reference browsing trajectories
 # (scripts/deep_search_trajectories.py) against the offline Wikipedia page store. CPU only.
-#   RAW=<fetch_deep_search_wikidata.py output> [OUT=$OELLM_SCRATCH/oellm-rl/data/deep-search] sbatch ...
+#   RAW=<fetch_deep_search_wikidata.py output> [OUT=$OELLM_SCRATCH/oellm-rl/data/deep-search] [SKIP_BUILD=1] sbatch ...
 set -euo pipefail
 [[ -n ${OELLM_WORK:-} ]] || source "${OELLM_ENV:-$HOME/.oellm/leonardo.env}"
 SEARCH=${SEARCH:-$OELLM_SCRATCH/oellm-search}
@@ -17,7 +17,7 @@ CODE=$OELLM_SCRATCH/oellm-rl/oellm-rlvr
 OUT=${OUT:-$OELLM_SCRATCH/oellm-rl/data/deep-search}
 : "${RAW:?}"
 PY=$SEARCH/.venv/bin/python
-"$PY" "$CODE/scripts/build_deep_search.py" --raw "$RAW" --search "$SEARCH" --out "$OUT"
+[[ -n ${SKIP_BUILD:-} ]] || "$PY" "$CODE/scripts/build_deep_search.py" --raw "$RAW" --search "$SEARCH" --out "$OUT"
 "$PY" "$CODE/scripts/deep_search_trajectories.py" --raw "$RAW" --search "$SEARCH" --data "$OUT" \
   --out "$OUT/trajectories.jsonl" --limit "${TRAJ_LIMIT:-4000}"
 sha256sum "$OUT"/*.jsonl "$OUT"/*.parquet
