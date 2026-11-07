@@ -3,8 +3,11 @@
 # searching, opening and reading Wikipedia articles (wiki_search, open_page, find_in_page). Pool
 # scripts/build_e10_web_pool.py: deep_search rows with the three tools, E8's single-hop search rows, closed-book and
 # made-up-entity QA (searching for a made-up entity must end in UNKNOWN), and replay. QA reward +1 correct / 0 UNKNOWN /
-# -1 wrong. Tool loop: up to 7 tool turns + the answer turn. Parent: E8 step 160 (or the MOPD pilot model if it passes).
-# Estimate: NOT YET MADE (needs the deep_search pass-rate profile); written before launch.
+# -1 wrong. Tool loop: up to 7 tool turns + the answer turn. Parent (scripts/leonardo_e10_web_stage.sbatch): E8 + 0.7 x
+# (MOPD pilot - E8) + 0.3 x (deep-search warm start v1 - E8): keeps E8/MOPD abstention, browses (2.5 calls, 23.7 %
+# deep_search accuracy vs E8's 1.05 / 13.7 %); the full warm start stopped abstaining.
+# Estimate: E8 took 2.2 h on 2 nodes (~140 local-h) for the same 160 updates; longer tool loops -> ~220-350 local-h
+# (to be replaced by the canary's measured update time); walltime 12 h caps it at 768 local-h.
 version: 1
 name: e10-web
 platform:
