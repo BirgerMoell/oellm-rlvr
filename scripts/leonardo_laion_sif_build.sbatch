@@ -31,6 +31,7 @@ set -euo pipefail
 : "${APPTAINER_TMPDIR:=$OELLM_SCRATCH/oellm-rl/apptainer-tmp/${SLURM_JOB_ID:-manual}}"
 : "${DRY_RUN:=0}"
 : "${WHEEL_DIR:=}"            # optional flat wheelhouse for offline verifier deps (see the Harbor apptainer README)
+: "${CONTEXT_HASH_FILE:=}"      # optional: build only the context hashes listed one per line (canaries, sharding)
 : "${BASE_IMAGE_OVERRIDES:=}" # space-separated FROM=TO pairs, e.g. "debian:bullseye-slim=debian:bookworm-slim"
 
 TASKS="$LAION_ROOT/$DATASET/tasks"
@@ -45,6 +46,7 @@ command -v apptainer >/dev/null 2>&1 || command -v singularity >/dev/null 2>&1 \
 args=("$TASKS" --sif-cache "$SIF_CACHE" --max-workers "$SIF_BUILD_WORKERS" --build-timeout-sec "$SIF_BUILD_TIMEOUT_SEC")
 for o in $BASE_IMAGE_OVERRIDES; do args+=(--base-image-override "$o"); done
 [[ -n "$WHEEL_DIR" ]] && args+=(--wheel-dir "$WHEEL_DIR")
+[[ -n "$CONTEXT_HASH_FILE" ]] && args+=(--context-hash-file "$CONTEXT_HASH_FILE")
 [[ "$DRY_RUN" == "1" ]] && args+=(--dry-run)
 
 echo "node=$(hostname) arch=$(uname -m) dataset=$DATASET tasks=$TASKS cache=$SIF_CACHE"

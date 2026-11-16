@@ -10,8 +10,14 @@ set -euo pipefail
 : "${OELLM_SCRATCH:?source leonardo.env first}"
 : "${HARBOR_LAION_ROOT:=$OELLM_SCRATCH/oellm-rl/src/harbor-laion}"
 : "${HARBOR_LAION_VENV:=$OELLM_SCRATCH/oellm-rl/venvs/harbor-laion}"
-: "${PYTHON:=python3}"
+: "${PYTHON:=}"
 
+# Leonardo only ships Python 3.11 as a module; Harbor needs >= 3.12. Use uv (managed Python) when PYTHON is unset.
+if [[ -z "$PYTHON" ]]; then
+  command -v uv >/dev/null 2>&1 || { echo "set PYTHON=<python>=3.12> or install uv" >&2; exit 1; }
+  [[ -x "$HARBOR_LAION_VENV/bin/python" ]] || { mkdir -p "$(dirname "$HARBOR_LAION_VENV")"; uv venv --python 3.12 "$HARBOR_LAION_VENV"; }
+  PYTHON="$HARBOR_LAION_VENV/bin/python"
+fi
 HARBOR_URL=https://github.com/marianna13/harbor.git
 HARBOR_COMMIT=82efa984407740f695e1bca60542cac00e2497b5   # main, 2026-09-25 "Harden offline Apptainer rollouts and terminal recovery"
 
@@ -28,8 +34,12 @@ git -C "$HARBOR_LAION_ROOT" checkout --detach "$HARBOR_COMMIT"
 
 mkdir -p "$(dirname "$HARBOR_LAION_VENV")"
 [[ -x "$HARBOR_LAION_VENV/bin/python" ]] || "$PYTHON" -m venv "$HARBOR_LAION_VENV"
-"$HARBOR_LAION_VENV/bin/python" -m pip install --upgrade pip
-"$HARBOR_LAION_VENV/bin/python" -m pip install -e "$HARBOR_LAION_ROOT"
+if "$HARBOR_LAION_VENV/bin/python" -m pip --version >/dev/null 2>&1; then
+  "$HARBOR_LAION_VENV/bin/python" -m pip install --upgrade pip
+  "$HARBOR_LAION_VENV/bin/python" -m pip install -e "$HARBOR_LAION_ROOT"
+else
+  uv pip install --python "$HARBOR_LAION_VENV/bin/python" -e "$HARBOR_LAION_ROOT"   # uv venvs have no pip
+fi
 # The control plane's result parser is stdlib-only; the oellm_rlvr package is used via PYTHONPATH by the sbatch files.
 
 "$HARBOR_LAION_VENV/bin/python" - <<'PY'

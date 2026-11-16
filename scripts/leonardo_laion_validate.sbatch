@@ -6,14 +6,14 @@
 #   source leonardo.env
 #   DATASET=rts-1k-rootless-apptainer SUBSET=overfit sbatch scripts/leonardo_laion_validate.sbatch   # 100-task pilot
 #   DATASET=rts-1k-rootless-apptainer SUBSET=all     sbatch scripts/leonardo_laion_validate.sbatch
-# SUBSET: overfit | diagnostic (manifests shipped with the dataset, 100 tasks each) | all.
-# CPU partition on Leonardo: dcgp_usr_prod (needs a DCGP budget on the account); override with sbatch --partition=.
+# SUBSET: overfit | diagnostic (manifests shipped with the dataset, 100 tasks each) | all | list (TASK_LIST=<file, one task id per line>).
+# Partition: boost_usr_prod (this account has no dcgp_usr_prod budget); the sandboxes only use CPU. Override with sbatch --partition=.
 #SBATCH --job-name=laion-validate
-#SBATCH --partition=dcgp_usr_prod
+#SBATCH --partition=boost_usr_prod
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=64
-#SBATCH --mem=200G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=120G
 #SBATCH --time=06:00:00
 #SBATCH --output=logs/%j.%x.out
 #SBATCH --error=logs/%j.%x.err
@@ -23,13 +23,14 @@ set -euo pipefail
 : "${DATASET:?set DATASET=<repo name without laion/>}"
 : "${SUBSET:=overfit}"
 : "${ATTEMPTS:=3}"
+: "${TASK_LIST:=}"
 : "${CONTROL_ROOT:=${SLURM_SUBMIT_DIR:-$PWD}}"
 : "${LAION_ROOT:=$OELLM_SCRATCH/oellm-rl/data/laion-ot}"
 : "${HARBOR_LAION_ROOT:=$OELLM_SCRATCH/oellm-rl/src/harbor-laion}"
 : "${HARBOR_LAION_VENV:=$OELLM_SCRATCH/oellm-rl/venvs/harbor-laion}"
 : "${SIF_CACHE:=$OELLM_SCRATCH/oellm-rl/sif-cache-x86_64}"
 : "${RESULTS_ROOT:=$OELLM_SCRATCH/oellm-rl/laion-validation}"
-: "${WORKERS_PER_NODE:=24}"          # sandboxes are CPU-bound; ~16-24 per 32 cores is a safe start
+: "${WORKERS_PER_NODE:=16}"          # sandboxes are CPU-bound; ~16-24 per 32 cores is a safe start
 : "${BRIDGE_PORT:=19910}"
 : "${BRIDGE_OVERLAY_SIZE_MB:=1024}"
 RUN_ID="${SLURM_JOB_ID:-$$}"
@@ -54,6 +55,8 @@ src, subset, pack = sys.argv[1:]
 tasks = os.path.join(src, "tasks")
 if subset == "all":
     ids = sorted(d for d in os.listdir(tasks) if os.path.isdir(os.path.join(tasks, d)))
+elif subset == "list":
+    ids = [l.strip() for l in open(os.environ["TASK_LIST"]) if l.strip()]
 else:
     name = {"overfit": "overfit-train", "diagnostic": "diagnostic-validation"}[subset]
     ids = [json.loads(l)["task_id"] for l in open(os.path.join(src, "manifests", name + ".jsonl")) if l.strip()]

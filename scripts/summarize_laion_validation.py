@@ -23,7 +23,10 @@ def collect(jobs: Path, arm: str) -> dict[str, list[dict]]:
         if not isinstance(payload, dict) or not {"task_name", "trial_name"} <= payload.keys():
             continue
         rewards = (payload.get("verifier_result") or {}).get("rewards") or {}
-        by_task[str(payload["task_name"])].append(
+        # Harbor's task_name is the name in task.toml, which need not match the directory; the pack path does.
+        task_path = (payload.get("task_id") or {}).get("path") if isinstance(payload.get("task_id"), dict) else None
+        key = Path(task_path).name if task_path else str(payload["task_name"])
+        by_task[key].append(
             {"reward": rewards.get("reward"), "exception": payload.get("exception_info")}
         )
     return by_task
