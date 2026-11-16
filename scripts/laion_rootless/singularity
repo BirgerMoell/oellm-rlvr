@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""`singularity` wrapper that makes `singularity build <sif> <def>` work rootless on Leonardo compute nodes.
+
+Leonardo has no /etc/subuid (so --fakeroot is refused) but compute nodes allow user namespaces, so we run the build
+inside `unshare -rm` (single-id mapping: we are uid 0 in the namespace) and
+  * strip --fakeroot,
+  * add the fakeown.so LD_PRELOAD shim to the image and preload it in %post (chown/setuid succeed without effect),
+  * point apt and the registry client at the token-protected build proxy (compute nodes are offline) via env vars
+    only, so the token never lands in the image, and make apt run as root (no _apt uid in a one-id namespace).
+Every other subcommand is passed through unchanged. Env: REAL_SINGULARITY, SHIM_SO, PROXY_HOSTFILE, PROXY_TOKENFILE."""
+import os, sys, tempfile
+
+real = os.environ["REAL_SINGULARITY"]
+args = sys.argv[1:]
+if not args or args[0] != "build":
+    os.execv(real, [real] + args)
+
+shim = os.environ["SHIM_SO"]
+# PROXY_LOCAL is the loopback relay (no credentials in URLs: Java et al. mishandle them); the authenticated URL is the fallback.
+proxy = os.environ.get("PROXY_LOCAL")
+if not proxy:
+    host = open(os.environ["PROXY_HOSTFILE"]).read().strip()
+    token = open(os.environ["PROXY_TOKENFILE"]).read().strip()
+    proxy = "http://build:%s@%s" % (token, host)
+jvm = ""
+if os.environ.get("PROXY_LOCAL"):
+    h, _, pt = proxy[len("http://"):].partition(":")
+    jvm = ("-Dhttp.proxyHost=%s -Dhttp.proxyPort=%s -Dhttps.proxyHost=%s -Dhttps.proxyPort=%s" % (h, pt, h, pt))
+
+args = [a for a in args if a not in ("--fakeroot", "-f")]
+def_path = args[-1]
+# SingularityPRO defines SINGULARITY_ROOTFS only; the fork's defs use the Apptainer name.
+lines = open(def_path).read().replace("APPTAINER_ROOTFS", "SINGULARITY_ROOTFS").split("\n")
+# Docker Hub rate-limits the shared proxy IP (TOOMANYREQUESTS); pull Hub base images via a public mirror instead.
+mirror = os.environ.get("DOCKER_MIRROR", "mirror.gcr.io")
+if mirror and any(l.strip().lower() == "bootstrap: docker" for l in lines):
+    def _mirror(l):
+        if not l.startswith("From:"):
+            return l
+        ref = l.split(":", 1)[1].strip()
+        first = ref.split("/")[0]
+        if "/" in ref and ("." in first or ":" in first or first == "localhost"):  # already names a registry
+            return l
+        return "From: %s/%s" % (mirror, ref if "/" in ref else "library/" + ref)
+    lines = [_mirror(l) for l in lines]
+out, done = [], False
+post =["%files", "    %s /opt/fakeown.so" % shim, "", "%post",
+        "    export LD_PRELOAD=/opt/fakeown.so",
+        "    export http_proxy=%s https_proxy=%s HTTP_PROXY=%s HTTPS_PROXY=%s" % ((proxy,) * 4)]
+if jvm:
+    post.append("    export JAVA_TOOL_OPTIONS=\"%s\" _JAVA_OPTIONS=\"%s\"" % (jvm, jvm))
+post.append("    [ -d /etc/apt/apt.conf.d ] && echo 'APT::Sandbox::User \"root\";' > /etc/apt/apt.conf.d/99laion-sandbox || true")
+for l in lines:
+    if l.strip() == "%post" and not done:
+        out += post
+        done = True
+    else:
+        out.append(l)
+if not done:  # def without %post: nothing to run as root
+    out = lines
+fd, new_def = tempfile.mkstemp(suffix=".def", dir=os.environ.get("SINGULARITY_TMPDIR") or None)
+os.write(fd, "\n".join(out).encode()); os.close(fd)
+args[-1] = new_def
+env = dict(os.environ, http_proxy=proxy, https_proxy=proxy, HTTP_PROXY=proxy, HTTPS_PROXY=proxy)
+try:
+    rc = os.spawnvpe(os.P_WAIT, "unshare", ["unshare", "-rm", real, "build"] + args[1:], env)
+finally:
+    os.unlink(new_def)
+sys.exit(rc)
