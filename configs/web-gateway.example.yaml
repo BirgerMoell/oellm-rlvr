@@ -1,0 +1,24 @@
+# Web gateway sidecar (src/oellm_rlvr/web_gateway.py), live web search. Locally or on an internet node (scripts/leonardo_web_gateway.sbatch):
+#   OELLM_GATEWAY_CONFIG=configs/web-gateway.example.yaml OELLM_GATEWAY_TOKEN=<secret> \
+#     uvicorn --factory oellm_rlvr.web_gateway:create_app_from_env --host 127.0.0.1 --port 18095
+# The agent only ever sees POST /web_search {"session","query","k"} and POST /web_fetch {"session","url","part"}.
+# Live web needs a node with internet (Leonardo: lrd_all_serial); compute nodes are offline.
+mode: live                            # live: providers + network; replay: serve only cache_dir (offline, deterministic)
+cache_dir: ${OELLM_SCRATCH}/oellm-gateway/cache   # every result/page is recorded here in live mode; replay needs it
+audit_log: ${OELLM_SCRATCH}/oellm-gateway/audit.jsonl   # one JSON line per decision; ${VAR} is expanded
+search_timeout: 10
+backends:                             # tried in order, results merged; a failing provider is skipped
+  - {type: wikipedia, language: en}           # keyless
+  # - {type: brave, key_env: BRAVE_API_KEY, min_interval: 1.0}   # key from the environment, not this file
+  # - {type: searxng, endpoint: "http://127.0.0.1:8080"}         # self-hosted
+policy:
+  allow_domains: [wikipedia.org, wikimedia.org, wikidata.org, europa.eu, arxiv.org, docs.python.org]   # "*" = any public host
+  # deny_domains defaults to code hosts / paste sites / dataset hubs so the agent cannot look a reward up:
+  # github.com, githubusercontent.com, gitlab.com, bitbucket.org, huggingface.co, kaggle.com, pastebin.com, ...
+  max_searches: 20          # per session (= per rollout)
+  max_fetches: 20
+  page_chars: 4000          # one part of a page (same scale as open_page)
+  max_bytes: 2000000
+  timeout: 10
+  follow_links: true        # links on a fetched page become fetchable (still subject to the lists)
+  require_provenance: true  # fetch only URLs from search results, fetched pages or operator-seeded URLs
